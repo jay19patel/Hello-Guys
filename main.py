@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 import uvicorn
 import logging
 from datetime import datetime
@@ -8,11 +8,28 @@ app = FastAPI(title="WhatsApp Webhook")
 
 logging.basicConfig(level=logging.INFO)
 
-VERIFY_TOKEN = "my_verify_token"
+VERIFY_TOKEN = "5eef6a56-e72b-477c-87f8-70484ecbb750"
 
 # In-memory store
 webhook_count: int = 0
 recent_messages: list[dict] = []
+seen_message_ids: set[str] = set()  # dedup for Meta's retried deliveries (up to 36h)
+app_logs: list[dict] = []
+
+
+class InMemoryLogHandler(logging.Handler):
+    def emit(self, record):
+        app_logs.append({
+            "level": record.levelname,
+            "message": self.format(record),
+            "time": datetime.now().strftime("%H:%M:%S"),
+        })
+        del app_logs[:-200]  # keep only the latest 200
+
+
+_log_handler = InMemoryLogHandler()
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_log_handler)
 
 
 # -------------------------------
@@ -68,6 +85,55 @@ async def dashboard():
     .msg-item .from { font-weight: 600; }
     .msg-item .time { font-size: 0.75rem; color: #aaa; float: right; }
     .empty { color: #aaa; font-size: 0.85rem; }
+    .url-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .url-row input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 0.85rem;
+      color: #222;
+      outline: none;
+    }
+    .copy-btn {
+      border: none;
+      background: #25D366;
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .copy-btn:active { transform: scale(0.97); }
+    #log-list {
+      margin-top: 16px;
+      max-height: 320px;
+      overflow-y: auto;
+      background: #10151a;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .log-item {
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 0.78rem;
+      color: #cfd8dc;
+      padding: 3px 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .log-item .time { color: #6c7a89; margin-right: 8px; }
+    .log-item.level-WARNING { color: #ffca28; }
+    .log-item.level-ERROR { color: #ef5350; }
     #refresh-dot {
       display: inline-block;
       width: 8px; height: 8px;
@@ -90,6 +156,14 @@ async def dashboard():
   </div>
 
   <div class="card">
+    <div class="label">Webhook URL</div>
+    <div class="url-row">
+      <input type="text" id="webhook-url" readonly value="Loading…" />
+      <button class="copy-btn" id="copy-btn" onclick="copyWebhookUrl()">Copy</button>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="label">Total Webhooks Received</div>
     <div class="stat" id="count">—</div>
     <div class="label">since server start</div>
@@ -103,8 +177,25 @@ async def dashboard():
     <div id="msg-list"><p class="empty">Loading…</p></div>
   </div>
 
+  <div class="card">
+    <div class="label">Server Logs <span id="log-count" style="color:#25D366;font-weight:700;"></span></div>
+    <div id="log-list"><p class="empty">Loading…</p></div>
+  </div>
+
   <script>
     let secondsLeft = 10;
+
+    document.getElementById('webhook-url').value = window.location.origin + '/webhook';
+
+    function copyWebhookUrl() {
+      const input = document.getElementById('webhook-url');
+      navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('copy-btn');
+        const original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = original; }, 1500);
+      });
+    }
 
     async function refresh() {
       try {
@@ -130,6 +221,28 @@ async def dashboard():
       } catch(e) {
         console.error(e);
       }
+
+      try {
+        const logRes = await fetch('/logs');
+        const logData = await logRes.json();
+
+        const logCount = logData.logs.length;
+        document.getElementById('log-count').textContent = logCount ? `(${logCount})` : '';
+
+        const logList = document.getElementById('log-list');
+        if (!logCount) {
+          logList.innerHTML = '<p class="empty">No logs yet.</p>';
+        } else {
+          logList.innerHTML = logData.logs.map(l => `
+            <div class="log-item level-${l.level}">
+              <span class="time">${l.time}</span>${l.message}
+            </div>
+          `).join('');
+        }
+      } catch(e) {
+        console.error(e);
+      }
+
       secondsLeft = 10;
     }
 
@@ -155,6 +268,16 @@ async def get_messages():
     return {
         "webhook_count": webhook_count,
         "messages": recent_messages[-20:][::-1],   # latest 20, newest first
+    }
+
+
+# -------------------------------
+# Logs API (polled every 10s)
+# -------------------------------
+@app.get("/logs")
+async def get_logs():
+    return {
+        "logs": app_logs[-50:][::-1],   # latest 50, newest first
     }
 
 
@@ -187,32 +310,68 @@ async def verify_webhook(request: Request):
 @app.post("/webhook")
 async def receive_webhook(request: Request):
     global webhook_count
-    payload = await request.json()
+
+    payload: dict = await request.json()
     webhook_count += 1
 
-    logging.info("Webhook Payload: %s", payload)
+    object_type: str = payload.get("object", "unknown")
+    logging.info("Webhook received | object=%s count=%d", object_type, webhook_count)
 
     try:
-        value = payload["entry"][0]["changes"][0]["value"]
-        messages = value.get("messages", [])
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                field = change.get("field", "")
+                value = change.get("value", {})
 
-        for message in messages:
-            sender = message.get("from")
-            message_id = message.get("id")
-            message_type = message.get("type")
-            text = None
-            if message_type == "text":
-                text = message.get("text", {}).get("body")
+                # ── Incoming Messages ──────────────────────────
+                for message in value.get("messages", []):
+                    sender       = message.get("from")
+                    message_id   = message.get("id")
+                    message_type = message.get("type")
 
-            recent_messages.append({
-                "sender": sender,
-                "message_id": message_id,
-                "type": message_type,
-                "text": text,
-                "received_at": datetime.now().strftime("%H:%M:%S"),
-            })
+                    if message_id in seen_message_ids:
+                        logging.info("Duplicate message %s — skipped (retry)", message_id)
+                        continue
+                    seen_message_ids.add(message_id)
 
-            logging.info("From: %s | Type: %s | Text: %s", sender, message_type, text)
+                    text = None
+                    if message_type == "text":
+                        text = message.get("text", {}).get("body")
+
+                    recent_messages.append({
+                        "event":       "message",
+                        "sender":      sender,
+                        "message_id":  message_id,
+                        "type":        message_type,
+                        "text":        text,
+                        "field":       field,
+                        "object":      object_type,
+                        "received_at": datetime.now().strftime("%H:%M:%S"),
+                    })
+                    logging.info("📩 Message | From: %s | Type: %s | Text: %s", sender, message_type, text)
+
+                # ── Status Updates (sent/delivered/read) ────────
+                for status in value.get("statuses", []):
+                    recipient = status.get("recipient_id")
+                    st        = status.get("status")         # sent / delivered / read
+
+                    status_key = f"{status.get('id')}:{st}"
+                    if status_key in seen_message_ids:
+                        logging.info("Duplicate status %s — skipped (retry)", status_key)
+                        continue
+                    seen_message_ids.add(status_key)
+
+                    recent_messages.append({
+                        "event":       "status",
+                        "sender":      recipient,
+                        "message_id":  status.get("id"),
+                        "type":        f"status:{st}",
+                        "text":        f"✔ {st}",
+                        "field":       field,
+                        "object":      object_type,
+                        "received_at": datetime.now().strftime("%H:%M:%S"),
+                    })
+                    logging.info("📬 Status | Recipient: %s | Status: %s", recipient, st)
 
     except Exception as e:
         logging.error("Error parsing webhook: %s", e)
