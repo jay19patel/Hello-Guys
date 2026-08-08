@@ -13,7 +13,6 @@ VERIFY_TOKEN = "5eef6a56-e72b-477c-87f8-70484ecbb750"
 # In-memory store
 webhook_count: int = 0
 recent_messages: list[dict] = []
-seen_message_ids: set[str] = set()  # dedup for Meta's retried deliveries (up to 36h)
 app_logs: list[dict] = []
 
 
@@ -212,9 +211,8 @@ async def dashboard():
         } else {
           list.innerHTML = data.messages.map(m => `
             <div class="msg-item">
-              <span class="from">${m.sender || 'unknown'}</span>
-              <span class="time">${m.received_at}</span><br/>
-              <span>${m.text || '[' + m.type + ']'}</span>
+              <span class="time">${m.received_at}</span>
+              <pre style="white-space:pre-wrap; word-break:break-word; margin-top:4px; font-family:'SF Mono',Consolas,monospace; font-size:0.78rem;">${JSON.stringify(m.raw, null, 2)}</pre>
             </div>
           `).join('');
         }
@@ -314,67 +312,11 @@ async def receive_webhook(request: Request):
     payload: dict = await request.json()
     webhook_count += 1
 
-    object_type: str = payload.get("object", "unknown")
-    logging.info("Webhook received | object=%s count=%d", object_type, webhook_count)
-
-    try:
-        for entry in payload.get("entry", []):
-            for change in entry.get("changes", []):
-                field = change.get("field", "")
-                value = change.get("value", {})
-
-                # ── Incoming Messages ──────────────────────────
-                for message in value.get("messages", []):
-                    sender       = message.get("from")
-                    message_id   = message.get("id")
-                    message_type = message.get("type")
-
-                    if message_id in seen_message_ids:
-                        logging.info("Duplicate message %s — skipped (retry)", message_id)
-                        continue
-                    seen_message_ids.add(message_id)
-
-                    text = None
-                    if message_type == "text":
-                        text = message.get("text", {}).get("body")
-
-                    recent_messages.append({
-                        "event":       "message",
-                        "sender":      sender,
-                        "message_id":  message_id,
-                        "type":        message_type,
-                        "text":        text,
-                        "field":       field,
-                        "object":      object_type,
-                        "received_at": datetime.now().strftime("%H:%M:%S"),
-                    })
-                    logging.info("📩 Message | From: %s | Type: %s | Text: %s", sender, message_type, text)
-
-                # ── Status Updates (sent/delivered/read) ────────
-                for status in value.get("statuses", []):
-                    recipient = status.get("recipient_id")
-                    st        = status.get("status")         # sent / delivered / read
-
-                    status_key = f"{status.get('id')}:{st}"
-                    if status_key in seen_message_ids:
-                        logging.info("Duplicate status %s — skipped (retry)", status_key)
-                        continue
-                    seen_message_ids.add(status_key)
-
-                    recent_messages.append({
-                        "event":       "status",
-                        "sender":      recipient,
-                        "message_id":  status.get("id"),
-                        "type":        f"status:{st}",
-                        "text":        f"✔ {st}",
-                        "field":       field,
-                        "object":      object_type,
-                        "received_at": datetime.now().strftime("%H:%M:%S"),
-                    })
-                    logging.info("📬 Status | Recipient: %s | Status: %s", recipient, st)
-
-    except Exception as e:
-        logging.error("Error parsing webhook: %s", e)
+    recent_messages.append({
+        "received_at": datetime.now().strftime("%H:%M:%S"),
+        "raw": payload,
+    })
+    logging.info("Webhook received | count=%d | raw=%s", webhook_count, payload)
 
     return {"success": True}
 
