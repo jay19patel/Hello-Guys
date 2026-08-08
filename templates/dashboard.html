@@ -131,6 +131,15 @@
   </div>
 
   <div class="card">
+    <div class="label">Privacy Policy URL</div>
+    <div class="url-row">
+      <input type="text" id="privacy-url" readonly value="Loading…" />
+      <button class="copy-btn" id="privacy-copy-btn" onclick="copyPrivacyUrl()">Copy</button>
+      <a class="copy-btn" id="privacy-open-btn" href="/privacy-policy" target="_blank" style="text-decoration:none; display:inline-block;">Open</a>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="label">Total Webhooks Received</div>
     <div class="stat" id="count">—</div>
     <div class="label">since server start</div>
@@ -153,11 +162,22 @@
     let secondsLeft = 10;
 
     document.getElementById('webhook-url').value = window.location.origin + '/webhook';
+    document.getElementById('privacy-url').value = window.location.origin + '/privacy-policy';
 
     function copyWebhookUrl() {
       const input = document.getElementById('webhook-url');
       navigator.clipboard.writeText(input.value).then(() => {
         const btn = document.getElementById('copy-btn');
+        const original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = original; }, 1500);
+      });
+    }
+
+    function copyPrivacyUrl() {
+      const input = document.getElementById('privacy-url');
+      navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('privacy-copy-btn');
         const original = btn.textContent;
         btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = original; }, 1500);
