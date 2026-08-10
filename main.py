@@ -11,6 +11,7 @@ from pymongo import DESCENDING, MongoClient
 from pymongo.errors import PyMongoError
 
 from services.instagram import InstagramService
+from services.whatsapp import WhatsAppService
 
 load_dotenv()
 
@@ -54,12 +55,20 @@ logging.getLogger().addHandler(_log_handler)
 # Config (set these as environment variables, never hardcode in prod)
 # ----------------------------------------------------------------------------
 WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "change-this-verify-token")  # your own custom token — must match the "Verify Token" field you enter in Meta App Dashboard -> Webhooks
-IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN")
 GRAPH_API_VERSION = os.getenv("GRAPH_API_VERSION", "v26.0")
 
-app = FastAPI(title="Instagram Webhook Monitor")
+IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN")
+WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN")
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+
+app = FastAPI(title="Instagram + WhatsApp Webhook Monitor")
 templates = Jinja2Templates(directory="templates")
 instagram_service = InstagramService(access_token=IG_ACCESS_TOKEN, api_version=GRAPH_API_VERSION)
+whatsapp_service = WhatsAppService(
+    access_token=WHATSAPP_ACCESS_TOKEN,
+    phone_number_id=WHATSAPP_PHONE_NUMBER_ID,
+    api_version=GRAPH_API_VERSION,
+)
 
 
 # ----------------------------------------------------------------------------
@@ -96,8 +105,12 @@ async def receive_webhook(request: Request):
     webhook_count = events_collection.count_documents({})
     logger.info(f"Incoming webhook #{webhook_count}: {payload}")
 
+    # Meta sends "object": "instagram" for IG events and "whatsapp_business_account"
+    # for WhatsApp Cloud API events — dispatch each to its own service.
     if payload.get("object") == "instagram":
         await instagram_service.handle_webhook(payload)
+    elif payload.get("object") == "whatsapp_business_account":
+        await whatsapp_service.handle_webhook(payload)
 
     return {"status": "received"}
 
@@ -109,7 +122,7 @@ async def health():
         db_status = "connected"
     except PyMongoError:
         db_status = "disconnected"
-    return {"status": "ok", "service": "instagram-webhook-monitor", "database": db_status}
+    return {"status": "ok", "service": "instagram-whatsapp-webhook-monitor", "database": db_status}
 
 
 # ----------------------------------------------------------------------------

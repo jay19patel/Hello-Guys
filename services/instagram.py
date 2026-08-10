@@ -41,6 +41,40 @@ class InstagramService:
                 })
         return messages
 
+    def extract_incoming_comments(self, payload: dict) -> list[dict]:
+        """Pulls out new-comment events (someone commenting on one of our posts).
+
+        Skips comments made by our own IG account so a private reply we send
+        can never be picked up as a new comment and trigger another reply.
+        """
+        if payload.get("object") != "instagram":
+            return []
+
+        comments = []
+        for entry in payload.get("entry", []):
+            ig_business_id = entry.get("id")
+            for change in entry.get("changes", []):
+                if change.get("field") != "comments":
+                    continue
+                value = change.get("value", {})
+                commenter = value.get("from", {})
+                commenter_id = commenter.get("id")
+                comment_id = value.get("id")
+                text = value.get("text")
+                if not (comment_id and commenter_id and text):
+                    continue
+                if commenter_id == ig_business_id:
+                    continue
+                comments.append({
+                    "ig_business_id": ig_business_id,
+                    "comment_id": comment_id,
+                    "commenter_id": commenter_id,
+                    "commenter_username": commenter.get("username"),
+                    "text": text,
+                    "media_id": value.get("media", {}).get("id"),
+                })
+        return comments
+
     async def send_text_message(self, recipient_id: str, text: str) -> dict:
         url = f"{self.base_url}/me/messages"
         headers = {"Authorization": f"Bearer {self.access_token}"}
@@ -56,13 +90,44 @@ class InstagramService:
 
         return response.json()
 
-    async def handle_webhook(self, payload: dict, reply_text: str = "Hi This is Test message") -> list[dict]:
-        """Auto-replies to every real incoming message found in the payload."""
-        results = []
+    async def send_private_reply(self, comment_id: str, text: str) -> dict:
+        """DMs the person who left `comment_id`, via IG's private-reply API."""
+        url = f"{self.base_url}/me/messages"
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        body = {"recipient": {"comment_id": comment_id}, "message": {"text": text}}
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(url, headers=headers, json=body)
+
+        if response.is_error:
+            logger.error(f"Failed to send private reply for comment {comment_id}: {response.text}")
+        else:
+            logger.info(f"Sent private-reply DM for comment {comment_id}: {text}")
+
+        return response.json()
+
+    async def handle_webhook(
+        self,
+        payload: dict,
+        message_reply_text: str = "Hi This is Test message",
+        comment_reply_text: str = "Thank you for commenting on this post!",
+    ) -> dict:
+        """Handles every IG event in a webhook payload: auto-replies to DMs
+        and sends a thank-you DM to anyone who comments on our posts."""
+        message_results = []
         for message in self.extract_incoming_messages(payload):
             result = await self.send_text_message(
                 recipient_id=message["sender_id"],
-                text=reply_text,
+                text=message_reply_text,
             )
-            results.append(result)
-        return results
+            message_results.append(result)
+
+        comment_results = []
+        for comment in self.extract_incoming_comments(payload):
+            result = await self.send_private_reply(
+                comment_id=comment["comment_id"],
+                text=comment_reply_text,
+            )
+            comment_results.append(result)
+
+        return {"messages": message_results, "comments": comment_results}
