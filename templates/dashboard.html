@@ -90,6 +90,20 @@
       border-radius: 8px;
       padding: 12px;
     }
+    #load-more-btn {
+      display: none;
+      margin-top: 12px;
+      width: 100%;
+      border: none;
+      background: #eee;
+      color: #555;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #load-more-btn:hover { background: #e2e2e2; }
     .log-item {
       font-family: 'SF Mono', Consolas, monospace;
       font-size: 0.78rem;
@@ -147,19 +161,17 @@
 
   <div class="card">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-      <div class="label">Recent Events <span id="event-count" style="color:#E1306C;font-weight:700;"></span></div>
+      <div class="label">Server Logs <span id="log-count" style="color:#E1306C;font-weight:700;"></span></div>
       <div style="font-size:0.78rem; color:#aaa;">Next refresh in <span id="countdown" style="color:#E1306C;font-weight:600;">10</span>s</div>
     </div>
-    <div id="event-list"><p class="empty">Loading…</p></div>
-  </div>
-
-  <div class="card">
-    <div class="label">Server Logs <span id="log-count" style="color:#E1306C;font-weight:700;"></span></div>
     <div id="log-list"><p class="empty">Loading…</p></div>
+    <button id="load-more-btn" onclick="loadOlderLogs()">Load older logs</button>
   </div>
 
   <script>
     let secondsLeft = 10;
+    const logsById = new Map();
+    let hasMoreOlder = true;
 
     document.getElementById('webhook-url').value = window.location.origin + '/webhook';
     document.getElementById('privacy-url').value = window.location.origin + '/privacy-policy';
@@ -184,52 +196,61 @@
       });
     }
 
+    function renderLogs() {
+      const sorted = Array.from(logsById.values()).sort((a, b) => (a.id < b.id ? 1 : -1));
+
+      document.getElementById('log-count').textContent = sorted.length ? `(${sorted.length})` : '';
+
+      const logList = document.getElementById('log-list');
+      logList.innerHTML = sorted.length
+        ? sorted.map(l => `
+            <div class="log-item level-${l.level}">
+              <span class="time">${l.time}</span>${l.message}
+            </div>
+          `).join('')
+        : '<p class="empty">No logs yet.</p>';
+
+      document.getElementById('load-more-btn').style.display = hasMoreOlder ? 'block' : 'none';
+    }
+
+    // Polled every 10s — only ever fetches the newest page, so a live tail
+    // never re-fetches (or re-renders) logs already paged in below it.
     async function refresh() {
       try {
-        const res = await fetch('/events');
-        const data = await res.json();
-        document.getElementById('count').textContent = data.webhook_count;
-
-        const eventCount = data.events.length;
-        document.getElementById('event-count').textContent = eventCount ? `(${eventCount})` : '';
-
-        const list = document.getElementById('event-list');
-        if (!eventCount) {
-          list.innerHTML = '<p class="empty">No events yet.</p>';
-        } else {
-          list.innerHTML = data.events.map(e => `
-            <div class="event-item">
-              <span class="time">${e.received_at}</span>
-              <pre>${JSON.stringify(e.raw, null, 2)}</pre>
-            </div>
-          `).join('');
-        }
+        const statsRes = await fetch('/stats');
+        const stats = await statsRes.json();
+        document.getElementById('count').textContent = stats.webhook_count;
       } catch(e) {
         console.error(e);
       }
 
       try {
-        const logRes = await fetch('/logs');
+        const logRes = await fetch('/logs?limit=20');
         const logData = await logRes.json();
-
-        const logCount = logData.logs.length;
-        document.getElementById('log-count').textContent = logCount ? `(${logCount})` : '';
-
-        const logList = document.getElementById('log-list');
-        if (!logCount) {
-          logList.innerHTML = '<p class="empty">No logs yet.</p>';
-        } else {
-          logList.innerHTML = logData.logs.map(l => `
-            <div class="log-item level-${l.level}">
-              <span class="time">${l.time}</span>${l.message}
-            </div>
-          `).join('');
-        }
+        logData.logs.forEach(l => logsById.set(l.id, l));
+        renderLogs();
       } catch(e) {
         console.error(e);
       }
 
       secondsLeft = 10;
+    }
+
+    // Manual "Load older logs" — cursor pagination via before_id, so this
+    // never does an expensive skip() over the collection.
+    async function loadOlderLogs() {
+      const oldest = Array.from(logsById.values()).sort((a, b) => (a.id < b.id ? 1 : -1)).pop();
+      if (!oldest) return;
+
+      try {
+        const res = await fetch(`/logs?before_id=${oldest.id}&limit=20`);
+        const data = await res.json();
+        data.logs.forEach(l => logsById.set(l.id, l));
+        hasMoreOlder = data.has_more;
+        renderLogs();
+      } catch(e) {
+        console.error(e);
+      }
     }
 
     // countdown tick every second

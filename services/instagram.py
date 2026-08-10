@@ -44,6 +44,10 @@ class InstagramService:
     def extract_incoming_comments(self, payload: dict) -> list[dict]:
         """Pulls out new-comment events (someone commenting on one of our posts).
 
+        For the Instagram API with Instagram Login, Meta puts `field` and
+        `value` directly on the entry (no `changes[]` wrapper — that shape is
+        only used by the older Instagram API with Facebook Login).
+
         Skips comments made by our own IG account so a private reply we send
         can never be picked up as a new comment and trigger another reply.
         """
@@ -52,31 +56,33 @@ class InstagramService:
 
         comments = []
         for entry in payload.get("entry", []):
+            if entry.get("field") not in ("comments", "live_comments"):
+                continue
             ig_business_id = entry.get("id")
-            for change in entry.get("changes", []):
-                if change.get("field") != "comments":
-                    continue
-                value = change.get("value", {})
-                commenter = value.get("from", {})
-                commenter_id = commenter.get("id")
-                comment_id = value.get("id")
-                text = value.get("text")
-                if not (comment_id and commenter_id and text):
-                    continue
-                if commenter_id == ig_business_id:
-                    continue
-                comments.append({
-                    "ig_business_id": ig_business_id,
-                    "comment_id": comment_id,
-                    "commenter_id": commenter_id,
-                    "commenter_username": commenter.get("username"),
-                    "text": text,
-                    "media_id": value.get("media", {}).get("id"),
-                })
+            value = entry.get("value", {})
+            commenter = value.get("from", {})
+            commenter_id = commenter.get("id")
+            comment_id = value.get("id")
+            text = value.get("text")
+            if not (comment_id and commenter_id and text):
+                continue
+            if commenter_id == ig_business_id:
+                continue
+            comments.append({
+                "ig_business_id": ig_business_id,
+                "comment_id": comment_id,
+                "commenter_id": commenter_id,
+                "commenter_username": commenter.get("username"),
+                "text": text,
+                "media_id": value.get("media", {}).get("id"),
+            })
         return comments
 
-    async def send_text_message(self, recipient_id: str, text: str) -> dict:
-        url = f"{self.base_url}/me/messages"
+    async def send_text_message(self, recipient_id: str, text: str, ig_business_id: str) -> dict:
+        """POSTs to /<IG_ID>/messages, as required by the Instagram API with
+        Instagram Login (graph.instagram.com) — this host does not support
+        the older /me/messages alias from the Facebook Login flow."""
+        url = f"{self.base_url}/{ig_business_id}/messages"
         headers = {"Authorization": f"Bearer {self.access_token}"}
         body = {"recipient": {"id": recipient_id}, "message": {"text": text}}
 
@@ -90,9 +96,9 @@ class InstagramService:
 
         return response.json()
 
-    async def send_private_reply(self, comment_id: str, text: str) -> dict:
+    async def send_private_reply(self, comment_id: str, text: str, ig_business_id: str) -> dict:
         """DMs the person who left `comment_id`, via IG's private-reply API."""
-        url = f"{self.base_url}/me/messages"
+        url = f"{self.base_url}/{ig_business_id}/messages"
         headers = {"Authorization": f"Bearer {self.access_token}"}
         body = {"recipient": {"comment_id": comment_id}, "message": {"text": text}}
 
@@ -109,16 +115,18 @@ class InstagramService:
     async def handle_webhook(
         self,
         payload: dict,
-        message_reply_text: str = "Hi This is Test message",
-        comment_reply_text: str = "Thank you for commenting on this post!",
+        message_reply_text: str = "Hello!",
+        comment_reply_text_template: str = 'Thank you for your comment: "{text}"',
     ) -> dict:
         """Handles every IG event in a webhook payload: auto-replies to DMs
-        and sends a thank-you DM to anyone who comments on our posts."""
+        and sends a thank-you DM (quoting the comment) to anyone who comments
+        on our posts."""
         message_results = []
         for message in self.extract_incoming_messages(payload):
             result = await self.send_text_message(
                 recipient_id=message["sender_id"],
                 text=message_reply_text,
+                ig_business_id=message["ig_business_id"],
             )
             message_results.append(result)
 
@@ -126,7 +134,8 @@ class InstagramService:
         for comment in self.extract_incoming_comments(payload):
             result = await self.send_private_reply(
                 comment_id=comment["comment_id"],
-                text=comment_reply_text,
+                text=comment_reply_text_template.format(text=comment["text"]),
+                ig_business_id=comment["ig_business_id"],
             )
             comment_results.append(result)
 

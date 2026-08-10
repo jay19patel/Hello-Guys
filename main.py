@@ -4,10 +4,12 @@ import logging
 import os
 from datetime import datetime
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.templating import Jinja2Templates
-from pymongo import DESCENDING, MongoClient
+from pymongo import DESCENDING, MongoClient, ReturnDocument
 from pymongo.errors import PyMongoError
 
 from services.instagram import InstagramService
@@ -19,8 +21,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ig-automation")
 
 # ----------------------------------------------------------------------------
-# MongoDB setup — events and logs are stored in separate collections so the
-# dashboard can read persisted history instead of an in-memory list.
+# MongoDB setup — logs are the single source of truth for the dashboard (every
+# incoming webhook is already logged with its raw payload, so there's no
+# separate "events" collection duplicating that data). The webhook counter is
+# a single upserted document, incremented atomically, instead of a full
+# collection scan/count on every request.
 # ----------------------------------------------------------------------------
 MONGODB_URI = os.getenv("MONGODB_URI")
 MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "whatsapp_sync")
@@ -30,8 +35,8 @@ if not MONGODB_URI:
 
 mongo_client = MongoClient(MONGODB_URI)
 db = mongo_client[MONGODB_DB_NAME]
-events_collection = db["events"]
 logs_collection = db["logs"]
+stats_collection = db["stats"]
 
 
 class MongoLogHandler(logging.Handler):
@@ -91,19 +96,20 @@ async def verify_webhook(request: Request):
 
 
 # ----------------------------------------------------------------------------
-# 2. Main webhook receiver (POST) - store + log, then auto-reply to real
-# incoming Instagram messages via InstagramService.
+# 2. Main webhook receiver (POST) - log, then dispatch to the right service.
 # ----------------------------------------------------------------------------
 @app.post("/webhook")
 async def receive_webhook(request: Request):
     payload = await request.json()
 
-    events_collection.insert_one({
-        "received_at": datetime.now().strftime("%H:%M:%S"),
-        "raw": payload,
-    })
-    webhook_count = events_collection.count_documents({})
-    logger.info(f"Incoming webhook #{webhook_count}: {payload}")
+    counter = stats_collection.find_one_and_update(
+        {"_id": "webhook_count"},
+        {"$inc": {"count": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    webhook_count = counter["count"]
+    logger.info(f"Incoming webhook #{webhook_count} ({payload.get('object')}): {payload}")
 
     # Meta sends "object": "instagram" for IG events and "whatsapp_business_account"
     # for WhatsApp Cloud API events — dispatch each to its own service.
@@ -134,7 +140,7 @@ async def privacy_policy(request: Request):
 
 
 # ----------------------------------------------------------------------------
-# 4. Dashboard - track webhook count + raw events + logs
+# 4. Dashboard - track webhook count + logs
 # ----------------------------------------------------------------------------
 @app.get("/")
 async def dashboard(request: Request):
@@ -142,24 +148,36 @@ async def dashboard(request: Request):
 
 
 # -------------------------------
-# Events API (polled every 10s)
+# Stats API (polled every 10s) — single point lookup, no collection scan
 # -------------------------------
-@app.get("/events")
-async def get_events():
-    webhook_count = events_collection.count_documents({})
-    cursor = events_collection.find({}, {"_id": 0}).sort("_id", DESCENDING).limit(20)
-    return {
-        "webhook_count": webhook_count,
-        "events": list(cursor),
-    }
+@app.get("/stats")
+async def get_stats():
+    counter = stats_collection.find_one({"_id": "webhook_count"})
+    return {"webhook_count": counter["count"] if counter else 0}
 
 
 # -------------------------------
-# Logs API (polled every 10s)
+# Logs API — cursor/keyset pagination via before_id, so paging through old
+# logs never needs an expensive `skip()` over the collection.
 # -------------------------------
 @app.get("/logs")
-async def get_logs():
-    cursor = logs_collection.find({}, {"_id": 0}).sort("_id", DESCENDING).limit(50)
+async def get_logs(before_id: str | None = None, limit: int = 20):
+    limit = max(1, min(limit, 100))
+    query = {}
+    if before_id:
+        try:
+            query["_id"] = {"$lt": ObjectId(before_id)}
+        except InvalidId:
+            raise HTTPException(status_code=400, detail="Invalid before_id")
+
+    docs = list(logs_collection.find(query).sort("_id", DESCENDING).limit(limit + 1))
+    has_more = len(docs) > limit
+    docs = docs[:limit]
+
     return {
-        "logs": list(cursor),
+        "logs": [
+            {"id": str(d["_id"]), "level": d["level"], "message": d["message"], "time": d["time"]}
+            for d in docs
+        ],
+        "has_more": has_more,
     }
