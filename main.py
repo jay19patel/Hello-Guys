@@ -10,6 +10,8 @@ from fastapi.templating import Jinja2Templates
 from pymongo import DESCENDING, MongoClient
 from pymongo.errors import PyMongoError
 
+from services.instagram import InstagramService
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -52,9 +54,12 @@ logging.getLogger().addHandler(_log_handler)
 # Config (set these as environment variables, never hardcode in prod)
 # ----------------------------------------------------------------------------
 WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "change-this-verify-token")  # your own custom token — must match the "Verify Token" field you enter in Meta App Dashboard -> Webhooks
+IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN")
+GRAPH_API_VERSION = os.getenv("GRAPH_API_VERSION", "v26.0")
 
 app = FastAPI(title="Instagram Webhook Monitor")
 templates = Jinja2Templates(directory="templates")
+instagram_service = InstagramService(access_token=IG_ACCESS_TOKEN, api_version=GRAPH_API_VERSION)
 
 
 # ----------------------------------------------------------------------------
@@ -77,7 +82,8 @@ async def verify_webhook(request: Request):
 
 
 # ----------------------------------------------------------------------------
-# 2. Main webhook receiver (POST) - just store + log, no processing
+# 2. Main webhook receiver (POST) - store + log, then auto-reply to real
+# incoming Instagram messages via InstagramService.
 # ----------------------------------------------------------------------------
 @app.post("/webhook")
 async def receive_webhook(request: Request):
@@ -89,6 +95,9 @@ async def receive_webhook(request: Request):
     })
     webhook_count = events_collection.count_documents({})
     logger.info(f"Incoming webhook #{webhook_count}: {payload}")
+
+    if payload.get("object") == "instagram":
+        await instagram_service.handle_webhook(payload)
 
     return {"status": "received"}
 
