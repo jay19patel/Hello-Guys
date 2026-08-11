@@ -2,11 +2,20 @@ import logging
 
 import httpx
 
+from services.base import WebhookService
+
 logger = logging.getLogger("ig-automation")
 
 
-class WhatsAppService:
-    """Parses WhatsApp Cloud API webhook payloads and sends replies via the Graph API."""
+class WhatsAppService(WebhookService):
+    """Parses WhatsApp Cloud API webhook payloads and sends replies via the Graph API.
+
+    Not wired up in main.py yet — see the ACTIVE_SERVICES comment there for how
+    to re-enable. The class already implements WebhookService so re-enabling
+    it is just instantiating it and appending it to that list.
+    """
+
+    object_type = "whatsapp_business_account"
 
     def __init__(self, access_token: str, phone_number_id: str | None = None, api_version: str = "v26.0"):
         self.access_token = access_token

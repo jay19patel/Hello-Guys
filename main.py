@@ -12,8 +12,11 @@ from fastapi.templating import Jinja2Templates
 from pymongo import DESCENDING, MongoClient, ReturnDocument
 from pymongo.errors import PyMongoError
 
+from services.base import WebhookService
 from services.instagram import InstagramService
-from services.whatsapp import WhatsAppService
+
+# WhatsAppService import intentionally left out — see ACTIVE_SERVICES below for
+# how to bring WhatsApp back online.
 
 load_dotenv()
 
@@ -63,17 +66,17 @@ WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "change-this-verify-tok
 GRAPH_API_VERSION = os.getenv("GRAPH_API_VERSION", "v26.0")
 
 IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN")
-WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
 app = FastAPI(title="Instagram + WhatsApp Webhook Monitor")
 templates = Jinja2Templates(directory="templates")
 instagram_service = InstagramService(access_token=IG_ACCESS_TOKEN, api_version=GRAPH_API_VERSION)
-whatsapp_service = WhatsAppService(
-    access_token=WHATSAPP_ACCESS_TOKEN,
-    phone_number_id=WHATSAPP_PHONE_NUMBER_ID,
-    api_version=GRAPH_API_VERSION,
-)
+
+# Every service here gets matched against payload["object"] via its `object_type`
+# and dispatched to automatically — no per-platform branching needed.
+# To bring WhatsApp back: uncomment the import above, instantiate WhatsAppService
+# (reading WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID from .env), and add
+# it to this list.
+ACTIVE_SERVICES: list[WebhookService] = [instagram_service]
 
 
 # ----------------------------------------------------------------------------
@@ -111,12 +114,13 @@ async def receive_webhook(request: Request):
     webhook_count = counter["count"]
     logger.info(f"Incoming webhook #{webhook_count} ({payload.get('object')}): {payload}")
 
-    # Meta sends "object": "instagram" for IG events and "whatsapp_business_account"
-    # for WhatsApp Cloud API events — dispatch each to its own service.
-    if payload.get("object") == "instagram":
-        await instagram_service.handle_webhook(payload)
-    elif payload.get("object") == "whatsapp_business_account":
-        await whatsapp_service.handle_webhook(payload)
+    # Meta sends "object": "instagram" for IG events, "whatsapp_business_account"
+    # for WhatsApp Cloud API events, etc. — match it against each active
+    # service's object_type and dispatch to whichever one applies.
+    for service in ACTIVE_SERVICES:
+        if service.object_type == payload.get("object"):
+            await service.handle_webhook(payload)
+            break
 
     return {"status": "received"}
 

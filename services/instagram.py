@@ -2,11 +2,15 @@ import logging
 
 import httpx
 
+from services.base import WebhookService
+
 logger = logging.getLogger("ig-automation")
 
 
-class InstagramService:
+class InstagramService(WebhookService):
     """Parses Instagram webhook payloads and sends replies via the Graph API."""
+
+    object_type = "instagram"
 
     def __init__(self, access_token: str, api_version: str = "v25.0"):
         self.access_token = access_token
