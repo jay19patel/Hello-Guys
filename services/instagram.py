@@ -46,11 +46,13 @@ class InstagramService(WebhookService):
         return messages
 
     def extract_incoming_comments(self, payload: dict) -> list[dict]:
-        """Pulls out new-comment events (someone commenting on one of our posts).
+        """Pulls out new-comment events (someone commenting on one of our posts
+        or reels — both are "media" and use the same "comments" field).
 
-        For the Instagram API with Instagram Login, Meta puts `field` and
-        `value` directly on the entry (no `changes[]` wrapper — that shape is
-        only used by the older Instagram API with Facebook Login).
+        Comment/live-comment events use the classic Graph API `changes[]`
+        shape (`entry.changes[].field` / `.value`), unlike DM events which
+        put `messaging[]` directly on the entry — confirmed against Meta's
+        own test-webhook payload for the "comments" field.
 
         Skips comments made by our own IG account so a private reply we send
         can never be picked up as a new comment and trigger another reply.
@@ -60,26 +62,27 @@ class InstagramService(WebhookService):
 
         comments = []
         for entry in payload.get("entry", []):
-            if entry.get("field") not in ("comments", "live_comments"):
-                continue
             ig_business_id = entry.get("id")
-            value = entry.get("value", {})
-            commenter = value.get("from", {})
-            commenter_id = commenter.get("id")
-            comment_id = value.get("id")
-            text = value.get("text")
-            if not (comment_id and commenter_id and text):
-                continue
-            if commenter_id == ig_business_id:
-                continue
-            comments.append({
-                "ig_business_id": ig_business_id,
-                "comment_id": comment_id,
-                "commenter_id": commenter_id,
-                "commenter_username": commenter.get("username"),
-                "text": text,
-                "media_id": value.get("media", {}).get("id"),
-            })
+            for change in entry.get("changes", []):
+                if change.get("field") not in ("comments", "live_comments"):
+                    continue
+                value = change.get("value", {})
+                commenter = value.get("from", {})
+                commenter_id = commenter.get("id")
+                comment_id = value.get("id")
+                text = value.get("text")
+                if not (comment_id and commenter_id and text):
+                    continue
+                if commenter_id == ig_business_id:
+                    continue
+                comments.append({
+                    "ig_business_id": ig_business_id,
+                    "comment_id": comment_id,
+                    "commenter_id": commenter_id,
+                    "commenter_username": commenter.get("username"),
+                    "text": text,
+                    "media_id": value.get("media", {}).get("id"),
+                })
         return comments
 
     async def send_text_message(self, recipient_id: str, text: str, ig_business_id: str) -> dict:
