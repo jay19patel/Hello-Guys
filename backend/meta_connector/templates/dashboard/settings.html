@@ -1,0 +1,207 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<header class="flex flex-col gap-1">
+    <h1 class="text-[26px] leading-[32px] font-semibold tracking-[-0.01em]">Settings</h1>
+    <p class="text-muted">Meta app, webhook and connected accounts. Everything here is stored in the database.</p>
+</header>
+
+<!-- Webhook -->
+<section class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10" aria-labelledby="webhook-title">
+    <div class="flex flex-col gap-1">
+        <h2 id="webhook-title" class="text-[16px] font-semibold">Webhook</h2>
+        <p class="text-[14px] text-muted">Paste both values in Meta App Dashboard → WhatsApp / Instagram → Configuration → Webhook.</p>
+    </div>
+    <div class="bg-surface border border-line rounded-xl divide-y divide-line">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-5 py-4">
+            <span class="sm:w-32 shrink-0 text-[13px] font-semibold">Callback URL</span>
+            <code id="webhookUrl" class="flex-1 min-w-0 break-all font-mono text-[13px]">{{ webhook_url }}</code>
+            <button type="button" onclick="copyText('webhookUrl', this)" class="btn btn-ghost btn-sm shrink-0 self-start sm:self-auto" aria-label="Copy callback URL"><i class="fa-regular fa-copy"></i> Copy</button>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-5 py-4">
+            <span class="sm:w-32 shrink-0 text-[13px] font-semibold">Verify token</span>
+            <code id="verifyToken" class="flex-1 min-w-0 break-all font-mono text-[13px]">{{ config.verify_token }}</code>
+            <button type="button" onclick="copyText('verifyToken', this)" class="btn btn-ghost btn-sm shrink-0 self-start sm:self-auto" aria-label="Copy verify token"><i class="fa-regular fa-copy"></i> Copy</button>
+        </div>
+    </div>
+</section>
+
+<!-- Meta App -->
+<section class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10 border-t border-line pt-[var(--section-gap)]" aria-labelledby="app-title">
+    <div class="flex flex-col gap-2">
+        <h2 id="app-title" class="text-[16px] font-semibold">Meta app</h2>
+        <p class="text-[14px] text-muted">The App Secret lets the server reject webhooks that didn't come from Meta.</p>
+        {% if config.app_secret %}
+            <span class="pill bg-ok/10 text-ok self-start"><i class="fa-solid fa-shield-halved"></i> Signatures verified</span>
+        {% else %}
+            <span class="pill bg-warn/10 text-warn self-start"><i class="fa-solid fa-triangle-exclamation"></i> No App Secret — signatures NOT verified</span>
+        {% endif %}
+    </div>
+    <form method="post" class="bg-surface border border-line rounded-xl p-5 grid sm:grid-cols-2 gap-5">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="config">
+        {% include "dashboard/_fields.html" with form=config_form %}
+        <div class="sm:col-span-2 flex justify-end border-t border-line pt-4">
+            <button class="btn btn-primary">Save app settings</button>
+        </div>
+    </form>
+</section>
+
+<!-- Accounts -->
+<section class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10 border-t border-line pt-[var(--section-gap)]" aria-labelledby="accounts-title">
+    <div class="flex flex-col gap-2">
+        <h2 id="accounts-title" class="text-[16px] font-semibold">Connected accounts</h2>
+        <p class="text-[14px] text-muted">WhatsApp numbers and Instagram accounts. Tokens are checked with Meta every 12 hours.</p>
+        <a href="{% url 'dashboard-settings' %}#account-form" class="btn btn-ghost btn-sm self-start"><i class="fa-solid fa-plus"></i> Add account</a>
+    </div>
+
+    <div class="bg-surface border border-line rounded-xl overflow-hidden">
+        {% if accounts %}
+        <ul class="divide-y divide-line">
+            {% for acc in accounts %}
+            {% with h=acc.token_health %}
+            <li class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 px-5 py-4 {% if edit_account.pk == acc.pk %}bg-accent/5{% endif %}">
+                <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <span class="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center
+                        {% if acc.platform == 'whatsapp' %}bg-wa/10 text-wa{% elif acc.platform == 'instagram' %}bg-ig/10 text-ig{% else %}bg-subtle text-muted{% endif %}">
+                        <i class="fa-brands {% if acc.platform == 'whatsapp' %}fa-whatsapp{% elif acc.platform == 'instagram' %}fa-instagram{% else %}fa-facebook-messenger{% endif %}"></i>
+                    </span>
+                    <span class="flex flex-col min-w-0">
+                        {% if acc.platform == 'instagram' %}
+                        <a href="{% url 'dashboard-account' acc.pk %}" class="font-semibold truncate hover:text-accent">{{ acc.display_name }}</a>
+                        {% else %}
+                        <span class="font-semibold truncate">{{ acc.display_name }}</span>
+                        {% endif %}
+                        <span class="text-[13px] text-muted font-mono truncate">
+                            {% if acc.platform == 'whatsapp' %}{{ acc.phone_number_id|default:"No phone number ID" }}{% else %}{{ acc.instagram_id|default:"No Instagram ID" }}{% endif %}
+                        </span>
+                    </span>
+                </div>
+
+                <div class="md:w-60 shrink-0 flex flex-col gap-0.5 text-[13px]">
+                    <span class="pill self-start {% if h == 'ok' %}bg-ok/10 text-ok{% elif h == 'expiring' or h == 'unknown' %}bg-warn/10 text-warn{% else %}bg-bad/10 text-bad{% endif %}">
+                        {% if h == 'ok' %}<i class="fa-solid fa-circle-check"></i> Token valid{% elif h == 'expiring' %}Expiring soon{% elif h == 'unknown' %}Not checked{% elif h == 'missing' %}No token{% elif h == 'expired' %}Expired{% else %}Invalid{% endif %}
+                    </span>
+                    {% if h == 'ok' or h == 'expiring' %}
+                    <span class="text-muted">{% if acc.token_type %}{{ acc.token_type|title }} · {% endif %}{% if acc.token_expires_at %}expires {{ acc.token_expires_at|date:"d M Y" }}{% else %}never expires{% endif %}</span>
+                    {% if acc.token_data_access_expires_at %}<span class="text-muted" title="Meta stops data access on this date unless the token is re-authorised. System User tokens don't have this limit.">Data access until {{ acc.token_data_access_expires_at|date:"d M Y" }}</span>{% endif %}
+                    {% endif %}
+                    {% if acc.missing_scopes %}<span class="text-bad">Missing: {{ acc.missing_scopes|join:", " }}</span>{% endif %}
+                    {% if acc.token_checked_at %}<span class="text-muted">Checked {{ acc.token_checked_at|timesince }} ago</span>{% endif %}
+                </div>
+
+                <span class="md:w-20 shrink-0 text-[13px] font-medium {% if acc.is_active %}text-ok{% else %}text-muted{% endif %}">
+                    <i class="fa-solid fa-circle text-[7px] align-middle"></i> {% if acc.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+
+                <div class="flex items-center gap-2 shrink-0 md:w-[220px] md:justify-end">
+                    {% if acc.platform == 'instagram' %}
+                    <a href="{% url 'dashboard-account' acc.pk %}" class="btn btn-ghost btn-sm">Posts &amp; Auto-DM</a>
+                    {% endif %}
+                    {% if acc.access_token_encrypted %}
+                    <form method="post">{% csrf_token %}
+                        <input type="hidden" name="action" value="check_token"><input type="hidden" name="account_id" value="{{ acc.pk }}">
+                        <button class="btn btn-ghost btn-sm" title="Ask Meta if this token is still valid" aria-label="Check token for {{ acc.display_name }}"><i class="fa-solid fa-rotate"></i></button>
+                    </form>
+                    {% endif %}
+                    <a href="?edit={{ acc.pk }}#account-form" class="btn btn-ghost btn-sm">Edit</a>
+                </div>
+            </li>
+            {% endwith %}
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="px-6 py-12 flex flex-col items-center gap-2 text-center">
+            <i class="fa-solid fa-plug text-[24px] text-muted"></i>
+            <p class="font-semibold">No accounts yet</p>
+            <p class="text-muted">Add your WhatsApp number or Instagram account below.</p>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Add / edit account -->
+<section id="account-form" class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10 border-t border-line pt-[var(--section-gap)] scroll-mt-20" aria-labelledby="account-form-title">
+    <div class="flex flex-col gap-1">
+        <h2 id="account-form-title" class="text-[16px] font-semibold">{% if edit_account %}Edit “{{ edit_account.display_name }}”{% else %}Add account{% endif %}</h2>
+        <p class="text-[14px] text-muted">Paste a Page, System User or User token. A User token is turned into a Page token that never expires.</p>
+    </div>
+    <div class="flex flex-col gap-3">
+        <form method="post" class="bg-surface border border-line rounded-xl p-5 grid sm:grid-cols-2 gap-5">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="account">
+            {% if edit_account %}<input type="hidden" name="account_id" value="{{ edit_account.pk }}">{% endif %}
+            {% include "dashboard/_fields.html" with form=account_form %}
+            <div class="sm:col-span-2 flex items-center justify-between gap-3 border-t border-line pt-4">
+                {% if edit_account %}<a href="{% url 'dashboard-settings' %}" class="btn btn-ghost">Cancel</a>{% else %}<span></span>{% endif %}
+                <button class="btn btn-primary">Save account</button>
+            </div>
+        </form>
+        {% if edit_account %}
+        <form method="post" class="flex justify-end" onsubmit="return confirm('Delete this account? Accounts with message history are deactivated instead.');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="account_id" value="{{ edit_account.pk }}">
+            <button class="btn btn-sm text-bad hover:bg-bad/10"><i class="fa-regular fa-trash-can"></i> Delete account</button>
+        </form>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Team -->
+<section id="team" class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10 border-t border-line pt-[var(--section-gap)] scroll-mt-20" aria-labelledby="team-title">
+    <div class="flex flex-col gap-2">
+        <h2 id="team-title" class="text-[16px] font-semibold">Team</h2>
+        <p class="text-[14px] text-muted">Who can use this dashboard, and what they can do.</p>
+        <dl class="text-[13px] flex flex-col gap-1.5 pt-1">
+            <div><dt class="inline font-semibold">Admin</dt> <dd class="inline text-muted">— everything, incl. Settings, tokens, deleting and Django Admin.</dd></div>
+            <div><dt class="inline font-semibold">Agent</dt> <dd class="inline text-muted">— reply to contacts and set auto-DM messages. No delete, no Settings.</dd></div>
+            <div><dt class="inline font-semibold">Viewer</dt> <dd class="inline text-muted">— read only.</dd></div>
+        </dl>
+    </div>
+    <div class="flex flex-col gap-4">
+        <ul class="bg-surface border border-line rounded-xl divide-y divide-line">
+            {% for member, role in team %}
+            <li class="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-3 {% if not member.is_active %}opacity-60{% endif %}">
+                <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <span class="w-9 h-9 shrink-0 rounded-full bg-subtle flex items-center justify-center font-semibold text-[13px]">{{ member.username|slice:":2"|upper }}</span>
+                    <span class="flex flex-col min-w-0">
+                        <span class="font-semibold truncate">{{ member.get_full_name|default:member.username }}{% if member == request.user %} <span class="text-muted font-normal">(you)</span>{% endif %}</span>
+                        <span class="text-[13px] text-muted truncate">@{{ member.username }} · {% if member.last_login %}last seen {{ member.last_login|timesince }} ago{% else %}never signed in{% endif %}{% if not member.is_active %} · <b>access removed</b>{% endif %}</span>
+                    </span>
+                </div>
+                {% if member == request.user %}
+                <span class="pill bg-accent/10 text-accent self-start sm:self-auto">{{ role }}</span>
+                {% else %}
+                <div class="flex items-center gap-2 shrink-0">
+                    <form method="post" class="field">{% csrf_token %}
+                        <input type="hidden" name="action" value="set_role"><input type="hidden" name="user_id" value="{{ member.pk }}">
+                        <label class="sr-only" for="role-{{ member.pk }}">Role for {{ member.username }}</label>
+                        <select id="role-{{ member.pk }}" name="role" onchange="this.form.requestSubmit()" class="!w-32 !py-1.5">
+                            {% if not role %}<option value="" selected disabled>No role</option>{% endif %}
+                            {% for r in roles %}<option value="{{ r }}" {% if r == role %}selected{% endif %}>{{ r }}</option>{% endfor %}
+                        </select>
+                    </form>
+                    <form method="post">{% csrf_token %}
+                        <input type="hidden" name="action" value="toggle_active"><input type="hidden" name="user_id" value="{{ member.pk }}">
+                        <button class="btn btn-ghost btn-sm {% if member.is_active %}hover:text-bad{% endif %}">{% if member.is_active %}Remove access{% else %}Restore access{% endif %}</button>
+                    </form>
+                </div>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+
+        <form method="post" class="bg-surface border border-line rounded-xl p-5 grid sm:grid-cols-2 gap-5">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_member">
+            <h3 class="sm:col-span-2 font-semibold">Add team member</h3>
+            {% include "dashboard/_fields.html" with form=team_form %}
+            <div class="sm:col-span-2 flex justify-end border-t border-line pt-4">
+                <button class="btn btn-primary"><i class="fa-solid fa-user-plus"></i> Add member</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

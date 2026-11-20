@@ -1,0 +1,186 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ profile.username|default:account.display_name }}{% endblock %}
+
+{% block content %}
+<!-- Profile -->
+{% if profile %}
+<header class="flex flex-col sm:flex-row sm:items-center gap-5">
+    {% if profile.profile_picture_url %}
+    <img src="{{ profile.profile_picture_url }}" referrerpolicy="no-referrer" alt="" class="w-20 h-20 rounded-full object-cover shrink-0">
+    {% else %}
+    <span class="w-20 h-20 rounded-full bg-ig/10 text-ig flex items-center justify-center text-[28px] shrink-0"><i class="fa-brands fa-instagram"></i></span>
+    {% endif %}
+    <div class="flex-1 min-w-0 flex flex-col gap-1">
+        <h1 class="text-[26px] leading-[32px] font-semibold tracking-[-0.01em] truncate">@{{ profile.username }}</h1>
+        <p class="text-muted">{{ profile.name }}{% if profile.name %} · {% endif %}{{ account.display_name }}</p>
+        {% if profile.biography %}<p class="text-[14px] leading-[22px] whitespace-pre-line max-w-xl">{{ profile.biography }}</p>{% endif %}
+    </div>
+    <div class="flex items-center gap-8">
+        <div class="flex flex-col"><span class="text-[22px] font-semibold tabular-nums">{{ profile.media_count|default:0 }}</span><span class="caps">Posts</span></div>
+        <div class="flex flex-col"><span class="text-[22px] font-semibold tabular-nums">{{ profile.followers_count|default:0 }}</span><span class="caps">Followers</span></div>
+        <div class="flex flex-col"><span class="text-[22px] font-semibold tabular-nums">{{ profile.follows_count|default:0 }}</span><span class="caps">Following</span></div>
+        <a href="https://www.instagram.com/{{ profile.username }}/" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="Open on Instagram"><i class="fa-solid fa-arrow-up-right-from-square"></i><span class="sr-only sm:not-sr-only">Instagram</span></a>
+    </div>
+</header>
+{% else %}
+<header class="flex flex-col gap-3">
+    <h1 class="text-[26px] leading-[32px] font-semibold">{{ account.display_name }}</h1>
+    <div class="rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[14px]">
+        <b>Could not load the Instagram profile.</b> Meta said: {{ profile_error }}
+        <div class="text-muted mt-1">Check the Instagram ID and that the saved token is a <b>Page</b> access token (Settings → Edit account).</div>
+    </div>
+</header>
+{% endif %}
+
+<!-- Default rule -->
+<section id="default-rule" class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10 scroll-mt-20" aria-labelledby="default-title">
+    <div class="flex flex-col gap-2">
+        <h2 id="default-title" class="text-[16px] font-semibold">Default auto-DM</h2>
+        <p class="text-[14px] text-muted">Sent to people who comment on a post that has no message of its own. Keep it off to auto-DM only on selected posts.</p>
+        {% if default_rule.is_enabled %}
+        <span class="pill bg-ok/10 text-ok self-start"><i class="fa-solid fa-circle-check"></i> On for all posts</span>
+        {% else %}
+        <span class="pill bg-subtle text-muted self-start">Off</span>
+        {% endif %}
+    </div>
+    <form method="post" class="bg-surface border border-line rounded-xl p-5 grid sm:grid-cols-2 gap-5">
+        {% csrf_token %}
+        <input type="hidden" name="media_id" value="">
+        <fieldset class="contents" {% if not can_reply %}disabled{% endif %}>
+        {% include "dashboard/_fields.html" with form=default_form %}
+        </fieldset>
+        {% if can_reply %}
+        <div class="sm:col-span-2 flex justify-end border-t border-line pt-4">
+            <button class="btn btn-primary">Save default</button>
+        </div>
+        {% else %}
+        <p class="sm:col-span-2 text-[13px] text-muted"><i class="fa-regular fa-eye"></i> View only — your role can't change auto-DM.</p>
+        {% endif %}
+    </form>
+</section>
+
+<!-- Media -->
+<section class="flex flex-col gap-4 border-t border-line pt-[var(--section-gap)]" aria-labelledby="media-title">
+    <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-col gap-1">
+            <h2 id="media-title" class="text-[18px] leading-[24px] font-semibold">Reels &amp; posts</h2>
+            <p class="text-[14px] text-muted">Open a post to give it its own auto-DM message.</p>
+        </div>
+        <div class="flex gap-2">
+            {% if not is_first_page %}<a href="{% url 'dashboard-account' account.pk %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-angles-left"></i> Newest</a>{% endif %}
+            {% if next_cursor %}<a href="?after={{ next_cursor|urlencode }}" class="btn btn-ghost btn-sm">Older <i class="fa-solid fa-angle-right"></i></a>{% endif %}
+        </div>
+    </div>
+
+    {% if media_error %}
+    <div class="rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[14px]"><b>Could not load posts.</b> Meta said: {{ media_error }}</div>
+    {% elif not media %}
+    <div class="bg-surface border border-line rounded-xl px-6 py-14 text-center text-muted">No posts on this account yet.</div>
+    {% else %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        {% for item in media %}
+        {% with on=item.rule.is_enabled %}
+        <article id="media-{{ item.id }}" class="bg-surface border border-line rounded-xl overflow-hidden flex flex-col scroll-mt-20">
+            <a href="{{ item.permalink }}" target="_blank" rel="noopener" class="relative block aspect-square bg-subtle" aria-label="Open post on Instagram">
+                {% if item.thumb %}
+                <img src="{{ item.thumb }}" referrerpolicy="no-referrer" loading="lazy" alt="" class="w-full h-full object-cover"
+                     onerror="this.hidden=true; this.nextElementSibling.classList.remove('hidden')">
+                {% endif %}
+                <span class="absolute inset-0 flex items-center justify-center text-muted text-[28px] -z-0 {% if item.thumb %}hidden{% endif %}"><i class="fa-solid fa-film"></i></span>
+                <span class="absolute top-3 left-3 pill bg-black/60 text-white">
+                    {% if item.media_product_type == 'REELS' %}<i class="fa-solid fa-clapperboard"></i> Reel
+                    {% elif item.media_type == 'CAROUSEL_ALBUM' %}<i class="fa-solid fa-clone"></i> Carousel
+                    {% elif item.media_type == 'VIDEO' %}<i class="fa-solid fa-video"></i> Video
+                    {% else %}<i class="fa-regular fa-image"></i> Post{% endif %}
+                </span>
+                <span class="absolute top-3 right-3 pill {% if item.rule and on %}bg-ok text-white{% elif item.rule %}bg-black/60 text-white{% elif default_rule.is_enabled %}bg-white/90 text-black{% else %}bg-black/40 text-white{% endif %}">
+                    {% if item.rule and on %}Auto-DM ON{% elif item.rule %}Auto-DM OFF{% elif default_rule.is_enabled %}Using default{% else %}No auto-DM{% endif %}
+                </span>
+            </a>
+            <div class="p-4 flex-1 flex flex-col gap-3">
+                <p class="text-[14px] leading-[20px] line-clamp-2 min-h-[40px] {% if not item.caption %}text-muted{% endif %}">{{ item.caption|default:"No caption" }}</p>
+                <div class="flex items-center gap-4 text-[13px] text-muted tabular-nums">
+                    <span title="Likes"><i class="fa-regular fa-heart"></i> {{ item.like_count|default:0 }}</span>
+                    <span title="Comments"><i class="fa-regular fa-comment"></i> {{ item.comments_count|default:0 }}</span>
+                    <span title="Auto-DMs sent" class="{% if item.dm_sent %}text-ok{% endif %}"><i class="fa-regular fa-paper-plane"></i> {{ item.dm_sent }}</span>
+                    <time class="ml-auto" datetime="{{ item.timestamp }}">{{ item.timestamp|slice:":10" }}</time>
+                </div>
+                <details {% if item.form.errors %}open{% endif %} class="border-t border-line pt-3 mt-auto">
+                    <summary class="flex items-center justify-between text-[14px] font-semibold text-accent">
+                        <span>{% if item.rule %}Edit auto-DM{% else %}Set auto-DM for this post{% endif %}</span>
+                        <i class="fa-solid fa-chevron-down text-[12px] chev transition-transform"></i>
+                    </summary>
+                    <form method="post" class="grid gap-4 pt-4">
+                        {% csrf_token %}
+                        <input type="hidden" name="media_id" value="{{ item.id }}">
+                        <fieldset class="contents" {% if not can_reply %}disabled{% endif %}>
+                        {% include "dashboard/_fields.html" with form=item.form %}
+                        </fieldset>
+                        {% if can_reply %}
+                        <div class="flex items-center justify-between gap-2">
+                            {% if item.rule and is_admin %}
+                            <button name="action" value="remove" formnovalidate class="btn btn-sm text-muted hover:text-bad hover:bg-bad/10" title="Delete this post's own rule">Use default</button>
+                            {% else %}<span></span>{% endif %}
+                            <button class="btn btn-primary btn-sm">Save</button>
+                        </div>
+                        {% endif %}
+                    </form>
+                </details>
+            </div>
+        </article>
+        {% endwith %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+
+<!-- Activity -->
+<section class="flex flex-col gap-4 border-t border-line pt-[var(--section-gap)]" aria-labelledby="activity-title">
+    <div class="flex flex-col gap-1">
+        <h2 id="activity-title" class="text-[18px] leading-[24px] font-semibold">Comment activity</h2>
+        <p class="text-[14px] text-muted">The latest 25 comments an auto-DM rule looked at, and what happened.</p>
+    </div>
+    <div class="bg-surface border border-line rounded-xl overflow-hidden">
+        {% if logs %}
+        <ul class="divide-y divide-line">
+            {% for log in logs %}
+            <li class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-5 cell">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <span class="font-semibold truncate">@{{ log.contact.username|default:log.contact.platform_user_id }}</span>
+                    <span class="truncate text-muted" title="{{ log.comment_text }}">“{{ log.comment_text }}”</span>
+                    {% if log.detail %}<span class="text-[13px] {% if log.status == 'failed' %}text-bad{% else %}text-muted{% endif %}">{{ log.detail }}</span>{% endif %}
+                </div>
+                <div class="flex items-center gap-4 shrink-0">
+                    <span class="w-20 flex">
+                        <span class="pill {% if log.status == 'sent' %}bg-ok/10 text-ok{% elif log.status == 'failed' %}bg-bad/10 text-bad{% else %}bg-subtle text-muted{% endif %}">{{ log.get_status_display }}</span>
+                    </span>
+                    <span class="w-12 text-[13px]">{% if log.permalink %}<a href="{{ log.permalink }}" target="_blank" rel="noopener" class="text-accent hover:underline">Post</a>{% endif %}</span>
+                    <time class="w-24 text-right text-[13px] text-muted tabular-nums" datetime="{{ log.created_at|date:'c' }}">{{ log.created_at|date:"d M, H:i" }}</time>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="px-6 py-12 flex flex-col items-center gap-2 text-center">
+            <i class="fa-regular fa-paper-plane text-[24px] text-muted"></i>
+            <p class="font-semibold">No comments handled yet</p>
+            <p class="text-muted max-w-sm">Turn on an auto-DM above, then comment on that post from a test account.</p>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Requirements -->
+<details class="border-t border-line pt-[var(--section-gap)] group">
+    <summary class="flex items-center gap-2 text-[14px] font-semibold text-muted hover:text-ink">
+        <i class="fa-solid fa-circle-info"></i> What auto-DM needs from Meta
+        <i class="fa-solid fa-chevron-down text-[12px] chev transition-transform"></i>
+    </summary>
+    <ol class="list-decimal pl-5 pt-3 flex flex-col gap-1.5 text-[14px] leading-[22px] max-w-2xl">
+        <li>Meta App → Instagram webhooks: subscribe to the <b>comments</b> field (as well as <b>messages</b>).</li>
+        <li>The Page token needs <b>instagram_manage_comments</b> and <b>instagram_manage_messages</b>.</li>
+        <li>In Development mode, only people with a role on the app (admin, developer, tester) trigger webhooks.</li>
+        <li>Meta allows <b>one</b> private DM per comment, within 7 days of it. Each person gets the DM once per post.</li>
+    </ol>
+</details>
+{% endblock %}

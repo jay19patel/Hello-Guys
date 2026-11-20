@@ -11,3 +11,10 @@ wheels/
 
 # Environment variables
 .env
+.env.*
+
+# Database
+*.sqlite3
+*.sqlite3-journal
+*.db
+db.sqlite3

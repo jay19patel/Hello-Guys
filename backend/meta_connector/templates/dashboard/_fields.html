@@ -1,0 +1,17 @@
+{% if form.non_field_errors %}<div class="sm:col-span-2 text-[14px] text-bad">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+{% for field in form %}
+{% if field.field.widget.input_type == 'checkbox' %}
+<label for="{{ field.id_for_label }}" class="field sm:col-span-2 flex items-center gap-3 cursor-pointer select-none">
+    {{ field }}
+    <span class="text-[14px] font-medium">{{ field.label }}</span>
+    {% for error in field.errors %}<span class="text-[13px] text-bad">{{ error }}</span>{% endfor %}
+</label>
+{% else %}
+<div class="field flex flex-col gap-1.5 {% if field.field.widget.attrs.rows %}sm:col-span-2{% endif %}">
+    <label for="{{ field.id_for_label }}" class="text-[13px] font-semibold">{{ field.label }}{% if field.field.required %}<span class="text-bad" aria-hidden="true"> *</span>{% endif %}</label>
+    {{ field }}
+    {% if field.help_text %}<p class="text-[13px] leading-[18px] text-muted">{{ field.help_text }}</p>{% endif %}
+    {% for error in field.errors %}<p class="text-[13px] text-bad"><i class="fa-solid fa-circle-exclamation"></i> {{ error }}</p>{% endfor %}
+</div>
+{% endif %}
+{% endfor %}
