@@ -1,0 +1,199 @@
+{% extends "cms/base.html" %}
+
+{% block head %}
+<title>Contact Inquiries & Leads · Hello Guys</title>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <!-- Header with Action -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <a href="{% url 'cms_ui:overview' %}" class="hover:underline">CMS Studio</a>
+                <span>/</span>
+                <span>Inquiries</span>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-ink mt-1">Inquiries & Leads</h1>
+            <p class="text-sm text-muted">Review, filter, add new contacts, and manage responses to customer inquiries.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{% url 'cms_ui:inquiry-create' %}" class="btn btn-primary text-sm shadow-sm">
+                <i class="fa-solid fa-plus"></i> Add Contact / Lead
+            </a>
+        </div>
+    </div>
+
+    <!-- Search and Filter Bar -->
+    <div class="bg-surface border border-line rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <!-- Status Filter Tabs -->
+        <div class="flex items-center gap-1 bg-subtle p-1 rounded-lg">
+            <a href="?status=all{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}"
+               class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors {% if current_status == 'all' %}bg-surface text-ink shadow-sm{% else %}text-muted hover:text-ink{% endif %}">
+                All ({{ all_count }})
+            </a>
+            <a href="?status=unreplied{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}"
+               class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors {% if current_status == 'unreplied' %}bg-surface text-warn shadow-sm{% else %}text-muted hover:text-ink{% endif %}">
+                Pending Reply ({{ unreplied_count }})
+            </a>
+            <a href="?status=replied{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}"
+               class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors {% if current_status == 'replied' %}bg-surface text-ok shadow-sm{% else %}text-muted hover:text-ink{% endif %}">
+                Replied ({{ replied_count }})
+            </a>
+        </div>
+
+        <!-- Search Form -->
+        <form method="get" class="flex items-center gap-2 flex-1 max-w-md">
+            {% if current_status != 'all' %}
+            <input type="hidden" name="status" value="{{ current_status }}">
+            {% endif %}
+            <div class="relative flex-1">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-muted text-xs"></i>
+                <input type="text" name="q" value="{{ search_query }}" placeholder="Search by name, email, phone, message..."
+                       class="w-full h-9 pl-9 pr-8 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-accent">
+                {% if search_query %}
+                <a href="?status={{ current_status }}" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink text-xs" title="Clear search">
+                    <i class="fa-solid fa-xmark"></i>
+                </a>
+                {% endif %}
+            </div>
+            <button type="submit" class="btn btn-ghost btn-sm text-xs">Search</button>
+        </form>
+    </div>
+
+    <!-- Inquiries Table Card -->
+    <div class="bg-surface border border-line rounded-xl overflow-hidden shadow-sm">
+        {% if inquiries %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm border-collapse">
+                <thead>
+                    <tr class="table-head border-b border-line bg-subtle/50">
+                        <th class="py-3 px-4">Contact / Lead</th>
+                        <th class="py-3 px-4">Subject & Message</th>
+                        <th class="py-3 px-4">Source / Type</th>
+                        <th class="py-3 px-4">Status</th>
+                        <th class="py-3 px-4">Received</th>
+                        <th class="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-line">
+                    {% for inq in inquiries %}
+                    <tr class="hover:bg-subtle/40 transition-colors">
+                        <td class="py-3.5 px-4 align-top">
+                            <div class="font-semibold text-ink">
+                                <a href="{% url 'cms_ui:inquiry-detail' inq.pk %}" class="hover:text-accent transition-colors">
+                                    {{ inq.name }}
+                                </a>
+                            </div>
+                            <div class="text-xs text-muted flex flex-col gap-0.5 mt-0.5">
+                                <a href="mailto:{{ inq.email }}" class="hover:underline flex items-center gap-1">
+                                    <i class="fa-regular fa-envelope text-[10px]"></i> {{ inq.email }}
+                                </a>
+                                {% if inq.phone and inq.phone != 'Not provided' %}
+                                <a href="tel:{{ inq.phone }}" class="hover:underline flex items-center gap-1">
+                                    <i class="fa-solid fa-phone text-[10px]"></i> {{ inq.phone }}
+                                </a>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-4 align-top max-w-xs sm:max-w-md">
+                            <div class="font-medium text-xs text-ink truncate">{{ inq.subject }}</div>
+                            <div class="text-xs text-muted line-clamp-2 mt-0.5">{{ inq.message }}</div>
+                            {% if inq.replies %}
+                            <div class="text-[11px] text-accent mt-1 flex items-center gap-1">
+                                <i class="fa-solid fa-reply text-[10px]"></i> {{ inq.replies|length }} follow-up note(s) logged
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="py-3.5 px-4 align-top">
+                            <span class="inline-block text-xs font-mono bg-subtle px-2 py-0.5 rounded text-muted">
+                                {{ inq.inquiry_type }}
+                            </span>
+                            <div class="text-[10px] text-muted font-mono mt-1">{{ inq.inquiry_id }}</div>
+                        </td>
+                        <td class="py-3.5 px-4 align-top">
+                            {% if inq.is_replied %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-ok/10 text-ok border border-ok/20">
+                                <i class="fa-solid fa-check mr-1 text-[9px]"></i> Replied
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-warn/15 text-warn border border-warn/25">
+                                Pending
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3.5 px-4 align-top text-xs text-muted whitespace-nowrap">
+                            {{ inq.created_at|date:"M d, Y" }}
+                            <div class="text-[11px] text-muted/70">{{ inq.created_at|date:"H:i" }}</div>
+                        </td>
+                        <td class="py-3.5 px-4 align-top text-right whitespace-nowrap">
+                            <div class="flex items-center justify-end gap-1.5">
+                                <form method="post" action="{% url 'cms_ui:inquiry-toggle-replied' inq.pk %}" class="inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="btn btn-ghost btn-sm text-xs px-2" title="Toggle status">
+                                        <i class="fa-solid {% if inq.is_replied %}fa-rotate-left text-warn{% else %}fa-check text-ok{% endif %}"></i>
+                                    </button>
+                                </form>
+                                <a href="{% url 'cms_ui:inquiry-detail' inq.pk %}" class="btn btn-ghost btn-sm text-xs px-2.5" title="View Details">
+                                    <i class="fa-regular fa-eye"></i>
+                                </a>
+                                <a href="{% url 'cms_ui:inquiry-update' inq.pk %}" class="btn btn-ghost btn-sm text-xs px-2.5" title="Edit">
+                                    <i class="fa-regular fa-pen-to-square"></i>
+                                </a>
+                                <a href="{% url 'cms_ui:inquiry-delete' inq.pk %}" class="btn btn-ghost btn-sm text-xs px-2 text-bad hover:bg-bad/10" title="Delete">
+                                    <i class="fa-regular fa-trash-can"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <div class="p-4 border-t border-line flex items-center justify-between text-xs text-muted">
+            <div>
+                Showing page {{ page_obj.number }} of {{ paginator.num_pages }} ({{ paginator.count }} total inquiries)
+            </div>
+            <div class="flex items-center gap-1">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}&status={{ current_status }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="btn btn-ghost btn-sm text-xs">Previous</a>
+                {% endif %}
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}&status={{ current_status }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="btn btn-ghost btn-sm text-xs">Next</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="p-12 text-center text-muted">
+            <div class="w-12 h-12 rounded-full bg-subtle flex items-center justify-center mx-auto text-muted/60 text-lg mb-3">
+                <i class="fa-solid fa-inbox"></i>
+            </div>
+            <h3 class="text-base font-semibold text-ink">No inquiries found</h3>
+            <p class="text-xs text-muted mt-1 max-w-sm mx-auto">
+                {% if search_query %}
+                No inquiries match your query "{{ search_query }}". Try clearing search filters.
+                {% else %}
+                No contact leads are recorded in this view yet.
+                {% endif %}
+            </p>
+            <div class="mt-4 flex items-center justify-center gap-2">
+                {% if search_query %}
+                <a href="{% url 'cms_ui:inquiry-list' %}" class="btn btn-ghost btn-sm text-xs">Clear Search</a>
+                {% endif %}
+                <a href="{% url 'cms_ui:inquiry-create' %}" class="btn btn-primary btn-sm text-xs">
+                    <i class="fa-solid fa-plus"></i> Add New Contact
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

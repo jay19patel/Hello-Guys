@@ -12,7 +12,7 @@ class MetaConfig(models.Model):
     App-level Meta settings, edited from Dashboard > Settings (single row).
     Per-number / per-page IDs and access tokens live on PlatformAccount.
     """
-    app_name = models.CharField(max_length=150, default='Meta Connector', help_text="Meta App Name")
+    app_name = models.CharField(max_length=150, default='Hello Guys', help_text="Meta App Name")
     verify_token = models.CharField(
         max_length=255,
         default=_new_verify_token,

@@ -1,37 +1,104 @@
 {% extends "dashboard/base.html" %}
-{% block title %}{{ profile.username|default:account.display_name }}{% endblock %}
+{% block title %}{{ profile.username|default:account.display_name }} ({{ account.get_platform_display }}){% endblock %}
 
 {% block content %}
-<!-- Profile -->
-{% if profile %}
-<header class="flex flex-col sm:flex-row sm:items-center gap-5">
-    {% if profile.profile_picture_url %}
-    <img src="{{ profile.profile_picture_url }}" referrerpolicy="no-referrer" alt="" class="w-20 h-20 rounded-full object-cover shrink-0">
-    {% else %}
-    <span class="w-20 h-20 rounded-full bg-ig/10 text-ig flex items-center justify-center text-[28px] shrink-0"><i class="fa-brands fa-instagram"></i></span>
-    {% endif %}
-    <div class="flex-1 min-w-0 flex flex-col gap-1">
-        <h1 class="text-[26px] leading-[32px] font-semibold tracking-[-0.01em] truncate">@{{ profile.username }}</h1>
-        <p class="text-muted">{{ profile.name }}{% if profile.name %} · {% endif %}{{ account.display_name }}</p>
-        {% if profile.biography %}<p class="text-[14px] leading-[22px] whitespace-pre-line max-w-xl">{{ profile.biography }}</p>{% endif %}
+<!-- Account Header -->
+{% if account.platform == 'instagram' and profile %}
+<header class="flex flex-col sm:flex-row sm:items-center justify-between gap-5 bg-surface border border-line rounded-xl p-6">
+    <div class="flex items-center gap-5 min-w-0">
+        {% if profile.profile_picture_url %}
+        <img src="{{ profile.profile_picture_url }}" referrerpolicy="no-referrer" alt="" class="w-16 h-16 rounded-full object-cover shrink-0">
+        {% else %}
+        <span class="w-16 h-16 rounded-xl bg-ig/10 text-ig flex items-center justify-center text-[28px] shrink-0"><i class="fa-brands fa-instagram"></i></span>
+        {% endif %}
+        <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-3 flex-wrap">
+                <h1 class="text-[24px] leading-[28px] font-semibold tracking-[-0.01em] truncate">@{{ profile.username }}</h1>
+                <span class="pill {% if account.is_active %}bg-ok/10 text-ok{% else %}bg-subtle text-muted{% endif %}">
+                    <i class="fa-solid fa-circle text-[7px]"></i> {% if account.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+                <span class="pill {% if account.token_health == 'ok' %}bg-ok/10 text-ok{% elif account.token_health == 'expiring' or account.token_health == 'unknown' %}bg-warn/10 text-warn{% else %}bg-bad/10 text-bad{% endif %}">
+                    {% if account.token_health == 'ok' %}<i class="fa-solid fa-circle-check"></i> Token Valid{% elif account.token_health == 'expiring' %}Token Expiring{% elif account.token_health == 'missing' %}No Token{% else %}Token {{ account.token_health|title }}{% endif %}
+                </span>
+            </div>
+            <p class="text-muted text-[14px] mt-0.5">{{ profile.name }}{% if profile.name %} · {% endif %}{{ account.display_name }}</p>
+            {% if profile.biography %}<p class="text-[13px] leading-[20px] text-muted max-w-xl line-clamp-2 mt-1">{{ profile.biography }}</p>{% endif %}
+        </div>
     </div>
-    <div class="flex items-center gap-8">
-        <div class="flex flex-col"><span class="text-[22px] font-semibold tabular-nums">{{ profile.media_count|default:0 }}</span><span class="caps">Posts</span></div>
-        <div class="flex flex-col"><span class="text-[22px] font-semibold tabular-nums">{{ profile.followers_count|default:0 }}</span><span class="caps">Followers</span></div>
-        <div class="flex flex-col"><span class="text-[22px] font-semibold tabular-nums">{{ profile.follows_count|default:0 }}</span><span class="caps">Following</span></div>
-        <a href="https://www.instagram.com/{{ profile.username }}/" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="Open on Instagram"><i class="fa-solid fa-arrow-up-right-from-square"></i><span class="sr-only sm:not-sr-only">Instagram</span></a>
+    <div class="flex items-center gap-4 sm:gap-6 shrink-0">
+        <div class="flex flex-col text-center"><span class="text-[20px] font-semibold tabular-nums">{{ profile.media_count|default:0 }}</span><span class="caps">Posts</span></div>
+        <div class="flex flex-col text-center"><span class="text-[20px] font-semibold tabular-nums">{{ profile.followers_count|default:0 }}</span><span class="caps">Followers</span></div>
+        <div class="flex flex-col text-center"><span class="text-[20px] font-semibold tabular-nums">{{ profile.follows_count|default:0 }}</span><span class="caps">Following</span></div>
+        <a href="https://www.instagram.com/{{ profile.username }}/" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="Open on Instagram"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+        {% if is_admin %}<a href="{% url 'dashboard-settings' %}?edit={{ account.pk }}" class="btn btn-ghost btn-sm" title="Edit account in settings"><i class="fa-solid fa-sliders"></i> Edit</a>{% endif %}
     </div>
 </header>
 {% else %}
-<header class="flex flex-col gap-3">
-    <h1 class="text-[26px] leading-[32px] font-semibold">{{ account.display_name }}</h1>
-    <div class="rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[14px]">
-        <b>Could not load the Instagram profile.</b> Meta said: {{ profile_error }}
-        <div class="text-muted mt-1">Check the Instagram ID and that the saved token is a <b>Page</b> access token (Settings → Edit account).</div>
+<header class="flex flex-col sm:flex-row sm:items-center justify-between gap-5 bg-surface border border-line rounded-xl p-6">
+    <div class="flex items-center gap-4 min-w-0">
+        <span class="w-14 h-14 rounded-xl flex items-center justify-center text-[26px] shrink-0
+            {% if account.platform == 'whatsapp' %}bg-wa/10 text-wa{% elif account.platform == 'instagram' %}bg-ig/10 text-ig{% else %}bg-[#0084FF]/10 text-[#0084FF]{% endif %}">
+            <i class="{{ account.platform_icon }}"></i>
+        </span>
+        <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-3 flex-wrap">
+                <h1 class="text-[22px] leading-[26px] font-semibold tracking-[-0.01em] truncate">{{ account.display_name }}</h1>
+                <span class="pill {% if account.is_active %}bg-ok/10 text-ok{% else %}bg-subtle text-muted{% endif %}">
+                    <i class="fa-solid fa-circle text-[7px]"></i> {% if account.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+                <span class="pill {% if account.token_health == 'ok' %}bg-ok/10 text-ok{% elif account.token_health == 'expiring' or account.token_health == 'unknown' %}bg-warn/10 text-warn{% else %}bg-bad/10 text-bad{% endif %}">
+                    {% if account.token_health == 'ok' %}<i class="fa-solid fa-circle-check"></i> Token Valid{% elif account.token_health == 'expiring' %}Token Expiring{% elif account.token_health == 'missing' %}No Token{% else %}Token {{ account.token_health|title }}{% endif %}
+                </span>
+            </div>
+            <div class="flex items-center gap-2 text-[13px] text-muted font-mono mt-1">
+                <span class="font-semibold">{{ account.get_platform_display }}</span>
+                <span>·</span>
+                <span>{% if account.platform == 'whatsapp' %}Phone ID: {{ account.phone_number_id|default:"Not set" }}{% else %}ID: {{ account.instagram_id|default:"Not set" }}{% endif %}</span>
+            </div>
+        </div>
     </div>
+    {% if is_admin %}
+    <div class="flex items-center gap-2 shrink-0">
+        <a href="{% url 'dashboard-settings' %}?edit={{ account.pk }}" class="btn btn-ghost btn-sm">
+            <i class="fa-solid fa-sliders"></i> Edit Credentials
+        </a>
+    </div>
+    {% endif %}
 </header>
+{% if profile_error %}
+<div class="rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[14px]">
+    <b>Could not load Meta profile.</b> Meta said: {{ profile_error }}
+    <div class="text-muted mt-1">Check the account credentials in <a href="{% url 'dashboard-settings' %}?edit={{ account.pk }}" class="text-accent underline font-medium">Settings → Edit Account</a>.</div>
+</div>
+{% endif %}
 {% endif %}
 
+<!-- KPI Number Cards -->
+<section aria-labelledby="kpi-title" class="bg-surface border border-line rounded-xl p-5 grid grid-cols-2 lg:grid-cols-4 gap-6">
+    <h2 id="kpi-title" class="sr-only">Key statistics</h2>
+    <div class="flex flex-col gap-2">
+        <span class="caps flex items-center gap-2 text-muted"><i class="fa-solid fa-comments"></i> Total Messages</span>
+        <span class="text-[28px] leading-[32px] font-semibold tabular-nums">{{ total_messages }}</span>
+        <span class="text-[13px] text-muted">All conversations</span>
+    </div>
+    <div class="flex flex-col gap-2">
+        <span class="caps flex items-center gap-2 text-ok"><i class="fa-solid fa-arrow-down"></i> Incoming</span>
+        <span class="text-[28px] leading-[32px] font-semibold tabular-nums text-ok">{{ incoming_messages }}</span>
+        <span class="text-[13px] text-muted">Received from contacts</span>
+    </div>
+    <div class="flex flex-col gap-2">
+        <span class="caps flex items-center gap-2 text-accent"><i class="fa-solid fa-arrow-up"></i> Outgoing</span>
+        <span class="text-[28px] leading-[32px] font-semibold tabular-nums text-accent">{{ outgoing_messages }}</span>
+        <span class="text-[13px] text-muted">Sent &amp; automated</span>
+    </div>
+    <div class="flex flex-col gap-2">
+        <span class="caps flex items-center gap-2 text-muted"><i class="fa-solid fa-users"></i> Contacts</span>
+        <span class="text-[28px] leading-[32px] font-semibold tabular-nums">{{ total_contacts }}</span>
+        <span class="text-[13px] text-muted">Connected people</span>
+    </div>
+</section>
+
+{% if account.platform == 'instagram' %}
 <!-- Default rule -->
 <section id="default-rule" class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10 scroll-mt-20" aria-labelledby="default-title">
     <div class="flex flex-col gap-2">
@@ -119,7 +186,7 @@
                         {% if can_reply %}
                         <div class="flex items-center justify-between gap-2">
                             {% if item.rule and is_admin %}
-                            <button name="action" value="remove" formnovalidate class="btn btn-sm text-muted hover:text-bad hover:bg-bad/10" title="Delete this post's own rule">Use default</button>
+                            <button name="action" value="remove" formnovalidate onclick="return confirm('Delete this post\'s own auto-DM rule? The post will use the default message.')" class="btn btn-sm text-muted hover:text-bad hover:bg-bad/10" title="Delete this post's own rule">Use default</button>
                             {% else %}<span></span>{% endif %}
                             <button class="btn btn-primary btn-sm">Save</button>
                         </div>
@@ -169,18 +236,106 @@
         {% endif %}
     </div>
 </section>
+{% endif %}
 
-<!-- Requirements -->
-<details class="border-t border-line pt-[var(--section-gap)] group">
-    <summary class="flex items-center gap-2 text-[14px] font-semibold text-muted hover:text-ink">
-        <i class="fa-solid fa-circle-info"></i> What auto-DM needs from Meta
-        <i class="fa-solid fa-chevron-down text-[12px] chev transition-transform"></i>
-    </summary>
-    <ol class="list-decimal pl-5 pt-3 flex flex-col gap-1.5 text-[14px] leading-[22px] max-w-2xl">
-        <li>Meta App → Instagram webhooks: subscribe to the <b>comments</b> field (as well as <b>messages</b>).</li>
-        <li>The Page token needs <b>instagram_manage_comments</b> and <b>instagram_manage_messages</b>.</li>
-        <li>In Development mode, only people with a role on the app (admin, developer, tester) trigger webhooks.</li>
-        <li>Meta allows <b>one</b> private DM per comment, within 7 days of it. Each person gets the DM once per post.</li>
-    </ol>
-</details>
+<!-- Contacts & Messages on this Channel -->
+<div class="grid xl:grid-cols-[minmax(0,1fr)_380px] gap-[var(--section-gap)] items-start border-t border-line pt-[var(--section-gap)]">
+    <!-- Channel Contacts -->
+    <section class="flex flex-col gap-4 min-w-0" aria-labelledby="ch-contacts-title">
+        <div class="flex items-center justify-between">
+            <h2 id="ch-contacts-title" class="text-[18px] leading-[24px] font-semibold">Contacts on this Channel <span class="text-muted font-normal tabular-nums">({{ total_contacts }})</span></h2>
+            {% if total_contacts > 0 %}
+            <span class="text-[13px] text-muted">Showing latest {{ account_contacts|length }}</span>
+            {% endif %}
+        </div>
+        <div class="bg-surface border border-line rounded-xl overflow-hidden">
+            {% if account_contacts %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="border-b border-line">
+                        <tr class="table-head">
+                            <th>Contact</th>
+                            <th class="hidden sm:table-cell">Identifier</th>
+                            <th>Messages</th>
+                            <th class="text-right">Last Active</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-line text-[14px]">
+                        {% for c in account_contacts %}
+                        {% url 'dashboard-contact' c.pk as contact_url %}
+                        <tr class="group cursor-pointer hover:bg-subtle/70 transition-colors" onclick="window.location.href='{{ contact_url }}'">
+                            <td class="px-5 py-3">
+                                <a href="{{ contact_url }}" class="font-medium hover:text-accent flex items-center gap-2">
+                                    <span class="w-7 h-7 rounded-full bg-subtle flex items-center justify-center text-[12px] font-semibold shrink-0">
+                                        {{ c.name|default:c.username|default:"?"|slice:":1"|upper }}
+                                    </span>
+                                    <span class="truncate">{{ c.name|default:c.username|default:c.platform_user_id }}</span>
+                                </a>
+                            </td>
+                            <td class="px-5 py-3 hidden sm:table-cell text-muted font-mono text-[13px]">
+                                {{ c.phone|default:c.platform_user_id }}
+                            </td>
+                            <td class="px-5 py-3 tabular-nums font-medium text-muted">
+                                {{ c.msg_count }}
+                            </td>
+                            <td class="px-5 py-3 text-right text-muted tabular-nums text-[13px]">
+                                {{ c.last_message_at|timesince|default:"Never" }} ago
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="px-6 py-12 flex flex-col items-center gap-2 text-center text-muted">
+                <i class="fa-regular fa-address-book text-[28px]"></i>
+                <p class="font-semibold text-ink">No contacts yet</p>
+                <p class="text-[14px]">When contacts message this channel, they will appear here automatically.</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- Channel Recent Messages -->
+    <section class="flex flex-col gap-4 min-w-0" aria-labelledby="ch-messages-title">
+        <h2 id="ch-messages-title" class="text-[18px] leading-[24px] font-semibold">Live Message Stream</h2>
+        <div class="bg-surface border border-line rounded-xl overflow-hidden">
+            {% if account_messages %}
+            <ul class="divide-y divide-line">
+                {% for msg in account_messages %}
+                <li class="p-4 flex flex-col gap-1.5 hover:bg-subtle/50 transition-colors">
+                    <div class="flex items-center justify-between text-[13px]">
+                        <span class="font-semibold flex items-center gap-2">
+                            <span class="pill {% if msg.direction == 'incoming' %}bg-ok/10 text-ok{% else %}bg-accent/10 text-accent{% endif %}">
+                                {% if msg.direction == 'incoming' %}In{% else %}Out{% endif %}
+                            </span>
+                            <a href="{% url 'dashboard-contact' msg.contact.pk %}" class="hover:underline truncate max-w-[140px]">
+                                {{ msg.contact.name|default:msg.contact.username|default:msg.contact.platform_user_id }}
+                            </a>
+                        </span>
+                        <time class="text-muted tabular-nums" datetime="{{ msg.created_at|date:'c' }}">
+                            {{ msg.created_at|date:"d M, H:i" }}
+                        </time>
+                    </div>
+                    <p class="text-[14px] text-ink leading-snug break-words">
+                        {{ msg.message_text|default:"(Media / Attachment)" }}
+                    </p>
+                    {% if msg.status and msg.status != 'delivered' and msg.status != 'read' %}
+                    <span class="text-[12px] {% if msg.status == 'failed' %}text-bad{% else %}text-muted{% endif %}">
+                        Status: {{ msg.status|title }}
+                    </span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-6 py-12 flex flex-col items-center gap-2 text-center text-muted">
+                <i class="fa-regular fa-comments text-[28px]"></i>
+                <p class="font-semibold text-ink">No messages yet</p>
+                <p class="text-[14px]">Messages to and from this account will show up here live.</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+</div>
 {% endblock %}

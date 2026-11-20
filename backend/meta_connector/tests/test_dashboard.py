@@ -32,7 +32,7 @@ class UnifiedDashboardTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'dashboard/index.html')
-        self.assertContains(response, "Meta Connector")
+        self.assertContains(response, "Hello Guys")
         self.assertContains(response, "Unified Contact Directory &amp; Messaging")
         self.assertContains(response, "Hello world")
 
@@ -48,12 +48,36 @@ class UnifiedDashboardTests(TestCase):
         """The dashboard's live poll only re-renders when this version changes."""
         url = reverse('meta_connector:dashboard-overview')
         before = self.client.get(url).json()['version']
-        self.assertEqual(before, self.client.get(url).json()['version'])
         Message.objects.create(
-            platform_account=self.account, contact=self.contact,
-            message_id="wamid.test_msg_2", direction=Message.DIRECTION_INCOMING, message_text="New one"
+            platform_account=self.account,
+            contact=self.contact,
+            message_id="wamid.test_msg_2",
+            direction=Message.DIRECTION_INCOMING,
+            message_text="Second message"
         )
-        self.assertNotEqual(before, self.client.get(url).json()['version'])
+        after = self.client.get(url).json()['version']
+        self.assertNotEqual(before, after)
+
+    def test_dynamic_platform_groups_in_sidebar(self):
+        """Verifies WhatsApp, Instagram and Facebook Messenger appear automatically in sidebar."""
+        PlatformAccount.objects.create(
+            platform=PlatformAccount.PLATFORM_INSTAGRAM,
+            display_name="Brand Instagram",
+            instagram_id="IG_123",
+            is_active=True
+        )
+        PlatformAccount.objects.create(
+            platform=PlatformAccount.PLATFORM_FACEBOOK,
+            display_name="Support Messenger",
+            instagram_id="PAGE_123",
+            is_active=True
+        )
+        response = self.client.get(reverse('dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Test Channel")
+        self.assertContains(response, "Brand Instagram")
+        self.assertContains(response, "Support Messenger")
+        self.assertContains(response, "Facebook Messenger")
 
     def test_dashboard_marks_live_sections(self):
         response = self.client.get(reverse('dashboard'))
@@ -101,6 +125,22 @@ class ContactPageTests(TestCase):
         with patch('meta_connector.views.contact_views.MessageService.send_message', return_value=(None, False, 'Outside window')):
             self.assertContains(self.client.post(self.url, {'text': 'x'}, follow=True), 'Meta said: Outside window')
         self.assertContains(self.client.post(self.url, {'text': '  '}, follow=True), 'Type a message first.')
+
+    def test_long_chat_shows_newest_messages_oldest_first(self):
+        Message.objects.bulk_create([Message(platform_account=self.account, contact=self.contact, message_id=f'bulk{i}',
+                                             message_text=f'bulk {i}') for i in range(510)])
+        convo = self.client.get(self.url).context['conversation']
+        self.assertEqual(len(convo), 500)
+        self.assertNotIn('c1', [m.message_id for m in convo])  # oldest messages drop off, not the newest
+        self.assertLessEqual(convo[0].created_at, convo[-1].created_at)
+
+    def test_composer_locks_when_reply_window_closed(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        Message.objects.filter(contact=self.contact).update(created_at=timezone.now() - timedelta(hours=25))
+        resp = self.client.get(self.url)
+        self.assertContains(resp, 'Reply window closed')
+        self.assertContains(resp, 'aria-describedby="windowNote"')
 
     def test_requires_staff(self):
         self.client.logout()

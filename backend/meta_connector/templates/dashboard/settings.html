@@ -68,11 +68,7 @@
                         <i class="fa-brands {% if acc.platform == 'whatsapp' %}fa-whatsapp{% elif acc.platform == 'instagram' %}fa-instagram{% else %}fa-facebook-messenger{% endif %}"></i>
                     </span>
                     <span class="flex flex-col min-w-0">
-                        {% if acc.platform == 'instagram' %}
                         <a href="{% url 'dashboard-account' acc.pk %}" class="font-semibold truncate hover:text-accent">{{ acc.display_name }}</a>
-                        {% else %}
-                        <span class="font-semibold truncate">{{ acc.display_name }}</span>
-                        {% endif %}
                         <span class="text-[13px] text-muted font-mono truncate">
                             {% if acc.platform == 'whatsapp' %}{{ acc.phone_number_id|default:"No phone number ID" }}{% else %}{{ acc.instagram_id|default:"No Instagram ID" }}{% endif %}
                         </span>
@@ -96,9 +92,9 @@
                 </span>
 
                 <div class="flex items-center gap-2 shrink-0 md:w-[220px] md:justify-end">
-                    {% if acc.platform == 'instagram' %}
-                    <a href="{% url 'dashboard-account' acc.pk %}" class="btn btn-ghost btn-sm">Posts &amp; Auto-DM</a>
-                    {% endif %}
+                    <a href="{% url 'dashboard-account' acc.pk %}" class="btn btn-ghost btn-sm">
+                        {% if acc.platform == 'instagram' %}Posts &amp; Auto-DM{% else %}View Channel{% endif %}
+                    </a>
                     {% if acc.access_token_encrypted %}
                     <form method="post">{% csrf_token %}
                         <input type="hidden" name="action" value="check_token"><input type="hidden" name="account_id" value="{{ acc.pk }}">
@@ -175,15 +171,16 @@
                 <span class="pill bg-accent/10 text-accent self-start sm:self-auto">{{ role }}</span>
                 {% else %}
                 <div class="flex items-center gap-2 shrink-0">
-                    <form method="post" class="field">{% csrf_token %}
+                    <form method="post" class="field flex items-center gap-2">{% csrf_token %}
                         <input type="hidden" name="action" value="set_role"><input type="hidden" name="user_id" value="{{ member.pk }}">
                         <label class="sr-only" for="role-{{ member.pk }}">Role for {{ member.username }}</label>
-                        <select id="role-{{ member.pk }}" name="role" onchange="this.form.requestSubmit()" class="!w-32 !py-1.5">
+                        <select id="role-{{ member.pk }}" name="role" class="!w-32 !py-1.5">
                             {% if not role %}<option value="" selected disabled>No role</option>{% endif %}
                             {% for r in roles %}<option value="{{ r }}" {% if r == role %}selected{% endif %}>{{ r }}</option>{% endfor %}
                         </select>
+                        <button class="btn btn-ghost btn-sm" aria-label="Save role for {{ member.username }}">Save</button>
                     </form>
-                    <form method="post">{% csrf_token %}
+                    <form method="post" {% if member.is_active %}onsubmit="return confirm('Remove dashboard access for {{ member.username|escapejs }}? They will be signed out and can be restored later.');"{% endif %}>{% csrf_token %}
                         <input type="hidden" name="action" value="toggle_active"><input type="hidden" name="user_id" value="{{ member.pk }}">
                         <button class="btn btn-ghost btn-sm {% if member.is_active %}hover:text-bad{% endif %}">{% if member.is_active %}Remove access{% else %}Restore access{% endif %}</button>
                     </form>

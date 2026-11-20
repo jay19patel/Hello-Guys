@@ -35,7 +35,8 @@ def contact_detail_view(request, pk):
                 messages.error(request, f"Not sent. Meta said: {error}")
         return redirect('dashboard-contact', pk=pk)
 
-    conversation = list(contact.messages.select_related('sent_by').order_by('created_at')[:500])
+    # Newest 500, shown oldest-first. shortcut: older history isn't reachable here; add "load earlier" paging if chats get that long.
+    conversation = list(reversed(contact.messages.select_related('sent_by').order_by('-created_at')[:500]))
     counts = contact.messages.aggregate(
         incoming=Count('id', filter=Q(direction=Message.DIRECTION_INCOMING) & ~Q(message_type=Message.TYPE_COMMENT)),
         outgoing=Count('id', filter=Q(direction=Message.DIRECTION_OUTGOING)),
@@ -53,6 +54,7 @@ def contact_detail_view(request, pk):
         'conversation': conversation,
         'counts': counts,
         'window_open': bool(window_closes and window_closes > timezone.now()),
+        'window_closed': bool(window_closes and window_closes <= timezone.now()),
         'window_closes': window_closes,
         'has_dm': bool(last_dm),
         'auto_dm_logs': contact.auto_dm_logs.order_by('-created_at')[:10],

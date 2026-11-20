@@ -1,0 +1,49 @@
+{% extends "cms/base.html" %}
+
+{% block head %}
+<title>Tech Skills & Tools · CMS Studio · Hello Guys</title>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <a href="{% url 'cms_ui:overview' %}" class="hover:underline">CMS Studio</a>
+                <span>/</span>
+                <span>Skills</span>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-ink mt-1">Tech Stack & Developer Tools</h1>
+            <p class="text-sm text-muted">Technologies and framework badges displayed in the interactive skill orbit.</p>
+        </div>
+        <div>
+            <a href="{% url 'cms_ui:skill-create' %}" class="btn btn-primary text-sm shadow-sm">
+                <i class="fa-solid fa-plus"></i> Add Skill
+            </a>
+        </div>
+    </div>
+
+    {% if skills %}
+    <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+        {% for skill in skills %}
+        <div class="bg-surface border border-line rounded-xl p-3 flex flex-col justify-between hover:border-accent/40 transition-colors">
+            <div>
+                <span class="text-[10px] font-mono text-muted uppercase tracking-wider">{{ skill.get_category_display }}</span>
+                <div class="font-bold text-sm text-ink mt-1">{{ skill.name }}</div>
+            </div>
+            <div class="flex items-center justify-between border-t border-line pt-2 mt-3 text-xs">
+                <a href="{% url 'cms_ui:skill-update' skill.pk %}" class="text-accent hover:underline text-[11px]">Edit</a>
+                <a href="{% url 'cms_ui:skill-delete' skill.pk %}" class="text-bad hover:underline text-[11px]"><i class="fa-regular fa-trash-can"></i></a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-surface border border-line rounded-xl p-12 text-center text-muted">
+        <i class="fa-solid fa-code text-3xl mb-2 text-muted/50"></i>
+        <h3 class="text-base font-semibold text-ink">No skills added</h3>
+        <a href="{% url 'cms_ui:skill-create' %}" class="btn btn-primary btn-sm mt-3">Add Skill</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

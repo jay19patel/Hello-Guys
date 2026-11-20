@@ -45,8 +45,9 @@ class PlatformAccountForm(forms.ModelForm):
         platform = data.get('platform')
         if platform == PlatformAccount.PLATFORM_WHATSAPP and not data.get('phone_number_id'):
             self.add_error('phone_number_id', "Required for WhatsApp accounts.")
-        if platform == PlatformAccount.PLATFORM_INSTAGRAM and not data.get('instagram_id'):
-            self.add_error('instagram_id', "Required for Instagram accounts.")
+        if platform in (PlatformAccount.PLATFORM_INSTAGRAM, PlatformAccount.PLATFORM_FACEBOOK) and not data.get('instagram_id'):
+            label = "Facebook Page ID" if platform == PlatformAccount.PLATFORM_FACEBOOK else "Instagram account ID"
+            self.add_error('instagram_id', f"Required for {platform.title()} accounts ({label}).")
         if not self.instance.pk and not data.get('raw_access_token'):
             self.add_error('raw_access_token', "Required for a new account.")
         self.token_info, self.token_note = None, ''

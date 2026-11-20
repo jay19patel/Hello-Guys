@@ -1,0 +1,154 @@
+{% extends "cms/base.html" %}
+
+{% block head %}
+<title>{{ inquiry.name }} · Lead Details · Hello Guys</title>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto flex flex-col gap-6">
+    <!-- Breadcrumb & Actions Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <a href="{% url 'cms_ui:overview' %}" class="hover:underline">CMS Studio</a>
+                <span>/</span>
+                <a href="{% url 'cms_ui:inquiry-list' %}" class="hover:underline">Inquiries</a>
+                <span>/</span>
+                <span class="font-mono">{{ inquiry.inquiry_id }}</span>
+            </div>
+            <div class="flex items-center gap-3 mt-1">
+                <h1 class="text-2xl font-bold tracking-tight text-ink">{{ inquiry.name }}</h1>
+                {% if inquiry.is_replied %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-ok/10 text-ok border border-ok/20">
+                    <i class="fa-solid fa-check mr-1 text-[9px]"></i> Replied
+                </span>
+                {% else %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-warn/15 text-warn border border-warn/25">
+                    Pending Reply
+                </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <form method="post" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="toggle_status">
+                <button type="submit" class="btn btn-ghost text-xs">
+                    <i class="fa-solid {% if inquiry.is_replied %}fa-rotate-left text-warn{% else %}fa-check text-ok{% endif %}"></i>
+                    {% if inquiry.is_replied %}Mark Pending{% else %}Mark Replied{% endif %}
+                </button>
+            </form>
+            <a href="{% url 'cms_ui:inquiry-update' inquiry.pk %}" class="btn btn-ghost text-xs">
+                <i class="fa-regular fa-pen-to-square"></i> Edit
+            </a>
+            <a href="{% url 'cms_ui:inquiry-delete' inquiry.pk %}" class="btn btn-ghost text-xs text-bad hover:bg-bad/10">
+                <i class="fa-regular fa-trash-can"></i> Delete
+            </a>
+        </div>
+    </div>
+
+    <!-- Contact Info Card -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-surface border border-line rounded-xl p-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                <i class="fa-regular fa-envelope"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-xs text-muted">Email</div>
+                <a href="mailto:{{ inquiry.email }}" class="text-sm font-semibold text-ink hover:underline truncate block">
+                    {{ inquiry.email }}
+                </a>
+            </div>
+        </div>
+
+        <div class="bg-surface border border-line rounded-xl p-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-phone"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-xs text-muted">Phone</div>
+                {% if inquiry.phone and inquiry.phone != 'Not provided' %}
+                <a href="tel:{{ inquiry.phone }}" class="text-sm font-semibold text-ink hover:underline truncate block">
+                    {{ inquiry.phone }}
+                </a>
+                {% else %}
+                <span class="text-sm text-muted">Not provided</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="bg-surface border border-line rounded-xl p-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-tag"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-xs text-muted">Source / Type</div>
+                <div class="text-sm font-semibold text-ink truncate">{{ inquiry.inquiry_type }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Content Box -->
+    <div class="bg-surface border border-line rounded-xl overflow-hidden shadow-sm">
+        <div class="px-5 py-4 border-b border-line flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i class="fa-regular fa-comment-dots text-accent"></i>
+                <h2 class="text-sm font-semibold text-ink">Inquiry Message</h2>
+            </div>
+            <span class="text-xs text-muted font-mono">
+                Received on {{ inquiry.created_at|date:"F d, Y · H:i" }}
+            </span>
+        </div>
+        <div class="p-6">
+            <h3 class="text-base font-semibold text-ink mb-2">{{ inquiry.subject }}</h3>
+            <div class="text-sm text-ink/90 whitespace-pre-wrap leading-relaxed bg-subtle/40 p-4 rounded-lg border border-line">
+                {{ inquiry.message }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Follow-up Notes and Reply History -->
+    <div class="bg-surface border border-line rounded-xl overflow-hidden shadow-sm">
+        <div class="px-5 py-4 border-b border-line flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-clipboard-list text-accent"></i>
+                <h2 class="text-sm font-semibold text-ink">Internal Follow-Up Notes & Reply Audit Log</h2>
+            </div>
+            <span class="text-xs text-muted">{{ inquiry.replies|length }} entry(ies)</span>
+        </div>
+
+        <div class="p-5 flex flex-col gap-4">
+            {% if inquiry.replies %}
+            <div class="divide-y divide-line border border-line rounded-lg overflow-hidden">
+                {% for entry in inquiry.replies %}
+                <div class="p-3.5 bg-subtle/30 flex flex-col gap-1 text-xs">
+                    <div class="flex items-center justify-between text-muted">
+                        <span class="font-semibold text-ink"><i class="fa-regular fa-user mr-1"></i> {{ entry.author|default:"Admin" }}</span>
+                        <span class="font-mono text-[11px]">{{ entry.timestamp }}</span>
+                    </div>
+                    <p class="text-ink mt-1 whitespace-pre-wrap">{{ entry.note }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-muted">No follow-up notes recorded yet.</p>
+            {% endif %}
+
+            <!-- Add Note Form -->
+            <form method="post" class="mt-2 flex flex-col gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_note">
+                <label for="id_note" class="text-xs font-semibold text-ink">Log a Note or Response Sent</label>
+                <textarea id="id_note" name="note" rows="3" required placeholder="Type notes regarding conversation, phone calls, or emails sent to this contact..."
+                          class="w-full p-3 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-accent"></textarea>
+                <div class="flex justify-end">
+                    <button type="submit" class="btn btn-primary btn-sm text-xs shadow-sm">
+                        <i class="fa-solid fa-paper-plane"></i> Log Note & Mark Replied
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

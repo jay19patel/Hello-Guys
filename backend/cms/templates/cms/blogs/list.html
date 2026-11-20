@@ -1,0 +1,85 @@
+{% extends "cms/base.html" %}
+
+{% block head %}
+<title>Blog Posts · CMS Studio · Hello Guys</title>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <a href="{% url 'cms_ui:overview' %}" class="hover:underline">CMS Studio</a>
+                <span>/</span>
+                <span>Articles</span>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-ink mt-1">Blog Articles</h1>
+            <p class="text-sm text-muted">Publish Markdown articles, tutorials, and case studies.</p>
+        </div>
+        <div>
+            <a href="{% url 'cms_ui:blog-create' %}" class="btn btn-primary text-sm shadow-sm">
+                <i class="fa-solid fa-pen-nib"></i> Write Article
+            </a>
+        </div>
+    </div>
+
+    {% if blogs %}
+    <div class="bg-surface border border-line rounded-xl overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm border-collapse">
+                <thead>
+                    <tr class="table-head border-b border-line bg-subtle/50">
+                        <th class="py-3 px-4">Title & Slug</th>
+                        <th class="py-3 px-4">Category</th>
+                        <th class="py-3 px-4">Stats</th>
+                        <th class="py-3 px-4">Status</th>
+                        <th class="py-3 px-4">Date</th>
+                        <th class="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-line">
+                    {% for blog in blogs %}
+                    <tr class="hover:bg-subtle/40 transition-colors">
+                        <td class="py-3.5 px-4">
+                            <div class="font-semibold text-ink">{{ blog.title }}</div>
+                            <div class="text-xs text-muted font-mono">{{ blog.slug }}</div>
+                        </td>
+                        <td class="py-3.5 px-4 text-xs font-medium text-muted">
+                            <span class="bg-subtle px-2 py-0.5 rounded">{{ blog.category }}</span>
+                        </td>
+                        <td class="py-3.5 px-4 text-xs text-muted">
+                            <span class="mr-3"><i class="fa-regular fa-eye mr-1"></i>{{ blog.views_count }}</span>
+                            <span><i class="fa-regular fa-heart mr-1"></i>{{ blog.likes_count }}</span>
+                        </td>
+                        <td class="py-3.5 px-4">
+                            {% if blog.is_published %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-ok/10 text-ok border border-ok/20">Published</span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted/20 text-muted">Draft</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3.5 px-4 text-xs text-muted">
+                            {{ blog.created_at|date:"M d, Y" }}
+                        </td>
+                        <td class="py-3.5 px-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="{% url 'cms_ui:blog-update' blog.pk %}" class="btn btn-ghost btn-sm text-xs">Edit</a>
+                                <a href="{% url 'cms_ui:blog-delete' blog.pk %}" class="btn btn-ghost btn-sm text-xs text-bad hover:bg-bad/10"><i class="fa-regular fa-trash-can"></i></a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-surface border border-line rounded-xl p-12 text-center text-muted">
+        <i class="fa-solid fa-newspaper text-3xl mb-2 text-muted/50"></i>
+        <h3 class="text-base font-semibold text-ink">No articles written yet</h3>
+        <p class="text-xs text-muted mt-1">Start writing technical tutorials or developer stories.</p>
+        <a href="{% url 'cms_ui:blog-create' %}" class="btn btn-primary btn-sm mt-4">Write First Article</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

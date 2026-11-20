@@ -1,0 +1,54 @@
+{% extends "cms/base.html" %}
+
+{% block head %}
+<title>Testimonial · CMS Studio · Hello Guys</title>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto flex flex-col gap-6">
+    <div>
+        <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+            <a href="{% url 'cms_ui:overview' %}" class="hover:underline">CMS Studio</a>
+            <span>/</span>
+            <a href="{% url 'cms_ui:testimonial-list' %}" class="hover:underline">Testimonials</a>
+        </div>
+        <h1 class="text-2xl font-bold tracking-tight text-ink mt-1">Client Testimonial</h1>
+    </div>
+
+    <div class="bg-surface border border-line rounded-xl p-6 shadow-sm">
+        <form method="post" class="flex flex-col gap-4">
+            {% csrf_token %}
+            <div class="flex flex-col gap-1.5">
+                <label for="{{ form.name.id_for_label }}" class="text-xs font-medium text-ink">Client / Entity Name</label>
+                {{ form.name }}
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label for="{{ form.role.id_for_label }}" class="text-xs font-medium text-ink">Role / Company</label>
+                {{ form.role }}
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label for="{{ form.text.id_for_label }}" class="text-xs font-medium text-ink">Review Text</label>
+                {{ form.text }}
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label for="{{ form.rating.id_for_label }}" class="text-xs font-medium text-ink">Rating (1-5)</label>
+                    {{ form.rating }}
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label for="{{ form.order.id_for_label }}" class="text-xs font-medium text-ink">Order</label>
+                    {{ form.order }}
+                </div>
+            </div>
+            <div class="flex items-center gap-2 pt-2 border-t border-line">
+                {{ form.is_active }}
+                <label for="{{ form.is_active.id_for_label }}" class="text-xs font-medium text-ink cursor-pointer">Visible</label>
+            </div>
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-line">
+                <a href="{% url 'cms_ui:testimonial-list' %}" class="btn btn-ghost text-sm">Cancel</a>
+                <button type="submit" class="btn btn-primary text-sm">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

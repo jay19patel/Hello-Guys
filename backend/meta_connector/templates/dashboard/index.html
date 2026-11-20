@@ -159,7 +159,7 @@
                             {% else %}<span class="text-muted font-mono text-[13px]" title="{{ c.platform_user_id }}">{{ c.platform_user_id|truncatechars:16 }}</span>{% endif %}
                         </td>
                         <td class="px-5 cell hidden lg:table-cell">{% if c.email %}<span class="truncate">{{ c.email }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                        <td class="px-5 cell hidden sm:table-cell text-right tabular-nums">{{ c.messages.count }}</td>
+                        <td class="px-5 cell hidden sm:table-cell text-right tabular-nums">{{ c.msg_count }}</td>
                         <td class="px-5 cell hidden md:table-cell whitespace-nowrap text-muted">
                             {% if c.last_message_at %}<span title="{{ c.last_message_at|date:'d M Y, H:i' }}">{{ c.last_message_at|naturaltime }}</span>{% else %}—{% endif %}
                         </td>

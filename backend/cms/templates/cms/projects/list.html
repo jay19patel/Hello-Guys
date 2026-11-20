@@ -1,0 +1,89 @@
+{% extends "cms/base.html" %}
+
+{% block head %}
+<title>Projects · CMS Studio · Hello Guys</title>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <a href="{% url 'cms_ui:overview' %}" class="hover:underline">CMS Studio</a>
+                <span>/</span>
+                <span>Projects</span>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-ink mt-1">Portfolio Projects</h1>
+            <p class="text-sm text-muted">Manage your client projects, case studies, technologies and live demos.</p>
+        </div>
+        <div>
+            <a href="{% url 'cms_ui:project-create' %}" class="btn btn-primary text-sm shadow-sm">
+                <i class="fa-solid fa-plus"></i> Add New Project
+            </a>
+        </div>
+    </div>
+
+    <!-- Projects Grid -->
+    {% if projects %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% for proj in projects %}
+        <div class="bg-surface border border-line rounded-xl p-5 flex flex-col justify-between hover:border-accent/40 transition-colors">
+            <div>
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h3 class="font-bold text-base text-ink truncate">{{ proj.title }}</h3>
+                            {% if proj.featured %}
+                            <span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-accent/15 text-accent">Featured</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-xs text-muted mt-0.5">{{ proj.category }} · {{ proj.client }}</div>
+                    </div>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-subtle text-muted">
+                        {{ proj.status }}
+                    </span>
+                </div>
+                <p class="text-xs text-muted line-clamp-2 mt-3">{{ proj.description }}</p>
+                
+                {% if proj.technologies %}
+                <div class="flex flex-wrap gap-1 mt-3">
+                    {% for tech in proj.technologies %}
+                    <span class="text-[10px] font-mono bg-subtle px-2 py-0.5 rounded text-muted">{{ tech }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="flex items-center justify-between border-t border-line pt-3 mt-4 text-xs text-muted">
+                <div class="flex items-center gap-3">
+                    {% if proj.live_url %}
+                    <a href="{{ proj.live_url }}" target="_blank" rel="noopener" class="hover:text-accent flex items-center gap-1">
+                        <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i> Live Demo
+                    </a>
+                    {% endif %}
+                    {% if proj.github_url %}
+                    <a href="{{ proj.github_url }}" target="_blank" rel="noopener" class="hover:text-accent flex items-center gap-1">
+                        <i class="fa-brands fa-github text-[10px]"></i> Source
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'cms_ui:project-update' proj.pk %}" class="btn btn-ghost btn-sm text-xs">Edit</a>
+                    <a href="{% url 'cms_ui:project-delete' proj.pk %}" class="btn btn-ghost btn-sm text-xs text-bad hover:bg-bad/10"><i class="fa-regular fa-trash-can"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-surface border border-line rounded-xl p-12 text-center text-muted">
+        <i class="fa-solid fa-laptop-code text-3xl mb-2 text-muted/50"></i>
+        <h3 class="text-base font-semibold text-ink">No projects added yet</h3>
+        <p class="text-xs text-muted mt-1">Showcase your portfolio by creating your first project.</p>
+        <a href="{% url 'cms_ui:project-create' %}" class="btn btn-primary btn-sm mt-4">
+            <i class="fa-solid fa-plus"></i> Add Project
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

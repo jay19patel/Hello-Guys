@@ -29,16 +29,20 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
 
     # Third-party apps
+    'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
 
-    # Local apps (single unified meta_connector app)
+    # Local apps
+    'core.apps.CoreConfig',
     'meta_connector.apps.MetaConnectorConfig',
+    'cms.apps.CmsConfig',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -51,7 +55,21 @@ LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'dashboard-login'
 
 # Full origins allowed to POST forms, e.g. https://example.com (comma-separated in .env)
-CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://njtechstudio.in',
+    'https://www.njtechstudio.in',
+])
+
+# CORS configuration for Next.js frontend
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://njtechstudio.in',
+    'https://www.njtechstudio.in',
+])
+CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=True)
 
 ROOT_URLCONF = 'config.urls'
 

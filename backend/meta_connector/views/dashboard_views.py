@@ -1,7 +1,7 @@
 from meta_connector.roles import VIEWER, role_required
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView, View
-from django.db.models import Max
+from django.db.models import Count, Max
 from django.http import JsonResponse
 from meta_connector.models import Message, Contact, PlatformAccount, WebhookLog
 from meta_connector.services.token_service import TokenService
@@ -21,7 +21,8 @@ class DashboardIndexView(TemplateView):
         context.update(insights_context(parse_days(self.request)))
         context['total_contacts'] = Contact.objects.count()
         context['recent_messages'] = Message.objects.select_related('platform_account', 'contact', 'sent_by').order_by('-created_at')[:12]
-        context['all_contacts'] = Contact.objects.select_related('platform_account').prefetch_related('messages').order_by('-last_message_at', '-first_seen')[:100]
+        context['all_contacts'] = (Contact.objects.select_related('platform_account').annotate(msg_count=Count('messages'))
+                                   .order_by('-last_message_at', '-first_seen')[:100])
         TokenService.refresh_stale()
         context['token_alerts'] = TokenService.alerts()
 

@@ -3,9 +3,13 @@ from django.urls import path, include
 from django.views.generic import RedirectView
 from django.contrib.auth import views as auth_views
 from rest_framework.authtoken.views import obtain_auth_token
+from core.views import HubPortalView
 from meta_connector.views import DashboardIndexView, settings_view, webhook_actions_view, account_detail_view, contact_detail_view
 
 urlpatterns = [
+    # Root workspace launcher / module hub
+    path('', HubPortalView.as_view(), name='hub-portal'),
+
     path('admin/', admin.site.urls),
     path('api/auth/token/', obtain_auth_token, name='api_token_auth'),
     # Direct access: http://127.0.0.1:8085/dashboard/
@@ -18,6 +22,13 @@ urlpatterns = [
     path('dashboard/insights/', RedirectView.as_view(pattern_name='dashboard', query_string=True), name='dashboard-insights'),
     path('dashboard/contacts/<int:pk>/', contact_detail_view, name='dashboard-contact'),
     path('dashboard/', DashboardIndexView.as_view(), name='dashboard'),
-    # Single Unified Meta Connector App
+
+    # CMS Dedicated App UI
+    path('cms/', include('cms.urls_ui', namespace='cms_ui')),
+    # Legacy redirect from /dashboard/cms/ to /cms/
+    path('dashboard/cms/', RedirectView.as_view(url='/cms/', permanent=False)),
+
+    # APIs
     path('api/meta/', include('meta_connector.urls', namespace='meta_connector')),
+    path('api/cms/', include('cms.urls', namespace='cms')),
 ]

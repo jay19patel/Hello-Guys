@@ -107,6 +107,10 @@ class AccountPageTests(TestCase):
     def test_meta_errors_are_shown(self, *_):
         self.assertContains(self.client.get(self.url), 'Token expired')
 
-    def test_whatsapp_account_redirects(self):
-        wa = PlatformAccount.objects.create(platform='whatsapp', display_name='WA', phone_number_id='1')
-        self.assertRedirects(self.client.get(reverse('dashboard-account', args=[wa.pk])), reverse('dashboard-settings'))
+    def test_whatsapp_account_renders_details(self):
+        wa = PlatformAccount.objects.create(platform='whatsapp', display_name='WA Support', phone_number_id='999888')
+        resp = self.client.get(reverse('dashboard-account', args=[wa.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'WA Support')
+        self.assertContains(resp, 'Total Messages')
+        self.assertContains(resp, 'Phone ID: 999888')

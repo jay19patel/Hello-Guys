@@ -87,8 +87,29 @@ class PlatformAccount(models.Model):
     REQUIRED_SCOPES = {
         PLATFORM_INSTAGRAM: ['instagram_basic', 'instagram_manage_messages', 'instagram_manage_comments', 'pages_manage_metadata'],
         PLATFORM_WHATSAPP: ['whatsapp_business_messaging', 'whatsapp_business_management'],
+        PLATFORM_FACEBOOK: ['pages_messaging', 'pages_manage_metadata', 'pages_read_engagement'],
     }
     TOKEN_WARN_DAYS = 7
+
+    @property
+    def platform_icon(self) -> str:
+        """FontAwesome icon class for this platform."""
+        icons = {
+            self.PLATFORM_WHATSAPP: 'fa-brands fa-whatsapp',
+            self.PLATFORM_INSTAGRAM: 'fa-brands fa-instagram',
+            self.PLATFORM_FACEBOOK: 'fa-brands fa-facebook-messenger',
+        }
+        return icons.get(self.platform, 'fa-solid fa-comments')
+
+    @property
+    def platform_color_class(self) -> str:
+        """CSS branding color class for this platform."""
+        colors = {
+            self.PLATFORM_WHATSAPP: 'text-wa',
+            self.PLATFORM_INSTAGRAM: 'text-ig',
+            self.PLATFORM_FACEBOOK: 'text-[#0084FF]',
+        }
+        return colors.get(self.platform, 'text-accent')
 
     @property
     def token_deadline(self):

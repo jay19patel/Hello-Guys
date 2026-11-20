@@ -70,15 +70,21 @@
                             {% elif msg.raw_payload.auto_dm %}<span><i class="fa-solid fa-robot"></i> Auto-DM ·</span>
                             {% elif msg.raw_payload.is_echo %}<span title="Sent from the Instagram / WhatsApp app"><i class="fa-solid fa-mobile-screen"></i> Phone ·</span>{% endif %}
                             <time datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>
-                            <i class="fa-solid {% if msg.status == 'failed' %}fa-circle-exclamation{% elif msg.status == 'read' %}fa-check-double{% elif msg.status == 'delivered' %}fa-check-double opacity-70{% else %}fa-check{% endif %}" title="{{ msg.get_status_display }}"></i>
-                            {% if msg.status == 'failed' %}<span>Not delivered</span>{% endif %}
+                            <i class="fa-solid {% if msg.status == 'failed' %}fa-circle-exclamation{% elif msg.status == 'read' %}fa-check-double{% elif msg.status == 'delivered' %}fa-check-double opacity-70{% else %}fa-check{% endif %}" title="{{ msg.get_status_display }}" aria-hidden="true"></i>
+                            {% if msg.status == 'failed' %}<span>Not delivered</span>{% else %}<span class="sr-only">{{ msg.get_status_display }}</span>{% endif %}
                         </span>
                     </div>
                 </li>
                 {% else %}
                 <li data-key="m{{ msg.pk }}" class="flex justify-start">
                     <div class="max-w-[85%] sm:max-w-[70%] rounded-2xl rounded-bl-md bg-surface border border-line px-4 py-2.5 flex flex-col gap-1">
-                        {% if msg.message_text %}
+                        {% if msg.media_url and msg.message_type == 'image' or msg.media_url and msg.message_type == 'sticker' %}
+                        <a href="{{ msg.media_url }}" target="_blank" rel="noopener" class="block -mx-2 -mt-0.5">
+                            <img src="{{ msg.media_url }}" referrerpolicy="no-referrer" loading="lazy" alt="Image from {{ display }}"
+                                 class="rounded-xl max-h-72 w-auto object-cover bg-subtle" onerror="this.parentElement.replaceWith(Object.assign(document.createElement('span'), {className: 'italic text-muted', textContent: 'Image no longer available'}))">
+                        </a>
+                        {% if msg.message_text %}<p class="whitespace-pre-line break-words">{{ msg.message_text }}</p>{% endif %}
+                        {% elif msg.message_text %}
                         <p class="whitespace-pre-line break-words">{{ msg.message_text }}</p>
                         {% else %}
                         <p class="italic text-muted flex items-center gap-2">
@@ -103,14 +109,22 @@
 
         <!-- Composer -->
         {% if can_reply %}
-        <form method="post" class="border-t border-line p-3 flex items-end gap-2 shrink-0" id="composer">
+        {% with closed=window_closed %}
+        {% if closed %}
+        <p id="windowNote" class="border-t border-line px-5 pt-3 text-[13px] text-warn flex items-start gap-2 shrink-0">
+            <i class="fa-solid fa-lock mt-0.5" aria-hidden="true"></i>
+            <span>{% if is_wa %}Template required: WhatsApp only allows free-form replies within 24 hours of the contact's last message.{% else %}Instagram only allows replies within 24 hours of the contact's last message.{% endif %} You can reply again once they message you.</span>
+        </p>
+        {% endif %}
+        <form method="post" class="{% if not closed %}border-t border-line {% endif %}p-3 flex items-end gap-2 shrink-0" id="composer">
             {% csrf_token %}
             <label for="replyText" class="sr-only">Reply to {{ display }}</label>
-            <textarea id="replyText" name="text" rows="1" maxlength="1000" required
-                      placeholder="{% if has_dm %}Write a reply…{% else %}This contact has only commented, so a DM may be rejected by Meta.{% endif %}"
-                      class="flex-1 resize-none max-h-40 rounded-xl border border-line bg-bg px-4 py-2.5 text-[14px] leading-[20px] placeholder:text-muted focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20"></textarea>
-            <button class="btn btn-primary h-[42px] w-[42px] p-0 rounded-xl shrink-0" aria-label="Send" title="Send (Enter)"><i class="fa-solid fa-paper-plane"></i></button>
+            <textarea id="replyText" name="text" rows="1" maxlength="1000" required {% if closed %}disabled aria-describedby="windowNote"{% endif %}
+                      placeholder="{% if closed %}Reply window closed{% elif has_dm %}Write a reply…{% else %}This contact has only commented, so a DM may be rejected by Meta.{% endif %}"
+                      class="flex-1 resize-none max-h-40 rounded-xl border border-line bg-bg px-4 py-2.5 text-[14px] leading-[20px] placeholder:text-muted focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20 disabled:opacity-60 disabled:cursor-not-allowed"></textarea>
+            <button class="btn btn-primary h-[42px] w-[42px] p-0 rounded-xl shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Send" title="Send (Enter)" {% if closed %}disabled{% endif %}><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
         </form>
+        {% endwith %}
         {% else %}
         <p class="border-t border-line px-5 py-4 text-[14px] text-muted flex items-center gap-2 shrink-0"><i class="fa-regular fa-eye"></i> View only — your role can read conversations but not reply.</p>
         {% endif %}

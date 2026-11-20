@@ -1,0 +1,52 @@
+{% extends "cms/base.html" %}
+
+{% block head %}
+<title>FAQs · CMS Studio · Hello Guys</title>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <a href="{% url 'cms_ui:overview' %}" class="hover:underline">CMS Studio</a>
+                <span>/</span>
+                <span>FAQs</span>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-ink mt-1">Frequently Asked Questions</h1>
+            <p class="text-sm text-muted">Manage FAQ accordion items shown to prospective clients.</p>
+        </div>
+        <div>
+            <a href="{% url 'cms_ui:faq-create' %}" class="btn btn-primary text-sm shadow-sm">
+                <i class="fa-solid fa-plus"></i> Add FAQ
+            </a>
+        </div>
+    </div>
+
+    {% if faqs %}
+    <div class="divide-y divide-line bg-surface border border-line rounded-xl overflow-hidden shadow-sm">
+        {% for faq in faqs %}
+        <div class="p-4 flex items-start justify-between gap-4 hover:bg-subtle/40 transition-colors">
+            <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono font-semibold bg-subtle px-1.5 py-0.5 rounded text-accent">{{ faq.category }}</span>
+                    <h3 class="font-semibold text-sm text-ink">{{ faq.question }}</h3>
+                </div>
+                <p class="text-xs text-muted mt-1 leading-relaxed">{{ faq.answer }}</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <a href="{% url 'cms_ui:faq-update' faq.pk %}" class="btn btn-ghost btn-sm text-xs">Edit</a>
+                <a href="{% url 'cms_ui:faq-delete' faq.pk %}" class="btn btn-ghost btn-sm text-xs text-bad hover:bg-bad/10"><i class="fa-regular fa-trash-can"></i></a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-surface border border-line rounded-xl p-12 text-center text-muted">
+        <i class="fa-solid fa-circle-question text-3xl mb-2 text-muted/50"></i>
+        <h3 class="text-base font-semibold text-ink">No FAQs configured</h3>
+        <a href="{% url 'cms_ui:faq-create' %}" class="btn btn-primary btn-sm mt-3">Add FAQ</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

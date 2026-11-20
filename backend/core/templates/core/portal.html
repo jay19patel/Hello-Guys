@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello Guys · Workspace Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg: 11 15 25;
+            --surface: 17 24 39;
+            --surface-elevated: 24 33 53;
+            --line: 30 41 59;
+            --line-hover: 51 65 85;
+            --ink: 241 245 249;
+            --muted: 148 163 184;
+            --accent-meta: 6 104 225;
+            --accent-cms: 99 102 241;
+            --ok: 16 185 129;
+            --warn: 245 158 11;
+        }
+        body {
+            background-color: rgb(var(--bg));
+            color: rgb(var(--ink));
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .bg-surface { background-color: rgb(var(--surface)); }
+        .bg-surface-elevated { background-color: rgb(var(--surface-elevated)); }
+        .border-line { border-color: rgb(var(--line)); }
+        .border-line-hover:hover { border-color: rgb(var(--line-hover)); }
+        .text-muted { color: rgb(var(--muted)); }
+
+        .glow-meta:hover {
+            box-shadow: 0 0 35px -8px rgba(6, 104, 225, 0.35);
+        }
+        .glow-cms:hover {
+            box-shadow: 0 0 35px -8px rgba(99, 102, 241, 0.35);
+        }
+        
+        .pulse-dot {
+            animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.9); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="w-full border-b border-line bg-surface/80 backdrop-blur-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white flex items-center justify-center font-bold text-sm shadow-md">
+                    <i class="fa-solid fa-shapes"></i>
+                </span>
+                <div>
+                    <span class="font-bold text-[15px] tracking-tight block leading-tight">Hello Guys</span>
+                    <span class="text-[11px] text-muted font-medium">Enterprise Management Suite</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <!-- System Status Pill -->
+                <div class="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-surface-elevated border border-line text-xs font-medium">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+                    <span class="text-emerald-400 font-semibold">All Systems Operational</span>
+                </div>
+
+                <!-- User Session & Logout -->
+                <div class="flex items-center gap-3 pl-3 border-l border-line">
+                    <span class="w-8 h-8 rounded-full bg-surface-elevated border border-line flex items-center justify-center font-bold text-xs text-indigo-400">
+                        {{ request.user.username|slice:":2"|upper }}
+                    </span>
+                    <span class="hidden md:block text-xs font-medium text-slate-200">
+                        {{ request.user.get_full_name|default:request.user.username }}
+                    </span>
+                    <form method="post" action="{% url 'dashboard-logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="p-2 text-muted hover:text-white transition-colors" title="Log out">
+                            <i class="fa-solid fa-right-from-bracket text-xs"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Module Selector -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-10 sm:py-16 flex flex-col justify-center">
+        <!-- Hero Title -->
+        <div class="text-center max-w-2xl mx-auto mb-12">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 mb-3">
+                <i class="fa-solid fa-cubes text-[10px]"></i> Workspace Launcher
+            </span>
+            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
+                Choose a Workspace Module
+            </h1>
+            <p class="text-sm sm:text-base text-muted mt-2">
+                Launch into your dedicated Meta messaging automation hub or the NJTechStudio content studio.
+            </p>
+        </div>
+
+        <!-- Modules Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto w-full">
+            
+            <!-- Module 1: Meta Connector -->
+            <div class="bg-surface border border-line rounded-2xl p-7 flex flex-col justify-between glow-meta transition-all duration-200 hover:-translate-y-1 relative group overflow-hidden">
+                <div class="absolute -top-24 -right-24 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-600/20 transition-all"></div>
+                <div>
+                    <!-- Header -->
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center text-xl shadow-lg shadow-blue-500/20">
+                            <i class="fa-brands fa-meta"></i>
+                        </span>
+                        <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            v2.0 Active
+                        </span>
+                    </div>
+
+                    <h2 class="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">Meta Connector</h2>
+                    <p class="text-xs text-muted font-medium mt-0.5">WhatsApp Business & Instagram Omnichannel Hub</p>
+                    <p class="text-xs text-slate-300/80 leading-relaxed mt-3">
+                        Connect and operate live WhatsApp Cloud API and Instagram Direct Messaging with webhook replay telemetry, auto-DM triggers, and customer contact management.
+                    </p>
+
+                    <!-- Telemetry Cards -->
+                    <div class="grid grid-cols-3 gap-2.5 my-6">
+                        <div class="bg-surface-elevated/60 border border-line rounded-xl p-3 text-center">
+                            <span class="text-xs text-muted block">Accounts</span>
+                            <span class="text-base font-bold text-white mt-0.5 block">{{ meta_module.accounts_count }}</span>
+                            <span class="text-[10px] text-muted">{{ meta_module.wa_count }} WA · {{ meta_module.ig_count }} IG</span>
+                        </div>
+                        <div class="bg-surface-elevated/60 border border-line rounded-xl p-3 text-center">
+                            <span class="text-xs text-muted block">Contacts</span>
+                            <span class="text-base font-bold text-white mt-0.5 block">{{ meta_module.contacts_count }}</span>
+                            <span class="text-[10px] text-emerald-400 font-medium">Synced</span>
+                        </div>
+                        <div class="bg-surface-elevated/60 border border-line rounded-xl p-3 text-center">
+                            <span class="text-xs text-muted block">Messages</span>
+                            <span class="text-base font-bold text-white mt-0.5 block">{{ meta_module.messages_count }}</span>
+                            <span class="text-[10px] text-muted">Total Handled</span>
+                        </div>
+                    </div>
+
+                    <!-- Feature Tags -->
+                    <div class="flex flex-wrap gap-1.5 mb-6">
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">WhatsApp Cloud API</span>
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">Instagram Direct</span>
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">Webhook Telemetry</span>
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">Auto-DM Engine</span>
+                    </div>
+                </div>
+
+                <a href="{{ meta_module.url }}" class="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-600/25 transition-all">
+                    <span>Open Meta Connector</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </a>
+            </div>
+
+            <!-- Module 2: CMS Studio -->
+            <div class="bg-surface border border-line rounded-2xl p-7 flex flex-col justify-between glow-cms transition-all duration-200 hover:-translate-y-1 relative group overflow-hidden">
+                <div class="absolute -top-24 -right-24 w-48 h-48 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-indigo-600/20 transition-all"></div>
+                <div>
+                    <!-- Header -->
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-700 text-white flex items-center justify-center text-xl shadow-lg shadow-indigo-500/20">
+                            <i class="fa-solid fa-layer-group"></i>
+                        </span>
+                        <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            Headless Ready
+                        </span>
+                    </div>
+
+                    <h2 class="text-xl font-bold text-white group-hover:text-indigo-400 transition-colors">CMS Studio</h2>
+                    <p class="text-xs text-muted font-medium mt-0.5">Headless Content Engine & Inquiries CRM</p>
+                    <p class="text-xs text-slate-300/80 leading-relaxed mt-3">
+                        Manage website dynamic data for NJTechStudio.in — Lead inquiries CRM, portfolio case studies, solutions, developer Markdown articles, tech stack and site identity.
+                    </p>
+
+                    <!-- Telemetry Cards -->
+                    <div class="grid grid-cols-3 gap-2.5 my-6">
+                        <div class="bg-surface-elevated/60 border border-line rounded-xl p-3 text-center">
+                            <span class="text-xs text-muted block">Inquiries</span>
+                            <span class="text-base font-bold text-white mt-0.5 block">{{ cms_module.inquiries_count }}</span>
+                            {% if cms_module.unreplied_inquiries > 0 %}
+                            <span class="text-[10px] text-amber-400 font-semibold">{{ cms_module.unreplied_inquiries }} Pending</span>
+                            {% else %}
+                            <span class="text-[10px] text-emerald-400 font-medium">All Replied</span>
+                            {% endif %}
+                        </div>
+                        <div class="bg-surface-elevated/60 border border-line rounded-xl p-3 text-center">
+                            <span class="text-xs text-muted block">Projects</span>
+                            <span class="text-base font-bold text-white mt-0.5 block">{{ cms_module.projects_count }}</span>
+                            <span class="text-[10px] text-muted">{{ cms_module.featured_projects }} Featured</span>
+                        </div>
+                        <div class="bg-surface-elevated/60 border border-line rounded-xl p-3 text-center">
+                            <span class="text-xs text-muted block">Blog Articles</span>
+                            <span class="text-base font-bold text-white mt-0.5 block">{{ cms_module.blogs_count }}</span>
+                            <span class="text-[10px] text-muted">Markdown</span>
+                        </div>
+                    </div>
+
+                    <!-- Feature Tags -->
+                    <div class="flex flex-wrap gap-1.5 mb-6">
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">Leads & Inquiries CRM</span>
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">Case Studies</span>
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">Markdown Blog</span>
+                        <span class="text-[11px] font-medium bg-surface-elevated px-2 py-0.5 rounded text-slate-300 border border-line">REST APIs</span>
+                    </div>
+                </div>
+
+                <a href="{{ cms_module.url }}" class="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-600/25 transition-all">
+                    <span>Open CMS Studio</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </a>
+            </div>
+
+        </div>
+
+        <!-- Secondary Shortcuts Bar -->
+        <div class="mt-12 max-w-5xl mx-auto w-full pt-8 border-t border-line flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted">
+            <div class="flex items-center gap-4 flex-wrap">
+                <span class="font-semibold text-slate-300">Quick Tools:</span>
+                <a href="/admin/" class="hover:text-white transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-database"></i> Django Admin
+                </a>
+                <span class="text-line">|</span>
+                <a href="/api/meta/" target="_blank" class="hover:text-white transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-code"></i> Meta API
+                </a>
+                <span class="text-line">|</span>
+                <a href="/api/cms/home-overview/" target="_blank" class="hover:text-white transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-code"></i> CMS API
+                </a>
+            </div>
+            <div class="flex items-center gap-2 font-mono text-[11px] text-muted">
+                <span>Python {{ python_version }}</span>
+                <span>·</span>
+                <span>Django {{ django_version }}</span>
+                <span>·</span>
+                <span class="text-emerald-400">Database: Online</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full border-t border-line py-4 text-center text-xs text-muted/60">
+        &copy; 2026 Hello Guys & NJTechStudio. Built for high-reliability production operations.
+    </footer>
+
+</body>
+</html>
+
