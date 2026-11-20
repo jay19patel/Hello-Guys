@@ -83,6 +83,7 @@ class Command(BaseCommand):
                 "cloud": TechSkill.CATEGORY_CLOUD,
                 "ai_ml": TechSkill.CATEGORY_AI_ML,
                 "tools": TechSkill.CATEGORY_TOOLS,
+                "other-tools": TechSkill.CATEGORY_TOOLS,
             }
             if isinstance(tools_data, dict):
                 for cat_key, items in tools_data.items():
