@@ -19,7 +19,6 @@ from cms.models import (
     BlogPost,
     BlogComment,
     BlogLike,
-    InquirySubmission,
     WorkflowStep,
     AboutProfile,
     AboutStat,
@@ -317,11 +316,20 @@ class AboutContentAPIView(APIView):
         profile = AboutProfile.get_solo()
         stats = AboutStat.objects.filter(is_active=True).order_by('order', 'id')
         blocks = AboutBlock.objects.filter(is_active=True).order_by('order', 'created_at')
+        skills = TechSkill.objects.filter(is_active=True).order_by('category', 'proficiency_order')
+
+        grouped_tools = {}
+        for s in skills:
+            grouped_tools.setdefault(s.category, []).append({
+                'name': s.name,
+                'icon': s.icon_url,
+            })
 
         return make_cached_response({
             'profile': AboutProfileSerializer(profile).data,
             'stats': AboutStatSerializer(stats, many=True).data,
             'blocks': AboutBlockSerializer(blocks, many=True).data,
+            'skills': grouped_tools,
         }, request)
 
 

@@ -4,8 +4,6 @@ from django.urls import reverse
 from cms.models import (
     InquirySubmission,
     Project,
-    Solution,
-    BlogPost,
     SiteSettings,
 )
 

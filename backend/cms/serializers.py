@@ -10,7 +10,6 @@ from cms.models import (
     YouTubeVideo,
     BlogPost,
     BlogComment,
-    BlogLike,
     InquirySubmission,
     WorkflowStep,
     AboutProfile,

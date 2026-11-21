@@ -19,7 +19,6 @@ from cms.models import (
     WorkflowStep,
     AboutProfile,
     AboutStat,
-    AboutBlock,
 )
 
 logger = logging.getLogger(__name__)
