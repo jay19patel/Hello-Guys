@@ -12,6 +12,10 @@ from cms.models import (
     BlogComment,
     BlogLike,
     InquirySubmission,
+    WorkflowStep,
+    AboutProfile,
+    AboutStat,
+    AboutBlock,
 )
 
 
@@ -136,4 +140,32 @@ class InquirySubmissionSerializer(serializers.ModelSerializer):
         if len(val) < 5:
             raise serializers.ValidationError("Message must be at least 5 characters long.")
         return val
+
+
+class WorkflowStepSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkflowStep
+        fields = [
+            'id', 'step_num', 'title', 'tag', 'description',
+            'icon', 'phase_milestone', 'order'
+        ]
+
+
+class AboutProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AboutProfile
+        exclude = ['id', 'created_at', 'updated_at']
+
+
+class AboutStatSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AboutStat
+        fields = ['id', 'value', 'suffix', 'label', 'is_counter', 'is_dark', 'order']
+
+
+class AboutBlockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AboutBlock
+        fields = ['id', 'badge', 'title', 'content', 'icon', 'col_span', 'is_dark', 'order']
+
 

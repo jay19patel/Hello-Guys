@@ -16,6 +16,10 @@ from cms.models import (
     YouTubeVideo,
     BlogPost,
     InquirySubmission,
+    WorkflowStep,
+    AboutProfile,
+    AboutStat,
+    AboutBlock,
 )
 
 logger = logging.getLogger(__name__)
@@ -365,6 +369,97 @@ echo "Deployment completed successfully!"
             slug = post_data.pop("slug")
             BlogPost.objects.update_or_create(slug=slug, defaults=post_data)
         self.stdout.write("  [OK] 3 Blog Posts ensured.")
+
+        # 10. Seed Startup & AI Execution Flow (Workflow Steps)
+        workflow_steps_to_seed = [
+            {
+                "step_num": "01",
+                "title": "Blueprint & System Architecture",
+                "tag": "Discovery & Design",
+                "description": "We transform your raw startup concept into a robust technical blueprint. We design normalized schemas, clean REST/gRPC API contracts, and choose the optimal tech stack (Next.js, Python, FastAPI).",
+                "icon": "GitBranch",
+                "phase_milestone": "Phase 01 Milestone",
+                "order": 1,
+                "is_active": True,
+            },
+            {
+                "step_num": "02",
+                "title": "AI-Accelerated Development",
+                "tag": "High Velocity Build",
+                "description": "We build rapidly with modular code and autonomous AI agent workflows. Intelligent data ingestion, vector search, and clean, responsive interfaces that turn early prototypes into production-grade systems.",
+                "icon": "Sparkles",
+                "phase_milestone": "Phase 02 Milestone",
+                "order": 2,
+                "is_active": True,
+            },
+            {
+                "step_num": "03",
+                "title": "Automated QA & Hardening",
+                "tag": "Zero Regressions",
+                "description": "Every commit runs through automated test suites, bundle analyzers, and latency audits. We optimize database queries to guarantee sub-50ms API response times before anything goes live.",
+                "icon": "ShieldCheck",
+                "phase_milestone": "Phase 03 Milestone",
+                "order": 3,
+                "is_active": True,
+            },
+            {
+                "step_num": "04",
+                "title": "Production Scale & Deployment",
+                "tag": "Multi-Zone Launch",
+                "description": "We deploy containerized microservices across cloud infrastructure (GCP/Vercel) with CI/CD automation, monitoring, and automated failover for continuous 99.9% uptime.",
+                "icon": "Rocket",
+                "phase_milestone": "Phase 04 Milestone",
+                "order": 4,
+                "is_active": True,
+            },
+        ]
+        for step in workflow_steps_to_seed:
+            num = step.pop("step_num")
+            WorkflowStep.objects.update_or_create(step_num=num, defaults=step)
+        self.stdout.write("  [OK] 4 Workflow Steps (Execution Flow) ensured.")
+
+        # 11. Seed About Profile & Stats
+        AboutProfile.get_solo()
+        self.stdout.write("  [OK] About Studio Profile singleton initialized.")
+
+        about_stats_to_seed = [
+            {
+                "value": "2",
+                "suffix": "+ Years",
+                "label": "Experience",
+                "is_counter": True,
+                "is_dark": True,
+                "order": 1,
+            },
+            {
+                "value": "15",
+                "suffix": "+ Apps",
+                "label": "Built & Scaled",
+                "is_counter": True,
+                "is_dark": False,
+                "order": 2,
+            },
+            {
+                "value": "100",
+                "suffix": "%",
+                "label": "Clean Code",
+                "is_counter": True,
+                "is_dark": True,
+                "order": 3,
+            },
+            {
+                "value": "Full-Stack",
+                "suffix": "",
+                "label": "Systems & APIs",
+                "is_counter": False,
+                "is_dark": False,
+                "order": 4,
+            },
+        ]
+        for stat in about_stats_to_seed:
+            lbl = stat.pop("label")
+            AboutStat.objects.update_or_create(label=lbl, defaults=stat)
+        self.stdout.write("  [OK] 4 About Stats ensured.")
 
         self.stdout.write(self.style.SUCCESS("CMS data seeding finished successfully!"))
 

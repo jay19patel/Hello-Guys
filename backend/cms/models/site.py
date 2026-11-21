@@ -81,6 +81,14 @@ class SiteSettings(TimeStampedModel):
         default=True,
         help_text=_("Enable or disable Tech Skills API.")
     )
+    api_workflow_enabled = models.BooleanField(
+        default=True,
+        help_text=_("Enable or disable Startup & AI Execution Flow API.")
+    )
+    api_about_enabled = models.BooleanField(
+        default=True,
+        help_text=_("Enable or disable About Us Content API.")
+    )
     api_inquiries_enabled = models.BooleanField(
         default=True,
         help_text=_("Enable or disable Contact / Lead Form Submission API.")

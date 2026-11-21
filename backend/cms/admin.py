@@ -12,6 +12,10 @@ from cms.models import (
     BlogComment,
     BlogLike,
     InquirySubmission,
+    WorkflowStep,
+    AboutProfile,
+    AboutStat,
+    AboutBlock,
 )
 
 
@@ -110,4 +114,37 @@ class InquirySubmissionAdmin(admin.ModelAdmin):
     search_fields = ['name', 'email', 'phone', 'subject', 'message', 'inquiry_id']
     readonly_fields = ['inquiry_id', 'created_at', 'updated_at']
     list_editable = ['is_replied']
+
+
+@admin.register(WorkflowStep)
+class WorkflowStepAdmin(admin.ModelAdmin):
+    list_display = ['step_num', 'title', 'tag', 'icon', 'order', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['title', 'tag', 'description']
+    list_editable = ['order', 'is_active']
+
+
+@admin.register(AboutProfile)
+class AboutProfileAdmin(admin.ModelAdmin):
+    list_display = ['studio_title', 'founder_name', 'founder_role', 'updated_at']
+
+    def has_add_permission(self, request):
+        return not AboutProfile.objects.exists()
+
+
+@admin.register(AboutStat)
+class AboutStatAdmin(admin.ModelAdmin):
+    list_display = ['value', 'suffix', 'label', 'is_counter', 'is_dark', 'order', 'is_active']
+    list_filter = ['is_counter', 'is_dark', 'is_active']
+    search_fields = ['label', 'value']
+    list_editable = ['order', 'is_active']
+
+
+@admin.register(AboutBlock)
+class AboutBlockAdmin(admin.ModelAdmin):
+    list_display = ['title', 'badge', 'col_span', 'is_dark', 'order', 'is_active']
+    list_filter = ['col_span', 'is_dark', 'is_active']
+    search_fields = ['title', 'badge', 'content']
+    list_editable = ['order', 'is_active']
+
 

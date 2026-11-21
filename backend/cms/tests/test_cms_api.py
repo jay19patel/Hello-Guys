@@ -11,6 +11,10 @@ from cms.models import (
     YouTubeVideo,
     BlogPost,
     InquirySubmission,
+    WorkflowStep,
+    AboutProfile,
+    AboutStat,
+    AboutBlock,
 )
 
 
@@ -150,3 +154,58 @@ class CMSAPITests(TestCase):
         response = self.client.post(reverse('cms:inquiry-create'), data=payload, format='json')
         self.assertEqual(response.status_code, 201)
         self.assertTrue(InquirySubmission.objects.filter(email='api.lead@example.com').exists())
+
+    def test_workflow_steps_api(self):
+        WorkflowStep.objects.create(
+            step_num='01',
+            title='Architecture Blueprint',
+            tag='Design',
+            description='System design',
+            icon='GitBranch',
+            order=1,
+        )
+        response = self.client.get(reverse('cms:workflow-step-list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['step_num'], '01')
+
+    def test_about_content_api(self):
+        profile = AboutProfile.get_solo()
+        profile.studio_title = 'Studio Test Title'
+        profile.save()
+
+        AboutStat.objects.create(
+            value='5',
+            suffix='+ Years',
+            label='Experience',
+            is_counter=True,
+            is_dark=True,
+            order=1,
+        )
+
+        AboutBlock.objects.create(
+            badge='Culture',
+            title='Engineering Excellence',
+            content='We write clean code.',
+            col_span='6',
+            order=1,
+        )
+
+        response = self.client.get(reverse('cms:about-content'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('profile', response.data)
+        self.assertIn('stats', response.data)
+        self.assertIn('blocks', response.data)
+        self.assertEqual(response.data['profile']['studio_title'], 'Studio Test Title')
+        self.assertGreaterEqual(len(response.data['stats']), 1)
+        self.assertGreaterEqual(len(response.data['blocks']), 1)
+
+    def test_api_toggle_maintenance_mode(self):
+        self.site_settings.api_workflow_enabled = False
+        self.site_settings.save()
+
+        response = self.client.get(reverse('cms:workflow-step-list'))
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data['error'], 'api_disabled')
+        self.assertEqual(response.data['endpoint'], 'workflow')
+

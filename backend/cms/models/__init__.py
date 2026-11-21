@@ -8,6 +8,8 @@ from .faq import FAQ
 from .video import YouTubeVideo
 from .blog import BlogPost, BlogComment, BlogLike
 from .inquiry import InquirySubmission
+from .workflow import WorkflowStep
+from .about import AboutProfile, AboutStat, AboutBlock
 
 __all__ = [
     'TimeStampedModel',
@@ -23,5 +25,9 @@ __all__ = [
     'BlogComment',
     'BlogLike',
     'InquirySubmission',
+    'WorkflowStep',
+    'AboutProfile',
+    'AboutStat',
+    'AboutBlock',
 ]
 

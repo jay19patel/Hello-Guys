@@ -6,6 +6,8 @@ from cms.views import (
     ProjectListAPIView,
     ProjectDetailAPIView,
     TechSkillListAPIView,
+    WorkflowStepListAPIView,
+    AboutContentAPIView,
     TestimonialListAPIView,
     FAQListAPIView,
     YouTubeVideoListAPIView,
@@ -32,6 +34,12 @@ urlpatterns = [
 
     # Tech Stack & Skills
     path('skills/', TechSkillListAPIView.as_view(), name='skill-list'),
+
+    # Startup & AI Execution Flow
+    path('workflow-steps/', WorkflowStepListAPIView.as_view(), name='workflow-step-list'),
+
+    # About Page Dynamic Content
+    path('about/', AboutContentAPIView.as_view(), name='about-content'),
 
     # Testimonials & FAQs
     path('testimonials/', TestimonialListAPIView.as_view(), name='testimonial-list'),

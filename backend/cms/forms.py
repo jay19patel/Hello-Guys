@@ -261,6 +261,8 @@ class SiteSettingsForm(forms.ModelForm):
             'api_faqs_enabled',
             'api_videos_enabled',
             'api_skills_enabled',
+            'api_workflow_enabled',
+            'api_about_enabled',
             'api_inquiries_enabled',
         ]
         widgets = {
@@ -291,6 +293,8 @@ class SiteSettingsForm(forms.ModelForm):
             'api_faqs_enabled': forms.CheckboxInput(attrs={'class': 'w-4 h-4 rounded text-accent focus:ring-accent/20 bg-line border-line'}),
             'api_videos_enabled': forms.CheckboxInput(attrs={'class': 'w-4 h-4 rounded text-accent focus:ring-accent/20 bg-line border-line'}),
             'api_skills_enabled': forms.CheckboxInput(attrs={'class': 'w-4 h-4 rounded text-accent focus:ring-accent/20 bg-line border-line'}),
+            'api_workflow_enabled': forms.CheckboxInput(attrs={'class': 'w-4 h-4 rounded text-accent focus:ring-accent/20 bg-line border-line'}),
+            'api_about_enabled': forms.CheckboxInput(attrs={'class': 'w-4 h-4 rounded text-accent focus:ring-accent/20 bg-line border-line'}),
             'api_inquiries_enabled': forms.CheckboxInput(attrs={'class': 'w-4 h-4 rounded text-accent focus:ring-accent/20 bg-line border-line'}),
         }
 
