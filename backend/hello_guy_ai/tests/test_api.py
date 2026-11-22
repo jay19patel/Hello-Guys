@@ -1,13 +1,12 @@
 import json
 
 import pytest
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import AsyncClient
 from django.utils import timezone
 
 from hello_guy_ai.events import RunEventPublisher
-from hello_guy_ai.models import AgentMemory, Document, Message, Run, Thread
-from hello_guy_ai.tasks import ingest_document, resume_assistant, run_assistant
+from hello_guy_ai.models import AgentMemory, Message, Run, Thread
+from hello_guy_ai.tasks import resume_assistant, run_assistant
 
 pytestmark = pytest.mark.django_db
 JSON = "application/json"
@@ -59,7 +58,6 @@ def test_cannot_touch_other_users_threads_or_runs(api_client, django_user_model)
     other = django_user_model.objects.create_user("other", password="pass12345")
     run = paused_run(other)
     assert api_client.get(f"/api/ai/threads/{run.thread.pk}").status_code == 404
-    assert api_client.get(f"/api/ai/runs/{run.pk}").status_code == 404
     res = api_client.post(f"/api/ai/runs/{run.pk}/resume", {"answers": {"c1": "approve"}}, content_type=JSON)
     assert res.status_code == 404
     assert api_client.post(f"/api/ai/runs/{run.pk}/stop").status_code == 404
@@ -127,7 +125,6 @@ def test_messages_hide_tool_rows_by_default(api_client, user):
     Message.objects.create(thread=thread, role="assistant", content="a")
     items = api_client.get(f"/api/ai/threads/{thread.pk}/messages").json()["items"]
     assert [m["content"] for m in items] == ["q", "a"]
-    assert api_client.get(f"/api/ai/threads/{thread.pk}/messages?include_tools=true").json()["count"] == 4
 
 
 def test_stale_run_unlocked_but_paused_waits(api_client, user, django_capture_on_commit_callbacks, broker):
@@ -137,25 +134,6 @@ def test_stale_run_unlocked_but_paused_waits(api_client, user, django_capture_on
     with django_capture_on_commit_callbacks(execute=True):
         res = api_client.post(f"/api/ai/threads/{thread.pk}/messages", {"content": "hi"}, content_type=JSON)
     assert res.status_code == 202 and Run.objects.get(pk=stale.pk).status == "failed"
-
-
-def test_document_upload_permissions(client, user, staff, kb, django_capture_on_commit_callbacks, broker):
-    client.force_login(user)
-    upload = SimpleUploadedFile("faq.md", b"Refunds in 30 days")
-    assert client.post("/api/ai/documents", {"knowledge_base": "hello_guy", "file": upload}).status_code == 403
-    assert client.get("/api/ai/knowledge-bases").status_code == 403
-
-    client.force_login(staff)
-    bad = SimpleUploadedFile("x.exe", b"MZ")
-    assert client.post("/api/ai/documents", {"knowledge_base": "hello_guy", "file": bad}).status_code == 400
-    ghost = SimpleUploadedFile("a.md", b"x")
-    assert client.post("/api/ai/documents", {"knowledge_base": "ghost", "file": ghost}).status_code == 404
-    with django_capture_on_commit_callbacks(execute=True):
-        ok = client.post("/api/ai/documents", {"knowledge_base": "hello_guy", "file": SimpleUploadedFile("f.md", b"x")})
-    assert ok.status_code == 202 and ok.json()["knowledge_base"] == "hello_guy"
-    assert ok.json()["status"] == Document.Status.PENDING
-    assert broker.queues[ingest_document.queue_name].qsize() == 1
-    assert [k["slug"] for k in client.get("/api/ai/knowledge-bases").json()] == ["hello_guy"]
 
 
 @pytest.mark.django_db(transaction=True)

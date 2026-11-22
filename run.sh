@@ -28,6 +28,7 @@ cd "$ROOT/backend"
 
 # 3. Database
 "$PY" manage.py migrate --noinput
+"$PY" manage.py setup_website_bot  # user for the public website chat (idempotent)
 
 # 4. Processes. When this script exits (Ctrl+C or one crashes), stop all of them.
 # Written for macOS bash 3.2 (no `wait -n`).

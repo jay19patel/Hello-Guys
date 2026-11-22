@@ -12,6 +12,8 @@ from django.db.models import Model, Q
 from django.utils import timezone
 from django.utils.text import slugify
 
+from django.core.validators import validate_email
+
 from cms.models import FAQ, BlogPost, InquirySubmission, Project, Solution, TechSkill, Testimonial, YouTubeVideo
 from hello_guy_ai.runtime import ToolError, current_context, tool
 
@@ -26,6 +28,16 @@ def _require(action: str, model: type[Model]) -> None:
 
 def _require_view(model: type[Model]) -> None:
     _require("view", model)
+
+
+def _visible(qs):
+    """Non-staff users (e.g. website visitors) only ever see published / active rows."""
+    if current_context().user.is_staff:
+        return qs
+    fields = {f.name for f in qs.model._meta.fields}
+    if "is_published" in fields:
+        return qs.filter(is_published=True)
+    return qs.filter(is_active=True) if "is_active" in fields else qs
 
 
 def _limit(limit: int) -> int:
@@ -44,7 +56,7 @@ def site_content_summary() -> dict[str, Any]:
     }
     for model in (BlogPost, Project, FAQ, Testimonial, Solution, TechSkill, YouTubeVideo, InquirySubmission):
         if user.has_perm(f"cms.{get_permission_codename('view', model._meta)}"):
-            qs = model.objects.all()
+            qs = _visible(model.objects.all())
             summary[str(model._meta.verbose_name_plural)] = counts[model](qs) if model in counts else qs.count()
     if not summary:
         raise ToolError("You don't have permission to view website content.")
@@ -56,7 +68,7 @@ def search_blog_posts(query: str = "", category: str = "", published_only: bool 
     """List blog posts, newest first. query matches title or content; category e.g. Tutorial, Case Study.
     Returns title, slug, category, status, dates, views and likes (no body; use get_blog_post for that)."""
     _require_view(BlogPost)
-    qs = BlogPost.objects.order_by("-published_at", "-created_at")
+    qs = _visible(BlogPost.objects.order_by("-published_at", "-created_at"))
     if query:
         qs = qs.filter(Q(title__icontains=query) | Q(content__icontains=query))
     if category:
@@ -74,7 +86,7 @@ def search_blog_posts(query: str = "", category: str = "", published_only: bool 
 def get_blog_post(slug: str) -> dict:
     """Get one blog post with its full Markdown content and comment count, by slug."""
     _require_view(BlogPost)
-    post = BlogPost.objects.filter(slug=slug).first()
+    post = _visible(BlogPost.objects.filter(slug=slug)).first()
     if post is None:
         raise ToolError(f"No blog post with slug {slug!r}. Use search_blog_posts to find the slug.")
     return {
@@ -94,7 +106,7 @@ def get_blog_post(slug: str) -> dict:
 def search_projects(query: str = "", featured_only: bool = False, limit: int = 10) -> list[dict]:
     """List portfolio projects in display order. query matches title, subtitle, description or client."""
     _require_view(Project)
-    qs = Project.objects.order_by("order", "-created_at")
+    qs = _visible(Project.objects.order_by("order", "-created_at"))
     if query:
         qs = qs.filter(
             Q(title__icontains=query) | Q(subtitle__icontains=query) | Q(description__icontains=query) | Q(client__icontains=query)
@@ -112,7 +124,7 @@ def search_projects(query: str = "", featured_only: bool = False, limit: int = 1
 def search_faqs(query: str = "", limit: int = 20) -> list[dict]:
     """List FAQs (question and answer) in display order. query matches question or answer."""
     _require_view(FAQ)
-    qs = FAQ.objects.order_by("order")
+    qs = _visible(FAQ.objects.order_by("order"))
     if query:
         qs = qs.filter(Q(question__icontains=query) | Q(answer__icontains=query))
     return list(qs.values("question", "answer", "category", "is_active")[: _limit(limit)])
@@ -143,7 +155,7 @@ def top_blog_posts(metric: Literal["views", "likes"] = "views", limit: int = 5) 
     _require_view(BlogPost)
     field = "views_count" if metric == "views" else "likes_count"
     return list(
-        BlogPost.objects.order_by(f"-{field}").values("title", "slug", "category", "is_published", "views_count", "likes_count")[
+        _visible(BlogPost.objects.order_by(f"-{field}")).values("title", "slug", "category", "is_published", "views_count", "likes_count")[
             : _limit(limit)
         ]
     )
@@ -200,3 +212,45 @@ def create_blog_draft(title: str, content: str, category: str = "Tutorial") -> d
         title=title.strip()[:200], slug=slug, content=content, category=category.strip()[:60] or "Tutorial", is_published=False
     )
     return {"slug": post.slug, "title": post.title, "is_published": False, "admin_url": f"/admin/cms/blogpost/{post.pk}/change/"}
+
+
+@tool
+def list_services() -> list[dict]:
+    """List the services / solutions the studio offers, with tech stack. Use for "what do you do / offer" questions."""
+    _require_view(Solution)
+    return list(_visible(Solution.objects.order_by("order")).values("title", "tag", "description", "tech_stack", "badge", "slug"))
+
+
+@tool
+def create_inquiry(name: str, email: str, message: str, phone: str = "", subject: str = "") -> dict:
+    """Submit the visitor's project inquiry / contact request so the team can reply by email.
+    Only call it after the visitor has given their name, a valid email and what they need,
+    and has confirmed the details. Returns the inquiry id to share with the visitor."""
+    from cms.views import check_maintenance  # same switch as the website's contact form
+
+    _require("add", InquirySubmission)
+    ctx = current_context()
+    from hello_guy_ai.models import Message
+
+    if ctx.run_id and Message.objects.filter(run_id=ctx.run_id, name="create_inquiry").exists():
+        raise ToolError("An inquiry was already submitted in this reply. Do not submit it again.")
+    if check_maintenance("inquiries") is not None:
+        raise ToolError("Inquiries are temporarily closed. Ask the visitor to try again later.")
+    name, email, message = name.strip(), email.strip(), message.strip()
+    if len(name) < 2:
+        raise ToolError("Ask the visitor for their name.")
+    try:
+        validate_email(email)
+    except Exception:
+        raise ToolError("That email address looks invalid. Ask the visitor to check it.") from None
+    if len(message) < 5:
+        raise ToolError("Ask the visitor to describe what they need.")
+    inquiry = InquirySubmission.objects.create(
+        name=name[:150],
+        email=email,
+        phone=phone.strip()[:50] or "Not provided",
+        subject=subject.strip()[:255] or "Website chat inquiry",
+        message=message[:5000],
+        inquiry_type="AI Chat Assistant",
+    )
+    return {"inquiry_id": inquiry.inquiry_id, "status": "received"}

@@ -2,10 +2,8 @@
 
 import logging
 from datetime import timedelta
-from pathlib import Path
 from typing import Any
 
-from django.core.files.uploadedfile import UploadedFile
 from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.urls import reverse
@@ -17,8 +15,7 @@ from hello_guy_ai.assistant import AIAssistant
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.exceptions import AssistantNotFound, NotAllowed, RunConflict, ThreadBusy
 from hello_guy_ai.memory import save_feedback_memory
-from hello_guy_ai.models import Document, KnowledgeBase, Message, Run, Source, Thread, Trigger
-from hello_guy_ai.rag import SUPPORTED_EXTENSIONS
+from hello_guy_ai.models import Document, Message, Run, Source, Thread, Trigger
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +53,11 @@ def get_run(user: Any, run_id: Any) -> Run:
     return Run.objects.select_related("thread").get(pk=run_id, thread__in=threads_for(user, source=None))
 
 
+def chat_messages(thread: Thread) -> QuerySet[Message]:
+    """What a chat shows: user/assistant text with how each run ended. Tool rows stay internal."""
+    return thread.messages.select_related("run").exclude(role=Message.Role.TOOL).exclude(content="")
+
+
 def active_run(thread: Thread) -> Run | None:
     return thread.runs.filter(status__in=Run.ACTIVE).first()
 
@@ -68,6 +70,26 @@ def create_thread(user: Any, assistant_id: str, name: str = "") -> Thread:
 def stream_url(run: Run) -> str:
     url = reverse("hello_guy_ai_run_stream", args=[run.pk])
     return f"{url}?after={run.stream_offset}" if run.stream_offset else url
+
+
+# ---- public website chat ---------------------------------------------------------------
+
+
+def public_user() -> Any:
+    """The user every anonymous website visitor acts as. Raises AssistantNotFound when disabled."""
+    from django.contrib.auth import get_user_model
+
+    if not (ai_settings.PUBLIC_AGENT and ai_settings.PUBLIC_USER):
+        raise AssistantNotFound("Website chat is not enabled")
+    user = get_user_model().objects.filter(username=ai_settings.PUBLIC_USER, is_active=True).first()
+    if user is None:
+        raise AssistantNotFound("Website chat is not set up (run: manage.py setup_website_bot)")
+    return user
+
+
+def public_threads() -> QuerySet[Thread]:
+    """Only threads of the public agent owned by the website user: a visitor can never reach others."""
+    return Thread.objects.filter(created_by=public_user(), assistant_id=ai_settings.PUBLIC_AGENT)
 
 
 # ---- turns -------------------------------------------------------------------------
@@ -169,25 +191,6 @@ def submit_feedback(user: Any, run: Run, rating: str, comment: str = "") -> dict
 
 
 # ---- knowledge ---------------------------------------------------------------------
-
-
-def create_document(user: Any, kb_slug: str, upload: UploadedFile, title: str = "") -> Document:
-    if not user.is_staff:
-        raise NotAllowed("Only staff can upload knowledge documents")
-    kb = KnowledgeBase.objects.filter(slug=kb_slug).first()
-    if kb is None:
-        raise AssistantNotFound(f"Knowledge base '{kb_slug}' not found")
-    suffix = Path(upload.name or "").suffix.lower()
-    if suffix not in SUPPORTED_EXTENSIONS:
-        raise ValueError(f"Allowed file types: {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
-    if upload.size > ai_settings.MAX_UPLOAD_MB * 1024 * 1024:
-        raise ValueError(f"File larger than {ai_settings.MAX_UPLOAD_MB} MB")
-    with transaction.atomic():
-        doc = Document.objects.create(
-            knowledge_base=kb, title=(title or upload.name)[:255], file=upload, uploaded_by=user
-        )
-        transaction.on_commit(lambda: enqueue_ingest(doc.pk))
-    return doc
 
 
 def enqueue_ingest(doc_id: int) -> None:

@@ -205,4 +205,6 @@ HELLO_GUY_AI = {
         "cms.techskill",
         "cms.youtubevideo",
     ],
+    "PUBLIC_AGENT": "website_assistant",
+    "PUBLIC_USER": "website-bot",
 }

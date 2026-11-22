@@ -20,7 +20,6 @@ DEFAULTS: dict[str, Any] = {
     "MILVUS_COLLECTION": "hello_guy_chunks_v2",  # v2 schema: kb_id instead of assistant_id
     "CHUNK_SIZE": 1000,
     "CHUNK_OVERLAP": 150,
-    "MAX_UPLOAD_MB": 10,
     # Built-in ORM tools: "app_label.model" allowlist. Empty = agents cannot touch your data.
     "ORM_TOOLS_MODELS": [],
     # Runtime
@@ -29,6 +28,11 @@ DEFAULTS: dict[str, Any] = {
     "RUN_TIME_LIMIT_SECONDS": 300,
     "STREAM_TTL_SECONDS": 900,
     "SSE_MAX_SECONDS": 600,
+    # Public website chat (/api/ai/public/*): visitors chat with PUBLIC_AGENT, running as PUBLIC_USER.
+    # Empty = public chat disabled. Create the user with: python manage.py setup_website_bot
+    "PUBLIC_AGENT": "",
+    "PUBLIC_USER": "",
+    "PUBLIC_MESSAGES_PER_MINUTE": 10,  # per visitor IP
 }
 
 

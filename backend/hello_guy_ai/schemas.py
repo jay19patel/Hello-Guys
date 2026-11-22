@@ -26,10 +26,6 @@ class ThreadIn(Schema):
     name: str = Field(default="", max_length=255)
 
 
-class ThreadPatch(Schema):
-    name: str = Field(max_length=255)
-
-
 class QuestionOut(Schema):
     key: str
     tool: str
@@ -105,40 +101,6 @@ class FeedbackOut(Schema):
 
 class StopOut(Schema):
     status: str
-
-
-class RunOut(Schema):
-    id: UUID
-    status: str
-    model: str
-    error: str
-    iterations: int
-    prompt_tokens: int
-    completion_tokens: int
-    feedback_rating: str
-    created_at: datetime
-    finished_at: datetime | None = None
-
-
-class KnowledgeBaseOut(Schema):
-    slug: str
-    name: str
-    description: str
-    enabled: bool
-
-
-class DocumentOut(Schema):
-    id: int
-    knowledge_base: str
-    title: str
-    status: str
-    chunk_count: int
-    error: str
-    created_at: datetime
-
-    @staticmethod
-    def resolve_knowledge_base(obj) -> str:
-        return obj.knowledge_base.slug if obj.knowledge_base_id else ""
 
 
 class ErrorOut(Schema):

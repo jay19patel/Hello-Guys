@@ -34,7 +34,6 @@
       messages: (threadId) => request(`/threads/${threadId}/messages?limit=200`),
       send: (threadId, content) =>
         request(`/threads/${threadId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
-      run: (runId) => request(`/runs/${runId}`),
       thread: (threadId) => request(`/threads/${threadId}`),
       resume: (runId, answers) =>
         request(`/runs/${runId}/resume`, { method: "POST", body: JSON.stringify({ answers }) }),

@@ -8,6 +8,7 @@ from uuid import UUID
 
 import redis
 import redis.asyncio as aioredis
+from asgiref.sync import sync_to_async
 from redis.exceptions import RedisError
 from django.contrib.auth.decorators import login_required
 from django.core.handlers.asgi import ASGIRequest
@@ -16,6 +17,7 @@ from django.shortcuts import render
 
 from hello_guy_ai import events
 from hello_guy_ai.conf import ai_settings
+from hello_guy_ai.exceptions import AssistantNotFound
 from hello_guy_ai.models import Run
 
 logger = logging.getLogger(__name__)
@@ -24,13 +26,20 @@ STREAM_ID = re.compile(r"^\d{1,20}-\d{1,20}$")
 
 
 async def run_stream(request: HttpRequest, run_id: UUID) -> HttpResponse:
-    """Server-Sent Events for one run. Supports reconnect via Last-Event-ID."""
+    """Server-Sent Events for one run. Supports reconnect via Last-Event-ID.
+
+    Logged-in users stream their own runs (superusers: any). Anonymous website visitors can stream
+    only runs of the public chat (the random run id from their own POST is the key).
+    """
     user = await request.auser()
-    if not user.is_authenticated:
-        return HttpResponse(status=401)
     run = await Run.objects.select_related("thread").filter(pk=run_id).afirst()
-    if run is None or not (user.is_superuser or run.thread.created_by_id == user.pk):
+    if run is None:
         raise Http404
+    if user.is_authenticated:
+        if not (user.is_superuser or run.thread.created_by_id == user.pk):
+            raise Http404
+    elif not await sync_to_async(_is_public_run)(run):
+        return HttpResponse(status=401)
 
     # Last-Event-ID (browser reconnect) wins; ?after= starts a resumed run after its pre-pause events.
     last_id = _valid_id(request.headers.get("Last-Event-ID")) or _valid_id(request.GET.get("after")) or "0-0"
@@ -80,6 +89,15 @@ def _sse_sync(run: Run, last_id: str) -> Iterator[str]:
 
 def _frame(entry_id: str, event: str, data: str) -> str:
     return ": ping\n\n" if event == "ping" else f"id: {entry_id}\nevent: {event}\ndata: {data}\n\n"
+
+
+def _is_public_run(run: Run) -> bool:
+    from hello_guy_ai.services import public_user
+
+    try:
+        return run.thread.assistant_id == ai_settings.PUBLIC_AGENT and run.thread.created_by_id == public_user().pk
+    except AssistantNotFound:  # public chat disabled
+        return False
 
 
 def _valid_id(value: str | None) -> str | None:

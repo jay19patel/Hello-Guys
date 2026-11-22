@@ -81,7 +81,10 @@ class AIAssistant:
 
     @classmethod
     def can_run(cls, user: Any) -> bool:
-        return bool(user and user.is_authenticated and user.is_active)
+        if not (user and user.is_authenticated and user.is_active):
+            return False
+        # The public website user may only ever run the public agent.
+        return user.get_username() != ai_settings.PUBLIC_USER or cls.id == ai_settings.PUBLIC_AGENT
 
     def get_instructions(self) -> str:
         return self.instructions
