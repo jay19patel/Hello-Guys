@@ -1,0 +1,148 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hello Guy AI</title>
+<link rel="stylesheet" href="{% static 'hello_guy_ai/widget.css' %}">
+<style>
+  :root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e3e3de; --accent:#2f6f5e; --user:#e8f1ee; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --panel:#1f1f1d; --text:#ecece8; --muted:#9a9a93; --line:#2e2e2b; --accent:#6fbfa6; --user:#22302b; color-scheme: dark;
+            --hg-warn-bg:#3a2f12; --hg-warn-fg:#f3e2b3; --hg-warn-border:#8a6d22; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); height:100vh; height:100dvh; display:grid; grid-template-columns:270px 1fr; }
+  aside { border-right:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0; }
+  aside header { padding:14px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid var(--line); }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .brand { font-weight:600; }
+  a { color:var(--accent); text-decoration:none; font-size:13px; }
+  button, select { font:inherit; border:1px solid var(--line); background:var(--panel); color:var(--text); border-radius:8px; padding:6px 12px; }
+  button { cursor:pointer; }
+  select { width:100%; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary.is-stop { background:#b3261e; border-color:#b3261e; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  #threads { overflow:auto; flex:1; }
+  .thread { display:block; width:100%; text-align:left; border:0; border-radius:0; border-bottom:1px solid var(--line); padding:10px 14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .thread.active { background:var(--user); }
+  main { display:flex; flex-direction:column; min-height:0; }
+  #messages { flex:1; overflow:auto; padding:24px; display:flex; flex-direction:column; gap:12px; max-width:900px; width:100%; margin:0 auto; }
+  #messages .hg-msg { max-width:760px; padding:10px 14px; border-radius:12px; font-size:15px; }
+  #messages .hg-msg.user { background:var(--user); color:var(--text); }
+  #messages .hg-msg.assistant { background:var(--panel); border:1px solid var(--line); }
+  #messages .hg-meta, #messages .hg-empty { color:var(--muted); }
+  #messages .hg-q-other { background:var(--bg); color:var(--text); border-color:var(--line); }
+  form { display:flex; gap:8px; padding:14px; border-top:1px solid var(--line); background:var(--panel); }
+  textarea { flex:1; resize:none; font:inherit; padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
+  @media (max-width: 700px) { body { grid-template-columns:1fr; } aside { display:none; } }
+</style>
+</head>
+<body>
+<aside>
+  <header>
+    <div class="row">
+      <span class="brand">💬 Hello Guy AI</span>
+      {% if user.is_staff %}<a href="{% url 'admin:index' %}">← Admin</a>{% endif %}
+    </div>
+    <select id="assistant" aria-label="Assistant" hidden></select>
+    <button id="new" class="primary" type="button">＋ New chat</button>
+  </header>
+  <nav id="threads" aria-label="Conversations"></nav>
+</aside>
+<main>
+  <div id="messages" aria-live="polite"></div>
+  <form id="composer">
+    <textarea id="input" rows="2" placeholder="Kuch bhi poocho…" title="Enter = send, Shift+Enter = new line" maxlength="8000" aria-label="Message"></textarea>
+    <button class="primary" id="send" type="submit">Send</button>
+  </form>
+</main>
+<script src="{% static 'hello_guy_ai/client.js' %}"></script>
+<script src="{% static 'hello_guy_ai/chat-view.js' %}"></script>
+<script>
+(function () {
+  "use strict";
+  const client = HelloGuy.createClient("{% url 'hello_guy_ai:api-root' %}");
+  const el = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  let assistantId = params.get("assistant");
+  let threadId = params.get("thread");
+  const view = HelloGuy.createChatView({
+    client,
+    list: el("messages"),
+    onBusy: (busy) => {
+      el("send").textContent = busy ? "Stop" : "Send";
+      el("send").classList.toggle("is-stop", busy);
+      el("new").disabled = el("assistant").disabled = busy;
+    },
+  });
+
+  function syncUrl() {
+    const p = new URLSearchParams();
+    if (assistantId) p.set("assistant", assistantId);
+    if (threadId) p.set("thread", threadId);
+    history.replaceState(null, "", `${location.pathname}?${p}`);
+  }
+
+  async function loadAssistants() {
+    const list = await client.assistants();
+    if (!list.length) throw new Error("No assistant available for your account.");
+    if (!list.some((a) => a.id === assistantId)) assistantId = list[0].id;
+    el("assistant").replaceChildren(...list.map((a) => new Option(a.name, a.id)));
+    el("assistant").value = assistantId;
+    el("assistant").hidden = list.length < 2;
+  }
+
+  async function loadThreads() {
+    const { items } = await client.threads(assistantId);
+    el("threads").replaceChildren(...items.map((t) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "thread" + (t.id === threadId ? " active" : "");
+      b.textContent = t.name || "Untitled chat";
+      b.onclick = () => { if (!view.isBusy()) openThread(t.id); };
+      return b;
+    }));
+  }
+
+  async function openThread(id) {
+    threadId = id || null;
+    syncUrl();
+    loadThreads();
+    if (!threadId) return view.notice("Hello! Kuch bhi poocho. Data badalne wale actions pehle aapse approval lenge.");
+    try {
+      await view.load(threadId, "Empty chat. Start typing below.");
+    } catch (err) {
+      threadId = null;
+      syncUrl();
+      view.notice(err.status === 404 ? "Chat not found." : err.message);
+    }
+  }
+
+  el("new").onclick = () => { openThread(null); el("input").focus(); };
+  el("assistant").onchange = () => { assistantId = el("assistant").value; openThread(null); };
+  el("input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!view.isBusy()) el("composer").requestSubmit(); }
+  });
+  el("composer").onsubmit = async (e) => {
+    e.preventDefault();
+    if (view.isBusy()) return view.stop();
+    const content = el("input").value.trim();
+    if (!content) return;
+    el("input").value = "";
+    try {
+      if (!threadId) { threadId = (await client.createThread(assistantId)).id; syncUrl(); loadThreads(); }
+      await view.send(threadId, content);
+      await loadThreads();
+    } catch (err) {
+      view.notice(err.message);
+    }
+  };
+
+  loadAssistants().then(() => openThread(threadId)).catch((err) => view.notice(err.message));
+  el("input").focus();
+})();
+</script>
+</body>
+</html>

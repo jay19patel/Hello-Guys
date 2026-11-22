@@ -12,23 +12,25 @@ urlpatterns = [
 
     path('admin/', admin.site.urls),
     path('api/auth/token/', obtain_auth_token, name='api_token_auth'),
-    # Direct access: http://127.0.0.1:8085/dashboard/
+
+    # Meta Connector Dashboard
     path('dashboard/login/', auth_views.LoginView.as_view(template_name='dashboard/login.html', redirect_authenticated_user=True), name='dashboard-login'),
     path('dashboard/logout/', auth_views.LogoutView.as_view(), name='dashboard-logout'),
     path('dashboard/settings/', settings_view, name='dashboard-settings'),
     path('dashboard/webhooks/', webhook_actions_view, name='dashboard-webhooks'),
     path('dashboard/accounts/<int:pk>/', account_detail_view, name='dashboard-account'),
-    # Insights now live on the Overview; keep old links working (and their ?days=).
     path('dashboard/insights/', RedirectView.as_view(pattern_name='dashboard', query_string=True), name='dashboard-insights'),
     path('dashboard/contacts/<int:pk>/', contact_detail_view, name='dashboard-contact'),
     path('dashboard/', DashboardIndexView.as_view(), name='dashboard'),
 
-    # CMS Dedicated App UI
-    path('cms/', include('cms.urls_ui', namespace='cms_ui')),
-    # Legacy redirect from /dashboard/cms/ to /cms/
-    path('dashboard/cms/', RedirectView.as_view(url='/cms/', permanent=False)),
+    # CMS content is managed via Django Admin (/admin/cms/)
+    # Legacy /cms/ redirect to admin CMS section
+    path('cms/', RedirectView.as_view(url='/admin/cms/', permanent=False)),
 
-    # APIs
+    # APIs (read-only for frontend, write for inquiries)
     path('api/meta/', include('meta_connector.urls', namespace='meta_connector')),
     path('api/cms/', include('cms.urls', namespace='cms')),
+
+    # Hello Guy AI — chat UI + REST API + SSE stream
+    path('', include('hello_guy_ai.urls')),
 ]

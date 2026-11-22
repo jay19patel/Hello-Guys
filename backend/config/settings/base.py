@@ -20,6 +20,10 @@ SECRET_KEY = env('SECRET_KEY', default='django-insecure-meta-connector-productio
 
 # Application definition
 INSTALLED_APPS = [
+    # hello_guy_ai MUST be before django.contrib.admin
+    # so its admin/base_site.html override (AI Chat link) loads first.
+    'hello_guy_ai.apps.HelloGuyAiConfig',
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -187,4 +191,18 @@ LOGGING = {
             'propagate': False,
         },
     },
+}
+
+# Hello Guy AI: models the generic db_* tools may touch (writes still need approval + Django perms).
+# Reads go through the explicit tools in cms/ai_tools.py.
+HELLO_GUY_AI = {
+    "ORM_TOOLS_MODELS": [
+        "cms.blogpost",
+        "cms.project",
+        "cms.faq",
+        "cms.testimonial",
+        "cms.solution",
+        "cms.techskill",
+        "cms.youtubevideo",
+    ],
 }

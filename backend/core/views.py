@@ -79,7 +79,7 @@ class HubPortalView(LoginRequiredMixin, TemplateView):
             'blogs_count': total_blogs,
             'solutions_count': total_solutions,
             'brand_name': site_settings.brand_name,
-            'url': '/cms/',
+            'url': '/admin/cms/',
         }
 
         # ------------------------------------------------------------------

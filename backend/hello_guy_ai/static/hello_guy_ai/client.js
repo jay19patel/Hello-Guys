@@ -1,0 +1,77 @@
+/* Shared client for the chat page and the admin widget. No dependencies. */
+(function () {
+  "use strict";
+
+  function csrfToken() {
+    const row = document.cookie.split("; ").find((c) => c.startsWith("csrftoken="));
+    return row ? decodeURIComponent(row.split("=")[1]) : "";
+  }
+
+  function createClient(apiBase) {
+    const base = apiBase.replace(/\/$/, "");
+
+    async function request(path, options = {}) {
+      const res = await fetch(base + path, {
+        credentials: "same-origin",
+        ...options,
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken(), ...(options.headers || {}) },
+      });
+      if (res.status === 204) return null;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data.message || data.detail?.[0]?.msg || `Request failed (${res.status})`);
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    }
+
+    return {
+      assistants: () => request("/assistants"),
+      threads: (assistantId) => request(`/threads?limit=30&assistant_id=${encodeURIComponent(assistantId)}`),
+      createThread: (assistantId) =>
+        request("/threads", { method: "POST", body: JSON.stringify({ assistant_id: assistantId }) }),
+      messages: (threadId) => request(`/threads/${threadId}/messages?limit=200`),
+      send: (threadId, content) =>
+        request(`/threads/${threadId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+      run: (runId) => request(`/runs/${runId}`),
+      thread: (threadId) => request(`/threads/${threadId}`),
+      resume: (runId, answers) =>
+        request(`/runs/${runId}/resume`, { method: "POST", body: JSON.stringify({ answers }) }),
+      stop: (runId) => request(`/runs/${runId}/stop`, { method: "POST" }),
+      feedback: (runId, rating, comment = "") =>
+        request(`/runs/${runId}/feedback`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+    };
+  }
+
+  /**
+   * Follow a run's SSE stream. Returns a close() function.
+   * handlers: onToken(fullText), onTool(name|null, info), onSources(list), onDone(finalText|undefined, data),
+   *           onError(message), onPaused(questions), onStopped()
+   */
+  function streamRun(url, handlers) {
+    const source = new EventSource(url, { withCredentials: true });
+    let text = "";
+    let finished = false;
+    const finish = () => { finished = true; source.close(); };
+    const parse = (e) => { try { return JSON.parse(e.data); } catch { return {}; } };
+
+    source.addEventListener("token", (e) => { text += parse(e).text || ""; handlers.onToken?.(text); });
+    source.addEventListener("tool_start", (e) => { const d = parse(e); handlers.onTool?.(d.name, d); });
+    source.addEventListener("tool_end", (e) => { text = ""; handlers.onTool?.(null, parse(e)); });
+    source.addEventListener("sources", (e) => handlers.onSources?.(parse(e).sources || []));
+    source.addEventListener("done", (e) => { finish(); const d = parse(e); handlers.onDone?.(d.content, d); });
+    source.addEventListener("paused", (e) => { finish(); handlers.onPaused?.(parse(e).questions || []); });
+    source.addEventListener("stopped", () => { finish(); handlers.onStopped?.(); });
+    source.addEventListener("error", (e) => {
+      if (finished) return;
+      if (e.data) { finish(); handlers.onError?.(parse(e).message || "Assistant failed"); return; }
+      // CLOSED = server refused (HTTP error): the browser won't retry, so tell the user.
+      if (source.readyState === EventSource.CLOSED) { finish(); handlers.onError?.("Connection to the assistant failed. Please try again."); }
+      // Otherwise a network blip: EventSource reconnects itself with Last-Event-ID.
+    });
+    return finish;
+  }
+
+  window.HelloGuy = { createClient, streamRun };
+})();
