@@ -6,11 +6,19 @@ from ninja import Schema
 from pydantic import Field
 
 
+class ToolInfoOut(Schema):
+    name: str
+    description: str = ""
+    requires_confirmation: bool = False
+
+
 class AssistantOut(Schema):
     id: str
     name: str
     description: str = ""
-    kind: str
+    model: str = ""
+    tools: list[ToolInfoOut] = []
+    suggestions: list[str] = []
 
 
 class ThreadIn(Schema):
@@ -60,6 +68,19 @@ class MessageOut(Schema):
     name: str = ""
     run_id: UUID | None = None
     created_at: datetime
+    # Only on user messages (one per run): lets a reloaded chat show how that run ended.
+    run_status: str | None = None
+    run_error: str = ""
+
+    @staticmethod
+    def resolve_run_status(obj) -> str | None:
+        return obj.run.status if obj.role == "user" and obj.run_id else None
+
+    @staticmethod
+    def resolve_run_error(obj) -> str:
+        if obj.role == "user" and obj.run_id and obj.run.status == "failed":
+            return obj.run.public_error
+        return ""
 
 
 class RunAccepted(Schema):

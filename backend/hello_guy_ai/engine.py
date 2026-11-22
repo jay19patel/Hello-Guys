@@ -121,7 +121,7 @@ class AgentRunner:
         return None
 
     def _run_tool(self, call_id: str, tool, args: dict) -> str:
-        self.events.publish("tool_start", {"id": call_id, "name": tool.name})
+        self.events.publish("tool_start", {"id": call_id, "name": tool.name, "args": json.loads(json.dumps(args, default=str))})  # step label in UI
         result = tool.call(args)
         self.events.publish("tool_end", {"id": call_id, "name": tool.name, "error": result.startswith("Error:")})
         return result
@@ -253,11 +253,9 @@ class AgentRunner:
             self.events.publish("stopped", {})
 
     def _fail(self, exc: BaseException) -> None:
-        if self._transition(Run.Status.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000], finished_at=timezone.now()):
-            message = "The assistant failed to respond. Please retry."
-            if isinstance(exc, litellm.RateLimitError):
-                message = "The AI provider's rate limit was hit. Wait a few seconds and send again."
-            self.events.publish("error", {"message": message})
+        error = f"{type(exc).__name__}: {exc}"[:2000]
+        if self._transition(Run.Status.FAILED, error=error, finished_at=timezone.now()):
+            self.events.publish("error", {"message": Run(error=error).public_error})
 
     def _transition(self, status: str, **fields: Any) -> bool:
         done = Run.objects.filter(pk=self.run.pk, status=Run.Status.RUNNING).update(status=status, **fields)

@@ -1,7 +1,6 @@
 import uuid
 
 from django.conf import settings
-from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
@@ -58,38 +57,6 @@ class KnowledgeBase(models.Model):
 
     def __str__(self) -> str:
         return self.name
-
-
-class Agent(models.Model):
-    """Agent configured from admin, no code needed (Flow: Flow Agent)."""
-
-    class RagMode(models.TextChoices):
-        TOOL = "tool", "LLM calls search_knowledge when needed"
-        AUTO = "auto", "Retrieve on every turn"
-
-    slug = models.CharField(max_length=64, unique=True, validators=[SLUG_VALIDATOR])
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    instructions = models.TextField()
-    llm = models.ForeignKey(LLMModel, on_delete=models.PROTECT, null=True, blank=True)
-    temperature = models.FloatField(null=True, blank=True, default=0.3)
-    tools = models.JSONField(default=list, blank=True, help_text="Registered tool names")
-    knowledge_bases = models.ManyToManyField(KnowledgeBase, blank=True)
-    rag_mode = models.CharField(max_length=8, choices=RagMode.choices, default=RagMode.TOOL)
-    memory_enabled = models.BooleanField(default=False)
-    max_iterations = models.PositiveSmallIntegerField(default=8)
-    allowed_groups = models.ManyToManyField(Group, blank=True, help_text="Empty = every logged-in user")
-    enabled = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self) -> str:
-        return self.name
-
-    def clean(self) -> None:
-        from hello_guy_ai.agents import validate_db_agent
-
-        validate_db_agent(self)
 
 
 class Source(models.TextChoices):
@@ -165,6 +132,17 @@ class Run(models.Model):
     @property
     def is_finished(self) -> bool:
         return self.status not in self.ACTIVE
+
+    @property
+    def public_error(self) -> str:
+        """What the chat shows for a failed run. The raw `error` (stack details) stays admin-only."""
+        if self.error.startswith("RateLimitError"):
+            return "The AI provider's rate limit was hit. Wait a few seconds and send again."
+        if self.error.startswith(("APIConnectionError", "Timeout", "ServiceUnavailableError")):
+            return "The AI provider could not be reached. Please try again in a moment."
+        if self.error.startswith(("AuthenticationError", "PermissionDeniedError")):
+            return "The AI provider rejected the API key. Check it in admin under LLM models."
+        return "The assistant failed to respond. Please retry."
 
 
 class Message(models.Model):

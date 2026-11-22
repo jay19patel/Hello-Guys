@@ -3,12 +3,11 @@ from django.contrib import admin
 from django.db import transaction
 
 from hello_guy_ai import services
-from hello_guy_ai.models import Agent, AgentMemory, Document, KnowledgeBase, LLMModel, Message, Run, Thread, Trigger
-from hello_guy_ai.runtime import registered_tools
+from hello_guy_ai.models import AgentMemory, Document, KnowledgeBase, LLMModel, Message, Run, Thread, Trigger
 
 
 class SuperuserOnlyAdmin(admin.ModelAdmin):
-    """Agent/LLM/Trigger config decides what code runs and with which keys: superusers only."""
+    """LLM/Trigger config decides what code runs and with which keys: superusers only."""
 
     def has_module_permission(self, request):
         return request.user.is_superuser
@@ -71,29 +70,6 @@ class LLMModelAdmin(SuperuserOnlyAdmin):
     @admin.display(boolean=True, description="API key")
     def has_api_key(self, obj):
         return bool(obj.api_key)
-
-
-class AgentForm(forms.ModelForm):
-    tools = forms.MultipleChoiceField(required=False, widget=forms.CheckboxSelectMultiple)
-
-    class Meta:
-        model = Agent
-        fields = "__all__"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["tools"].choices = [
-            (name, f"{name}{' (needs approval)' if t.requires_confirmation else ''}")
-            for name, t in sorted(registered_tools().items())
-        ]
-
-
-@admin.register(Agent)
-class AgentAdmin(SuperuserOnlyAdmin):
-    form = AgentForm
-    list_display = ("name", "slug", "llm", "rag_mode", "memory_enabled", "enabled")
-    filter_horizontal = ("knowledge_bases", "allowed_groups")
-    prepopulated_fields = {"slug": ("name",)}
 
 
 class DocumentInline(admin.TabularInline):

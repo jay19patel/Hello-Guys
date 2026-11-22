@@ -208,7 +208,7 @@ def validate_trigger(trigger: Trigger) -> None:
 
     errors: dict[str, str] = {}
     if trigger.agent_id and not agent_exists(trigger.agent_id):
-        errors["agent_id"] = "No enabled agent with this id."
+        errors["agent_id"] = "No agent with this id (agents are defined in ai_assistants.py)."
     if trigger.event == Trigger.Event.SCHEDULED:
         if not trigger.cron or not croniter.is_valid(trigger.cron):
             errors["cron"] = "A valid cron expression is required for scheduled triggers."

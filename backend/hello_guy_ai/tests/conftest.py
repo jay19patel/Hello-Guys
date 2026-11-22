@@ -25,6 +25,7 @@ def fake_redis(monkeypatch):
     monkeypatch.setattr(
         views.aioredis.Redis, "from_url", lambda *a, **k: fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
     )
+    monkeypatch.setattr(views.redis.Redis, "from_url", lambda *a, **k: fakeredis.FakeRedis(server=server, decode_responses=True))
     return sync_client
 
 

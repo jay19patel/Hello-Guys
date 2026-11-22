@@ -5,10 +5,12 @@ answer in ONE call instead of the generic list -> describe -> read chain (fewer 
 trips = fewer rate-limit hits). Every tool checks the requesting user's Django view perm.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from django.contrib.auth import get_permission_codename
 from django.db.models import Model, Q
+from django.utils import timezone
+from django.utils.text import slugify
 
 from cms.models import FAQ, BlogPost, InquirySubmission, Project, Solution, TechSkill, Testimonial, YouTubeVideo
 from hello_guy_ai.runtime import ToolError, current_context, tool
@@ -16,10 +18,14 @@ from hello_guy_ai.runtime import ToolError, current_context, tool
 MAX_LIMIT = 50
 
 
-def _require_view(model: type[Model]) -> None:
+def _require(action: str, model: type[Model]) -> None:
     user = current_context().user
-    if not user.has_perm(f"{model._meta.app_label}.{get_permission_codename('view', model._meta)}"):
-        raise ToolError(f"You don't have permission to view {model._meta.verbose_name_plural}.")
+    if not user.has_perm(f"{model._meta.app_label}.{get_permission_codename(action, model._meta)}"):
+        raise ToolError(f"You don't have permission to {action} {model._meta.verbose_name_plural}.")
+
+
+def _require_view(model: type[Model]) -> None:
+    _require("view", model)
 
 
 def _limit(limit: int) -> int:
@@ -129,3 +135,68 @@ def list_inquiries(unreplied_only: bool = False, query: str = "", limit: int = 1
             "inquiry_id", "name", "email", "phone", "subject", "message", "inquiry_type", "is_replied", "created_at"
         )[: _limit(limit)]
     )
+
+
+@tool
+def top_blog_posts(metric: Literal["views", "likes"] = "views", limit: int = 5) -> list[dict]:
+    """Rank blog posts by views or likes, highest first. Use for "most popular" / "best performing" questions."""
+    _require_view(BlogPost)
+    field = "views_count" if metric == "views" else "likes_count"
+    return list(
+        BlogPost.objects.order_by(f"-{field}").values("title", "slug", "category", "is_published", "views_count", "likes_count")[
+            : _limit(limit)
+        ]
+    )
+
+
+@tool
+def get_inquiry(inquiry_id: str) -> dict:
+    """Get one visitor inquiry with its full message and reply history, by inquiry_id (e.g. sub_74658245fdf5)."""
+    _require_view(InquirySubmission)
+    row = InquirySubmission.objects.filter(inquiry_id=inquiry_id).values().first()
+    if row is None:
+        raise ToolError(f"No inquiry {inquiry_id!r}. Use list_inquiries to find the id.")
+    return row
+
+
+def _confirm_replied(args: dict) -> str:
+    note = f"\nNote: {args['note']}" if args.get("note") else ""
+    return f"Mark inquiry {args['inquiry_id']} as replied.{note}"
+
+
+@tool(requires_confirmation=True, confirm_prompt=_confirm_replied)
+def mark_inquiry_replied(inquiry_id: str, note: str = "") -> dict:
+    """Mark a visitor inquiry as replied and log an optional note. Needs the user's approval."""
+    _require("change", InquirySubmission)
+    inquiry = InquirySubmission.objects.filter(inquiry_id=inquiry_id).first()
+    if inquiry is None:
+        raise ToolError(f"No inquiry {inquiry_id!r}.")
+    inquiry.is_replied = True
+    inquiry.replies = [
+        *(inquiry.replies or []),
+        {"type": "marked_replied", "note": note[:1000], "by": current_context().user.get_username(), "at": timezone.now().isoformat()},
+    ]
+    inquiry.save(update_fields=["is_replied", "replies", "updated_at"])
+    return {"inquiry_id": inquiry_id, "is_replied": True}
+
+
+def _confirm_draft(args: dict) -> str:
+    preview = args.get("content", "")[:600]
+    return f"Create a DRAFT blog post (not published)\nTitle: {args['title']}\nCategory: {args.get('category')}\n\n{preview}"
+
+
+@tool(requires_confirmation=True, confirm_prompt=_confirm_draft)
+def create_blog_draft(title: str, content: str, category: str = "Tutorial") -> dict:
+    """Save a new blog post as an unpublished DRAFT. content is the full article in Markdown.
+    Needs the user's approval. The user publishes it later from the admin."""
+    _require("add", BlogPost)
+    if not title.strip() or not content.strip():
+        raise ToolError("title and content are required.")
+    base = slugify(title)[:200] or "draft"
+    slug, n = base, 2
+    while BlogPost.objects.filter(slug=slug).exists():
+        slug, n = f"{base}-{n}", n + 1
+    post = BlogPost.objects.create(
+        title=title.strip()[:200], slug=slug, content=content, category=category.strip()[:60] or "Tutorial", is_published=False
+    )
+    return {"slug": post.slug, "title": post.title, "is_published": False, "admin_url": f"/admin/cms/blogpost/{post.pk}/change/"}

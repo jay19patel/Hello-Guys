@@ -23,12 +23,12 @@ def test_full_page_chat(client, user, staff):
     assert client.get("/chat/").status_code == 302  # login required
     client.force_login(user)
     html = client.get("/chat/?thread=abc").content.decode()
-    assert "hello_guy_ai/client.js" in html and "← Admin" not in html
+    assert "hello_guy_ai/client.js" in html and "Admin ↗" not in html
     client.force_login(staff)
-    assert "← Admin" in client.get("/chat/").content.decode()
+    assert "Admin ↗" in client.get("/chat/").content.decode()
 
 
-@pytest.mark.parametrize("name", ["client.js", "chat-view.js", "widget.css"])
+@pytest.mark.parametrize("name", ["client.js", "chat-view.js", "markdown.js", "chat.css"])
 def test_static_assets_resolve(name):
     from django.contrib.staticfiles import finders
 

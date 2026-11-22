@@ -1,13 +1,11 @@
 from typing import Literal
 
 import pytest
-from django.contrib.auth.models import Group
-from django.core.exceptions import ValidationError
 
 from hello_guy_ai.agents import list_agents, resolve_agent
 from hello_guy_ai.assistant import AIAssistant
 from hello_guy_ai.exceptions import AssistantMisconfigured, AssistantNotFound, NotAllowed
-from hello_guy_ai.models import Agent, KnowledgeBase, LLMModel
+from hello_guy_ai.models import LLMModel
 from hello_guy_ai.runtime import (
     TOOL_REGISTRY,
     ToolContext,
@@ -93,40 +91,32 @@ def test_resolve_code_agent(user, kb):
         resolve_agent("nope", user)
 
 
+class PinnedLLMBot(AIAssistant):
+    id = "test_pinned_llm"
+    name = "Pinned"
+    llm = "acme"  # an admin LLM model, picked by name
+
+
 @pytest.mark.django_db
-def test_db_agent_resolution_permissions_and_llm(user):
+def test_code_agent_uses_named_admin_llm_and_staff_only_agents(user, staff):
+    with pytest.raises(AssistantMisconfigured):  # named model missing in admin
+        resolve_agent("test_pinned_llm", user)
     llm = LLMModel(name="acme", model_id="openai/gpt-x", api_base="http://llm.local")
     llm.set_api_key("sk-secret")
     llm.save()
     assert "sk-secret" not in llm.api_key  # stored encrypted
-    on = KnowledgeBase.objects.create(slug="on", name="On", description="Pricing docs")
-    off = KnowledgeBase.objects.create(slug="off", name="Off", enabled=False)
-    agent = Agent.objects.create(slug="sales", name="Sales", instructions="Sell.", llm=llm, tools=["db_read"])
-    agent.knowledge_bases.set([on, off])
-
-    spec = resolve_agent("sales", user)
+    spec = resolve_agent("test_pinned_llm", user)
     assert spec.model == "openai/gpt-x" and spec.llm_kwargs["api_key"] == "sk-secret"
-    assert spec.knowledge_base_ids == [on.pk]  # disabled KB never searchable
-    assert {t.name for t in spec.tools} == {"db_read", "search_knowledge"}
-    assert "Pricing docs" in spec.tool_map["search_knowledge"].description
-    assert any(a["id"] == "sales" and a["kind"] == "db" for a in list_agents(user))
-
-    agent.allowed_groups.add(Group.objects.create(name="sales-team"))
-    with pytest.raises(NotAllowed):
-        resolve_agent("sales", user)
-    assert all(a["id"] != "sales" for a in list_agents(user))
     llm.enabled = False
     llm.save()
-    user.groups.add(Group.objects.get(name="sales-team"))
     with pytest.raises(NotAllowed):
-        resolve_agent("sales", user)
+        resolve_agent("test_pinned_llm", user)
 
-
-@pytest.mark.django_db
-def test_db_agent_validation():
-    with pytest.raises(ValidationError) as err:
-        Agent(slug="hello_guy", name="x", instructions="x", tools=["nope"], max_iterations=99).full_clean()
-    assert {"slug", "tools", "max_iterations"} <= set(err.value.message_dict)
+    # cms agents are staff only: hidden from and refused to normal users
+    assert "content_writer" not in {a["id"] for a in list_agents(user)}
+    assert "content_writer" in {a["id"] for a in list_agents(staff)}
+    with pytest.raises(NotAllowed):
+        resolve_agent("content_writer", user)
 
 
 @pytest.mark.django_db

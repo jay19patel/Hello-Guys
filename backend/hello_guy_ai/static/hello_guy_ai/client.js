@@ -1,4 +1,4 @@
-/* Shared client for the chat page and the admin widget. No dependencies. */
+/* API + SSE client for the chat page. No dependencies. */
 (function () {
   "use strict";
 
@@ -28,7 +28,7 @@
 
     return {
       assistants: () => request("/assistants"),
-      threads: (assistantId) => request(`/threads?limit=30&assistant_id=${encodeURIComponent(assistantId)}`),
+      threads: (assistantId) => request(`/threads?limit=50&assistant_id=${encodeURIComponent(assistantId)}`),
       createThread: (assistantId) =>
         request("/threads", { method: "POST", body: JSON.stringify({ assistant_id: assistantId }) }),
       messages: (threadId) => request(`/threads/${threadId}/messages?limit=200`),
@@ -46,8 +46,9 @@
 
   /**
    * Follow a run's SSE stream. Returns a close() function.
-   * handlers: onToken(fullText), onTool(name|null, info), onSources(list), onDone(finalText|undefined, data),
-   *           onError(message), onPaused(questions), onStopped()
+   * handlers: onToken(segmentText), onToolStart(data), onToolEnd(data), onSources(list),
+   *           onDone(finalText|undefined, data), onError(message), onPaused(questions), onStopped()
+   * A text segment restarts after each tool call, so text before and after tools stays separate.
    */
   function streamRun(url, handlers) {
     const source = new EventSource(url, { withCredentials: true });
@@ -57,8 +58,8 @@
     const parse = (e) => { try { return JSON.parse(e.data); } catch { return {}; } };
 
     source.addEventListener("token", (e) => { text += parse(e).text || ""; handlers.onToken?.(text); });
-    source.addEventListener("tool_start", (e) => { const d = parse(e); handlers.onTool?.(d.name, d); });
-    source.addEventListener("tool_end", (e) => { text = ""; handlers.onTool?.(null, parse(e)); });
+    source.addEventListener("tool_start", (e) => { text = ""; handlers.onToolStart?.(parse(e)); });
+    source.addEventListener("tool_end", (e) => { text = ""; handlers.onToolEnd?.(parse(e)); });
     source.addEventListener("sources", (e) => handlers.onSources?.(parse(e).sources || []));
     source.addEventListener("done", (e) => { finish(); const d = parse(e); handlers.onDone?.(d.content, d); });
     source.addEventListener("paused", (e) => { finish(); handlers.onPaused?.(parse(e).questions || []); });
@@ -73,5 +74,5 @@
     return finish;
   }
 
-  window.HelloGuy = { createClient, streamRun };
+  window.HelloGuy = { ...(window.HelloGuy || {}), createClient, streamRun };
 })();

@@ -12,12 +12,12 @@ from django.urls import reverse
 from django.utils import timezone
 
 from hello_guy_ai import events
-from hello_guy_ai.agents import can_run_db_agent, list_agents
+from hello_guy_ai.agents import list_agents
 from hello_guy_ai.assistant import AIAssistant
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.exceptions import AssistantNotFound, NotAllowed, RunConflict, ThreadBusy
 from hello_guy_ai.memory import save_feedback_memory
-from hello_guy_ai.models import Agent, Document, KnowledgeBase, Message, Run, Source, Thread, Trigger
+from hello_guy_ai.models import Document, KnowledgeBase, Message, Run, Source, Thread, Trigger
 from hello_guy_ai.rag import SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
@@ -36,15 +36,7 @@ def list_assistants(user: Any) -> list[dict]:
 
 def check_can_run(user: Any, agent_id: str) -> None:
     """Cheap permission check for the request path (no tool/KB assembly)."""
-    code_cls = AIAssistant.registry().get(agent_id)
-    if code_cls is not None:
-        allowed = code_cls.can_run(user)
-    else:
-        agent = Agent.objects.filter(slug=agent_id, enabled=True).first()
-        if agent is None:
-            raise AssistantNotFound(f"Assistant '{agent_id}' not found")
-        allowed = can_run_db_agent(agent, user)
-    if not allowed:
+    if not AIAssistant.get_cls(agent_id).can_run(user):  # get_cls raises AssistantNotFound
         raise NotAllowed("You are not allowed to use this assistant")
 
 

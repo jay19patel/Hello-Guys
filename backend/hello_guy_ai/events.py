@@ -8,7 +8,7 @@ Streams (not pub/sub) so a client that connects late or reconnects
 
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from functools import lru_cache
 from typing import Any
 
@@ -65,6 +65,25 @@ class RunEventPublisher:
         pipe.execute()
 
 
+def _entries(response: list) -> list[tuple[str, str, str]]:
+    return [(entry_id, f["event"], f["data"]) for entry_id, f in response[0][1]] if response else []
+
+
+def iter_run_events_sync(run_id: Any, last_id: str, client: redis.Redis) -> Iterator[tuple[str, str, str]]:
+    """Blocking twin of iter_run_events for WSGI servers (runserver, gunicorn sync workers)."""
+    deadline = time.monotonic() + ai_settings.SSE_MAX_SECONDS
+    while time.monotonic() < deadline:
+        entries = _entries(client.xread({stream_key(run_id): last_id}, block=XREAD_BLOCK_MS, count=200))
+        if not entries:
+            yield "", "ping", "{}"
+        for entry_id, event, data in entries:
+            last_id = entry_id
+            yield entry_id, event, data
+            if event in TERMINAL_EVENTS:
+                return
+    yield "", "error", json.dumps({"message": "stream timeout"})
+
+
 async def iter_run_events(
     run_id: Any, last_id: str = "0-0", client: aioredis.Redis | None = None
 ) -> AsyncIterator[tuple[str, str, str]]:
@@ -79,14 +98,13 @@ async def iter_run_events(
     deadline = time.monotonic() + ai_settings.SSE_MAX_SECONDS
     try:
         while time.monotonic() < deadline:
-            response = await client.xread({stream_key(run_id): last_id}, block=XREAD_BLOCK_MS, count=200)
-            if not response:
+            entries = _entries(await client.xread({stream_key(run_id): last_id}, block=XREAD_BLOCK_MS, count=200))
+            if not entries:
                 yield "", "ping", "{}"
-                continue
-            for entry_id, fields in response[0][1]:
+            for entry_id, event, data in entries:
                 last_id = entry_id
-                yield entry_id, fields["event"], fields["data"]
-                if fields["event"] in TERMINAL_EVENTS:
+                yield entry_id, event, data
+                if event in TERMINAL_EVENTS:
                     return
         yield "", "error", json.dumps({"message": "stream timeout"})
     finally:

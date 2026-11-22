@@ -115,7 +115,7 @@ def delete_thread(request, thread_id: UUID):
 @api.get("/threads/{thread_id}/messages", response=list[MessageOut])
 @paginate
 def list_messages(request, thread_id: UUID, include_tools: bool = False):
-    qs = services.get_thread(request.user, thread_id).messages.all()
+    qs = services.get_thread(request.user, thread_id).messages.select_related("run")
     return qs if include_tools else qs.exclude(role=Message.Role.TOOL).exclude(content="")
 
 

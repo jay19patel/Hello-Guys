@@ -180,6 +180,17 @@ def test_sse_streams_and_settled_fallbacks(user, fake_redis):
     assert body.startswith("event: paused") and json.loads(body.split("data: ")[1])["questions"][0]["key"] == "c1"
 
 
+def test_sse_streams_under_wsgi_too(user, fake_redis):
+    from django.test import Client
+
+    run = Run.objects.create(thread=Thread.objects.create(created_by=user, assistant_id="hello_guy"), status="running")
+    RunEventPublisher(run.pk, client=fake_redis).publish("done", {"content": "Hi"})
+    client = Client()  # WSGI request: must get a sync iterator, or runserver buffers the whole run
+    client.force_login(user)
+    res = client.get(f"/api/ai/runs/{run.pk}/stream")
+    assert not res.is_async and "event: done" in b"".join(res.streaming_content).decode()
+
+
 def _collect(client, url) -> str:
     from asgiref.sync import async_to_sync
 
@@ -189,3 +200,13 @@ def _collect(client, url) -> str:
         return "".join([c.decode() async for c in res.streaming_content])
 
     return async_to_sync(go)()
+
+
+def test_history_keeps_failed_run_error_after_reload(user, client):
+    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    run = Run.objects.create(thread=thread, status=Run.Status.FAILED, error="RateLimitError: litellm 429 raw details")
+    thread.messages.create(role="user", content="hi", run=run)
+    client.force_login(user)
+    [msg] = client.get(f"/api/ai/threads/{thread.pk}/messages").json()["items"]
+    assert msg["run_status"] == "failed"
+    assert "rate limit" in msg["run_error"] and "raw details" not in msg["run_error"]  # friendly, never raw

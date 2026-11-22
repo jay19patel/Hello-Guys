@@ -28,8 +28,14 @@ class AIAssistant:
     id: ClassVar[str]
     name: ClassVar[str]
     description: ClassVar[str] = ""
+    suggestions: ClassVar[list[str]] = []  # starter prompts shown on the chat welcome screen
     instructions: ClassVar[str] = "You are a helpful assistant."
-    model: ClassVar[str | None] = None  # None = admin "Default model", else settings DEFAULT_MODEL
+    # Which LLM to use, in priority order:
+    #   llm   = name of a model in admin "LLM models" (API key stays in the UI), e.g. "Mistral"
+    #   model = raw LiteLLM id, e.g. "ollama_chat/llama3.1:8b" (no stored key)
+    #   neither: the admin model marked "Default model", else settings DEFAULT_MODEL
+    llm: ClassVar[str | None] = None
+    model: ClassVar[str | None] = None
     temperature: ClassVar[float | None] = 0.3
     max_tool_iterations: ClassVar[int] = 5
     builtin_tools: ClassVar[list[str]] = []
@@ -111,9 +117,14 @@ class AIAssistant:
         from hello_guy_ai.agents import llm_settings  # agents imports this module
         from hello_guy_ai.models import LLMModel
 
-        default = None if self.model else LLMModel.default()
-        if default:  # admin "Default model" wins over settings DEFAULT_MODEL
-            model, llm_kwargs = llm_settings(default, self.temperature)
+        if self.llm:
+            configured = LLMModel.objects.filter(name=self.llm).first()
+            if configured is None:
+                raise AssistantMisconfigured(f"{type(self).__name__}.llm: no LLM model named {self.llm!r} in admin")
+        else:
+            configured = None if self.model else LLMModel.default()
+        if configured:  # llm_settings raises NotAllowed if it is disabled
+            model, llm_kwargs = llm_settings(configured, self.temperature)
         else:
             model, llm_kwargs = self.get_model(), self.get_llm_kwargs()
         return AgentSpec(

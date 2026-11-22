@@ -4,79 +4,119 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hello Guy AI</title>
-<link rel="stylesheet" href="{% static 'hello_guy_ai/widget.css' %}">
-<style>
-  :root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e3e3de; --accent:#2f6f5e; --user:#e8f1ee; color-scheme: light; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#151514; --panel:#1f1f1d; --text:#ecece8; --muted:#9a9a93; --line:#2e2e2b; --accent:#6fbfa6; --user:#22302b; color-scheme: dark;
-            --hg-warn-bg:#3a2f12; --hg-warn-fg:#f3e2b3; --hg-warn-border:#8a6d22; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); height:100vh; height:100dvh; display:grid; grid-template-columns:270px 1fr; }
-  aside { border-right:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0; }
-  aside header { padding:14px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid var(--line); }
-  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
-  .brand { font-weight:600; }
-  a { color:var(--accent); text-decoration:none; font-size:13px; }
-  button, select { font:inherit; border:1px solid var(--line); background:var(--panel); color:var(--text); border-radius:8px; padding:6px 12px; }
-  button { cursor:pointer; }
-  select { width:100%; }
-  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  button.primary.is-stop { background:#b3261e; border-color:#b3261e; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  #threads { overflow:auto; flex:1; }
-  .thread { display:block; width:100%; text-align:left; border:0; border-radius:0; border-bottom:1px solid var(--line); padding:10px 14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .thread.active { background:var(--user); }
-  main { display:flex; flex-direction:column; min-height:0; }
-  #messages { flex:1; overflow:auto; padding:24px; display:flex; flex-direction:column; gap:12px; max-width:900px; width:100%; margin:0 auto; }
-  #messages .hg-msg { max-width:760px; padding:10px 14px; border-radius:12px; font-size:15px; }
-  #messages .hg-msg.user { background:var(--user); color:var(--text); }
-  #messages .hg-msg.assistant { background:var(--panel); border:1px solid var(--line); }
-  #messages .hg-meta, #messages .hg-empty { color:var(--muted); }
-  #messages .hg-q-other { background:var(--bg); color:var(--text); border-color:var(--line); }
-  form { display:flex; gap:8px; padding:14px; border-top:1px solid var(--line); background:var(--panel); }
-  textarea { flex:1; resize:none; font:inherit; padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
-  @media (max-width: 700px) { body { grid-template-columns:1fr; } aside { display:none; } }
-</style>
+<link rel="stylesheet" href="{% static 'hello_guy_ai/chat.css' %}">
 </head>
 <body>
-<aside>
-  <header>
-    <div class="row">
-      <span class="brand">💬 Hello Guy AI</span>
-      {% if user.is_staff %}<a href="{% url 'admin:index' %}">← Admin</a>{% endif %}
-    </div>
-    <select id="assistant" aria-label="Assistant" hidden></select>
-    <button id="new" class="primary" type="button">＋ New chat</button>
-  </header>
+<aside class="sidebar" id="sidebar" aria-label="Agents and conversations">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2zm7 11l.9 2.6 2.6.9-2.6.9L19 20l-.9-2.6-2.6-.9 2.6-.9L19 13z"/></svg>
+    </span>
+    Hello Guy AI
+  </div>
+  <button id="new" class="new-chat" type="button">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    New chat
+  </button>
+  <div class="side-label">Agents</div>
+  <nav id="agents" class="agents" aria-label="Agents"></nav>
+  <div class="side-label">Recent chats</div>
   <nav id="threads" aria-label="Conversations"></nav>
+  <div class="side-foot">
+    <span class="side-user">{{ user.get_full_name|default:user.get_username }}</span>
+    {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin ↗</a>{% endif %}
+  </div>
 </aside>
+
 <main>
-  <div id="messages" aria-live="polite"></div>
-  <form id="composer">
-    <textarea id="input" rows="2" placeholder="Kuch bhi poocho…" title="Enter = send, Shift+Enter = new line" maxlength="8000" aria-label="Message"></textarea>
-    <button class="primary" id="send" type="submit">Send</button>
-  </form>
+  <header class="topbar">
+    <button class="menu-btn" id="menu" type="button" aria-label="Open sidebar" aria-controls="sidebar">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <div class="top-title">
+      <h1 id="title">New chat</h1>
+      <span id="agent-pill" class="agent-pill"></span>
+    </div>
+    <button id="info-btn" class="ghost-btn" type="button" aria-controls="info" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+      <span>Agent details</span>
+    </button>
+  </header>
+
+  <div class="content">
+    <div id="messages" aria-live="polite"></div>
+    <aside id="info" class="info-panel" aria-label="Agent details" hidden>
+      <div class="info-head">
+        <h2 id="info-name"></h2>
+        <button id="info-close" class="hg-act" type="button" aria-label="Close agent details">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <p id="info-desc" class="info-desc"></p>
+      <dl class="info-meta">
+        <dt>Model</dt><dd id="info-model"></dd>
+      </dl>
+      <h3 class="info-sub">Tools <span id="info-count"></span></h3>
+      <ul id="info-tools" class="info-tools"></ul>
+    </aside>
+  </div>
+
+  <div class="composer-wrap">
+    <form id="composer">
+      <textarea id="input" rows="1" placeholder="Message the agent…" maxlength="8000" aria-label="Message"></textarea>
+      <button id="send" type="submit" aria-label="Send message" title="Send">
+        <svg class="i-send" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        <svg class="i-stop" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+      </button>
+    </form>
+    <p class="hint">Enter to send · Shift + Enter for a new line · Actions that change data always ask for your approval</p>
+  </div>
 </main>
+
+<script src="{% static 'hello_guy_ai/markdown.js' %}"></script>
 <script src="{% static 'hello_guy_ai/client.js' %}"></script>
 <script src="{% static 'hello_guy_ai/chat-view.js' %}"></script>
 <script>
 (function () {
   "use strict";
-  const client = HelloGuy.createClient("{% url 'hello_guy_ai:api-root' %}");
-  const el = (id) => document.getElementById(id);
+  const HG = window.HelloGuy;
+  const client = HG.createClient("{% url 'hello_guy_ai:api-root' %}");
+  const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
+  let agents = [];
   let assistantId = params.get("assistant");
   let threadId = params.get("thread");
-  const view = HelloGuy.createChatView({
+  let threads = [];
+
+  const view = HG.createChatView({
     client,
-    list: el("messages"),
+    list: $("messages"),
     onBusy: (busy) => {
-      el("send").textContent = busy ? "Stop" : "Send";
-      el("send").classList.toggle("is-stop", busy);
-      el("new").disabled = el("assistant").disabled = busy;
+      $("send").classList.toggle("is-stop", busy);
+      $("send").setAttribute("aria-label", busy ? "Stop the answer" : "Send message");
+      $("send").title = busy ? "Stop" : "Send";
+      $("new").disabled = busy;
+      document.querySelectorAll(".agent, .thread").forEach((b) => (b.disabled = busy));
     },
   });
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  const agent = () => agents.find((a) => a.id === assistantId) || {};
+  const initials = (name) => name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+
+  function timeAgo(iso) {
+    const s = (Date.now() - new Date(iso)) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    if (s < 604800) return `${Math.floor(s / 86400)} d ago`;
+    return new Date(iso).toLocaleDateString();
+  }
 
   function syncUrl() {
     const p = new URLSearchParams();
@@ -85,63 +125,183 @@
     history.replaceState(null, "", `${location.pathname}?${p}`);
   }
 
-  async function loadAssistants() {
-    const list = await client.assistants();
-    if (!list.length) throw new Error("No assistant available for your account.");
-    if (!list.some((a) => a.id === assistantId)) assistantId = list[0].id;
-    el("assistant").replaceChildren(...list.map((a) => new Option(a.name, a.id)));
-    el("assistant").value = assistantId;
-    el("assistant").hidden = list.length < 2;
+  function syncHeader() {
+    const t = threads.find((x) => x.id === threadId);
+    $("title").textContent = t ? t.name || "Untitled chat" : "New chat";
+    $("agent-pill").textContent = agent().name || "";
+    document.title = `${t ? t.name || "Chat" : "New chat"} · Hello Guy AI`;
   }
 
-  async function loadThreads() {
-    const { items } = await client.threads(assistantId);
-    el("threads").replaceChildren(...items.map((t) => {
-      const b = document.createElement("button");
+  // ---- agents ---------------------------------------------------------------------------
+
+  async function loadAgents() {
+    agents = await client.assistants();
+    if (!agents.length) throw new Error("No agent is available for your account.");
+    if (!agents.some((a) => a.id === assistantId)) assistantId = agents[0].id;
+    renderAgents();
+    renderInfo();
+  }
+
+  function renderAgents() {
+    $("agents").replaceChildren(...agents.map((a) => {
+      const b = el("button", "agent" + (a.id === assistantId ? " active" : ""));
       b.type = "button";
-      b.className = "thread" + (t.id === threadId ? " active" : "");
-      b.textContent = t.name || "Untitled chat";
-      b.onclick = () => { if (!view.isBusy()) openThread(t.id); };
+      b.setAttribute("aria-pressed", String(a.id === assistantId));
+      b.appendChild(el("span", "agent-avatar", initials(a.name)));
+      const meta = b.appendChild(el("span", "agent-meta"));
+      meta.appendChild(el("span", "agent-name", a.name));
+      meta.appendChild(el("span", "agent-desc", `${(a.tools || []).length} tools · ${a.description || ""}`));
+      b.onclick = () => selectAgent(a.id);
       return b;
     }));
+  }
+
+  async function selectAgent(id) {
+    if (view.isBusy() || id === assistantId) return;
+    assistantId = id;
+    threadId = null;
+    renderAgents();
+    renderInfo();
+    closeNav();
+    await loadThreads();
+    openThread(null);
+  }
+
+  function renderInfo() {
+    const a = agent();
+    $("info-name").textContent = a.name || "";
+    $("info-desc").textContent = a.description || "No description.";
+    $("info-model").textContent = a.model || "Default";
+    const tools = a.tools || [];
+    $("info-count").textContent = tools.length;
+    $("info-tools").replaceChildren(...(tools.length ? tools.map((t) => {
+      const li = el("li", "info-tool");
+      const top = li.appendChild(el("div", "info-tool-top"));
+      top.appendChild(el("span", "info-tool-name", HG.toolTitle(t.name)));
+      if (t.requires_confirmation) top.appendChild(el("span", "badge-warn", "Needs approval"));
+      li.appendChild(el("code", "info-tool-id", t.name));
+      if (t.description) li.appendChild(el("p", "info-tool-desc", t.description));
+      return li;
+    }) : [el("li", "info-tool", "This agent only chats; it has no tools.")]));
+  }
+
+  function toggleInfo(open = $("info").hidden) {
+    $("info").hidden = !open;
+    $("info-btn").setAttribute("aria-expanded", String(open));
+  }
+
+  // ---- threads --------------------------------------------------------------------------
+
+  async function loadThreads() {
+    ({ items: threads } = await client.threads(assistantId));
+    if (!threads.length) {
+      $("threads").replaceChildren(el("p", "side-empty", "No chats yet with this agent."));
+    } else {
+      $("threads").replaceChildren(...threads.map((t) => {
+        const b = el("button", "thread" + (t.id === threadId ? " active" : ""));
+        b.type = "button";
+        b.disabled = view.isBusy();
+        b.appendChild(el("span", "thread-name", t.name || "Untitled chat"));
+        b.appendChild(el("span", "thread-time", timeAgo(t.updated_at)));
+        b.onclick = () => { if (!view.isBusy()) { closeNav(); openThread(t.id); } };
+        return b;
+      }));
+    }
+    syncHeader();
+  }
+
+  function welcome() {
+    const a = agent();
+    const box = el("div", "welcome");
+    box.appendChild(el("div", "welcome-mark", initials(a.name || "AI")));
+    box.appendChild(el("h2", "welcome-title", `Chat with ${a.name || "the assistant"}`));
+    box.appendChild(el("p", "welcome-sub", a.description || "Ask anything."));
+    const tools = a.tools || [];
+    if (tools.length) {
+      const chips = box.appendChild(el("div", "welcome-tools"));
+      tools.slice(0, 6).forEach((t) => chips.appendChild(el("span", "hg-chip", HG.toolTitle(t.name))));
+      if (tools.length > 6) {
+        const more = chips.appendChild(el("button", "hg-chip chip-more", `+${tools.length - 6} more`));
+        more.type = "button";
+        more.onclick = () => toggleInfo(true);
+      }
+    }
+    const grid = box.appendChild(el("div", "suggestions"));
+    (a.suggestions || []).forEach((text) => {
+      const b = grid.appendChild(el("button", "suggestion", text));
+      b.type = "button";
+      b.onclick = () => submit(text);
+    });
+    return box;
   }
 
   async function openThread(id) {
     threadId = id || null;
     syncUrl();
-    loadThreads();
-    if (!threadId) return view.notice("Hello! Kuch bhi poocho. Data badalne wale actions pehle aapse approval lenge.");
+    document.querySelectorAll(".thread").forEach((b, i) => b.classList.toggle("active", threads[i]?.id === threadId));
+    syncHeader();
+    if (!threadId) return view.notice(welcome());
     try {
-      await view.load(threadId, "Empty chat. Start typing below.");
+      await view.load(threadId, welcome());
     } catch (err) {
       threadId = null;
       syncUrl();
+      syncHeader();
       view.notice(err.status === 404 ? "Chat not found." : err.message);
     }
   }
 
-  el("new").onclick = () => { openThread(null); el("input").focus(); };
-  el("assistant").onchange = () => { assistantId = el("assistant").value; openThread(null); };
-  el("input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!view.isBusy()) el("composer").requestSubmit(); }
-  });
-  el("composer").onsubmit = async (e) => {
-    e.preventDefault();
-    if (view.isBusy()) return view.stop();
-    const content = el("input").value.trim();
-    if (!content) return;
-    el("input").value = "";
+  // ---- composer -------------------------------------------------------------------------
+
+  function autosize() {
+    const input = $("input");
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 200) + "px";
+  }
+
+  async function submit(content) {
+    if (view.isBusy() || !content.trim()) return;
+    $("input").value = "";
+    autosize();
     try {
-      if (!threadId) { threadId = (await client.createThread(assistantId)).id; syncUrl(); loadThreads(); }
-      await view.send(threadId, content);
+      if (!threadId) {
+        threadId = (await client.createThread(assistantId)).id;
+        syncUrl();
+      }
+      const sending = view.send(threadId, content.trim());
+      loadThreads(); // the new chat shows up in the sidebar right away
+      await sending;
       await loadThreads();
     } catch (err) {
       view.notice(err.message);
     }
-  };
+  }
 
-  loadAssistants().then(() => openThread(threadId)).catch((err) => view.notice(err.message));
-  el("input").focus();
+  function closeNav() { document.body.classList.remove("nav-open"); }
+
+  $("new").onclick = () => { if (view.isBusy()) return; closeNav(); openThread(null); loadThreads(); $("input").focus(); };
+  $("menu").onclick = () => document.body.classList.toggle("nav-open");
+  document.body.addEventListener("click", (e) => { if (e.target === document.body) closeNav(); }); // tap on the dimmed overlay
+  $("info-btn").onclick = () => toggleInfo();
+  $("info-close").onclick = () => toggleInfo(false);
+  $("input").addEventListener("input", autosize);
+  $("input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit($("input").value); }
+  });
+  $("composer").onsubmit = (e) => {
+    e.preventDefault();
+    if (view.isBusy()) return view.stop();
+    submit($("input").value);
+  };
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { toggleInfo(false); closeNav(); }
+  });
+
+  loadAgents()
+    .then(loadThreads)
+    .then(() => openThread(threadId))
+    .catch((err) => view.notice(err.message));
+  $("input").focus();
 })();
 </script>
 </body>
