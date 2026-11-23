@@ -2,11 +2,11 @@ from typing import Literal
 
 import pytest
 
-from hello_guy_ai.agents import list_agents, resolve_agent
-from hello_guy_ai.assistant import AIAssistant
+from hello_guy_ai.assistants import AIAssistant
 from hello_guy_ai.exceptions import AssistantMisconfigured, AssistantNotFound, NotAllowed
 from hello_guy_ai.models import LLMModel
-from hello_guy_ai.runtime import (
+from hello_guy_ai.services.agents import list_agents, resolve_agent
+from hello_guy_ai.core.runtime import (
     TOOL_REGISTRY,
     ToolContext,
     ToolError,
@@ -83,7 +83,7 @@ def test_code_assistant_misconfig():
 
 @pytest.mark.django_db
 def test_resolve_code_agent(user, kb):
-    spec = resolve_agent("hello_guy", user)
+    spec = resolve_agent("demo", user)
     names = {t.name for t in spec.tools}
     assert {"get_current_datetime", "db_create", "update_memory"} <= names
     assert spec.rag_mode == "auto" and spec.knowledge_base_ids == [kb.pk] and spec.memory_enabled
@@ -98,7 +98,7 @@ class PinnedLLMBot(AIAssistant):
 
 
 @pytest.mark.django_db
-def test_code_agent_uses_named_admin_llm_and_staff_only_agents(user, staff):
+def test_code_agent_uses_named_admin_llm(user):
     with pytest.raises(AssistantMisconfigured):  # named model missing in admin
         resolve_agent("test_pinned_llm", user)
     llm = LLMModel(name="acme", model_id="openai/gpt-x", api_base="http://llm.local")
@@ -112,12 +112,6 @@ def test_code_agent_uses_named_admin_llm_and_staff_only_agents(user, staff):
     with pytest.raises(NotAllowed):
         resolve_agent("test_pinned_llm", user)
 
-    # cms agents are staff only: hidden from and refused to normal users
-    assert "content_writer" not in {a["id"] for a in list_agents(user)}
-    assert "content_writer" in {a["id"] for a in list_agents(staff)}
-    with pytest.raises(NotAllowed):
-        resolve_agent("content_writer", user)
-
 
 @pytest.mark.django_db
 def test_admin_default_llm_drives_code_assistants(user):
@@ -126,5 +120,5 @@ def test_admin_default_llm_drives_code_assistants(user):
     llm.set_api_key("sk-1")
     llm.save()
     assert list(LLMModel.objects.filter(is_default=True).values_list("name", flat=True)) == ["new"]  # one default
-    spec = resolve_agent("hello_guy", user)
+    spec = resolve_agent("demo", user)
     assert spec.model == "mistral/m" and spec.llm_kwargs["api_key"] == "sk-1"

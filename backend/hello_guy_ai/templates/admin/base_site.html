@@ -1,17 +1,8 @@
-{% extends "admin/base.html" %}
+{% extends "admin/base_site.html" %}
 {% comment %}
-  Overrides Django's admin/base_site.html to add an "AI Chat" link
-  (full-page chat) to the admin header. Keeps the standard branding blocks.
+  Extends whatever admin/base_site.html comes next (the host project's or Django's), so custom
+  branding is kept. Only adds the "AI Chat" link with the unread notification count.
 {% endcomment %}
-{% load static %}
+{% load hello_guy_ai %}
 
-{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:"Django site admin" }}{% endblock %}
-
-{% block branding %}
-<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:"Django administration" }}</a></div>
-{% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
-{% endblock %}
-
-{% block nav-global %}{% endblock %}
-
-{% block userlinks %}<a href="{% url 'hello_guy_ai_chat' %}">AI Chat</a> / {{ block.super }}{% endblock %}
+{% block userlinks %}{% hello_guy_unread_count as unread %}<a href="{% url 'hello_guy_ai_chat' %}{% if unread %}?notifications=1{% endif %}">AI Chat{% if unread %} ({{ unread }} new){% endif %}</a> / {{ block.super }}{% endblock %}

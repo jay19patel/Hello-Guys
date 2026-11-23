@@ -1,8 +1,8 @@
 """search_knowledge: RAG as a tool (Flow style). The LLM chooses *when* to search;
 the knowledge bases are bound from agent config and can never be widened by the model."""
 
+from hello_guy_ai.core.runtime import Tool, build_tool
 from hello_guy_ai.models import KnowledgeBase
-from hello_guy_ai.runtime import Tool, build_tool
 
 BASE_DESCRIPTION = (
     "Search this agent's knowledge bases for passages relevant to `query`. Use it to ground answers "
@@ -20,7 +20,7 @@ def bind_search_knowledge(kb_ids: list[int], top_k: int = 5, min_score: float = 
     )
 
     def search_knowledge(query: str) -> list[dict]:
-        from hello_guy_ai.rag import RagService
+        from hello_guy_ai.services.rag import RagService
 
         if not query.strip():
             return []

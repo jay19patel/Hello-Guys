@@ -38,7 +38,7 @@ class PlatformAccountForm(forms.ModelForm):
 
     class Meta:
         model = PlatformAccount
-        fields = ['platform', 'display_name', 'phone_number_id', 'instagram_id', 'verify_token', 'is_active']
+        fields = ['platform', 'display_name', 'phone_number_id', 'instagram_id', 'verify_token', 'is_active', 'ai_auto_reply']
 
     def clean(self):
         data = super().clean()

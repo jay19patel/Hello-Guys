@@ -46,7 +46,7 @@ trap cleanup EXIT INT TERM
 # Worker reloads on code changes when watchdog is installed (dramatiq[watch]); otherwise restart this script.
 WATCH=()
 if "$PY" -c "import watchdog" 2>/dev/null; then WATCH=(--watch .); else echo "! worker auto-reload off: run 'uv sync' to enable"; fi
-"$ROOT/.venv/bin/dramatiq" hello_guy_ai.worker --processes 1 --threads 4 ${WATCH[@]+"${WATCH[@]}"} 2>&1 | sed -l 's/^/[worker] /' &
+DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings}" "$ROOT/.venv/bin/dramatiq" hello_guy_ai.tasks.worker --processes 1 --threads 4 ${WATCH[@]+"${WATCH[@]}"} 2>&1 | sed -l 's/^/[worker] /' &
 W=$!
 "$PY" manage.py hello_guy_scheduler 2>&1 | sed -l 's/^/[scheduler] /' &
 S=$!

@@ -3,6 +3,18 @@ from .base import *
 # Production settings
 DEBUG = False
 
+# Required: the insecure development default from base.py must never reach production.
+SECRET_KEY = env('SECRET_KEY')
+FIELD_ENCRYPTION_KEY = env('FIELD_ENCRYPTION_KEY')
+
+# Shared cache: rate limits and the AI trigger index must be the same for every worker process.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': env('REDIS_URL', default='redis://localhost:6379/0'),
+    }
+}
+
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
 
 # Database: PostgreSQL in production via DATABASE_URL
@@ -12,6 +24,9 @@ DATABASES = {
 
 # Production Security Hardening
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Rate limits read the client IP from X-Forwarded-For, set by this many proxies (nginx = 1).
+# Unset, a visitor could send a fake header on every request and never be throttled.
+NINJA_NUM_PROXIES = env.int('NUM_PROXIES', default=1)
 SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True

@@ -3,8 +3,8 @@ import json
 import pytest
 from django.contrib.auth.models import Permission
 
-from demo_crm.models import Lead
-from hello_guy_ai.runtime import ToolContext, registered_tools, tool_context
+from hello_guy_ai.core.runtime import ToolContext, registered_tools, tool_context
+from hello_guy_ai.tests.demo_crm.models import Lead
 
 pytestmark = pytest.mark.django_db
 TOOLS = registered_tools()
@@ -16,6 +16,11 @@ def call(user, name, **args):
     with tool_context(ToolContext(user=user, agent_key="test")):
         out = t.call(t.parse_args(json.dumps(args)))
     return out if out.startswith("Error") else json.loads(out)
+
+
+@pytest.fixture
+def allow_delete(settings):
+    settings.HELLO_GUY_AI = {**settings.HELLO_GUY_AI, "ALLOW_DELETE": True}
 
 
 def grant(user, *actions):
@@ -64,7 +69,7 @@ def test_read_blocks_injection_style_filters(superuser):
     assert call(superuser, "db_read", model="demo_crm.lead", fields=["nope"]).startswith("Error")
 
 
-def test_row_scope_hook_limits_non_staff(user, django_user_model):
+def test_row_scope_hook_limits_non_staff(user, django_user_model, allow_delete):
     user = grant(user, "view", "change", "delete")
     other = django_user_model.objects.create_user("other")
     mine = Lead.objects.create(name="Mine", owner=user)
@@ -93,7 +98,7 @@ def test_create_validates_and_reports_per_row(staff):
     assert call(staff, "db_create", model="demo_crm.lead", records=[{"name": "x"}] * 51).startswith("Error: At most")
 
 
-def test_update_and_delete(superuser):
+def test_update_and_delete(superuser, allow_delete):
     lead = Lead.objects.create(name="Old")
     assert call(superuser, "db_update", model="demo_crm.lead", ids=[lead.pk], values={"name": "New"})["updated"] == [
         lead.pk
@@ -107,3 +112,23 @@ def test_update_and_delete(superuser):
 def test_confirm_prompts_are_human_readable():
     prompt = TOOLS["db_delete"].describe_call({"model": "demo_crm.lead", "ids": list(range(12))})
     assert prompt.startswith("DELETE 12 demo_crm.lead") and "+4 more" in prompt
+
+
+def test_delete_is_refused_by_default(superuser):
+    lead = Lead.objects.create(name="Keep")
+    out = call(superuser, "db_delete", model="demo_crm.lead", ids=[lead.pk])
+    assert out.startswith("Error: Deleting records is disabled") and Lead.objects.filter(pk=lead.pk).exists()
+
+
+def test_aggregate_top_n_grouped_and_row_scoped(user, django_user_model):
+    """Acceptance 3: "top customers by revenue" = sum grouped by an fk, limited, permission- and row-scoped."""
+    user = grant(user, "view")
+    other = django_user_model.objects.create_user("other")
+    for name, value, owner in [("A", 500, user), ("B", 300, user), ("C", 900, other), ("D", 200, user)]:
+        Lead.objects.create(name=name, value=value, owner=owner, status="won" if value > 250 else "new")
+    out = call(user, "db_aggregate", model="demo_crm.lead", metric="sum", field="value", group_by="status", limit=5)
+    assert out["rows"] == [{"status": "won", "value": 800}, {"status": "new", "value": 200}]  # C is not theirs
+    total = call(user, "db_aggregate", model="demo_crm.lead", metric="count", filters={"value__gte": 300})
+    assert total["value"] == 2
+    assert call(user, "db_aggregate", model="demo_crm.lead", metric="sum").startswith("Error: metric 'sum' needs")
+    assert call(user, "db_aggregate", model="auth.user", metric="count").startswith("Error: Unknown model")

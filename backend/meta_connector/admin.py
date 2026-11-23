@@ -17,7 +17,7 @@ class MetaConfigAdmin(admin.ModelAdmin):
 @admin.register(PlatformAccount)
 class PlatformAccountAdmin(admin.ModelAdmin):
     form = PlatformAccountForm
-    list_display = ('id', 'display_name', 'platform_badge', 'phone_number_id', 'instagram_id', 'is_active', 'created_at')
+    list_display = ('id', 'display_name', 'platform_badge', 'phone_number_id', 'instagram_id', 'is_active', 'ai_auto_reply', 'created_at')
     list_filter = ('platform', 'is_active', 'created_at')
     search_fields = ('display_name', 'phone_number_id', 'instagram_id')
     readonly_fields = ('access_token_encrypted', 'created_at', 'updated_at')

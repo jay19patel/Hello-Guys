@@ -37,8 +37,8 @@ class InsightsTests(TestCase):
         self.assertEqual(ctx['daily']['whatsapp'][-2], 2)
         self.assertEqual(ctx['totals_by_channel'], {'instagram': 4, 'whatsapp': 2})
         kpi = {k['label']: k for k in ctx['kpis']}
-        self.assertEqual((kpi['Messages']['value'], kpi['Received DMs']['value'], kpi['Replies sent']['value'], kpi['Comments']['value']), (6, 4, 1, 1))
-        self.assertEqual(kpi['Messages']['delta'], 500)  # 1 message in the 7 days before -> 6 now
+        self.assertEqual((kpi['Received DMs']['value'], kpi['Replies sent']['value'], kpi['AI replies']['value'], kpi['Comments']['value']), (4, 1, 0, 1))
+        self.assertEqual(kpi['Received DMs']['delta'], 300)  # 1 DM in the 7 days before -> 4 now
         self.assertEqual(kpi['Auto-DMs sent']['value'], 1)
         accounts = {a.display_name: a for a in ctx['accounts']}
         self.assertEqual((accounts['Shop IG'].total, accounts['Support WA'].sent), (4, 1))

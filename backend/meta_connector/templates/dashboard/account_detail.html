@@ -49,6 +49,9 @@
                 <span class="pill {% if account.token_health == 'ok' %}bg-ok/10 text-ok{% elif account.token_health == 'expiring' or account.token_health == 'unknown' %}bg-warn/10 text-warn{% else %}bg-bad/10 text-bad{% endif %}">
                     {% if account.token_health == 'ok' %}<i class="fa-solid fa-circle-check"></i> Token Valid{% elif account.token_health == 'expiring' %}Token Expiring{% elif account.token_health == 'missing' %}No Token{% else %}Token {{ account.token_health|title }}{% endif %}
                 </span>
+                <span class="pill {% if account.ai_auto_reply %}bg-accent/10 text-accent{% else %}bg-subtle text-muted{% endif %}" title="Turn on or off in Edit Credentials">
+                    <i class="fa-solid fa-robot"></i> AI replies {% if account.ai_auto_reply %}on{% else %}off{% endif %}
+                </span>
             </div>
             <div class="flex items-center gap-2 text-[13px] text-muted font-mono mt-1">
                 <span class="font-semibold">{{ account.get_platform_display }}</span>
@@ -89,7 +92,7 @@
     <div class="flex flex-col gap-2">
         <span class="caps flex items-center gap-2 text-accent"><i class="fa-solid fa-arrow-up"></i> Outgoing</span>
         <span class="text-[28px] leading-[32px] font-semibold tabular-nums text-accent">{{ outgoing_messages }}</span>
-        <span class="text-[13px] text-muted">Sent &amp; automated</span>
+        <span class="text-[13px] text-muted">{% if ai_replies %}{{ ai_replies }} by AI{% else %}Sent &amp; automated{% endif %}</span>
     </div>
     <div class="flex flex-col gap-2">
         <span class="caps flex items-center gap-2 text-muted"><i class="fa-solid fa-users"></i> Contacts</span>
@@ -298,16 +301,16 @@
 
     <!-- Channel Recent Messages -->
     <section class="flex flex-col gap-4 min-w-0" aria-labelledby="ch-messages-title">
-        <h2 id="ch-messages-title" class="text-[18px] leading-[24px] font-semibold">Live Message Stream</h2>
+        <h2 id="ch-messages-title" class="text-[18px] leading-[24px] font-semibold">Recent messages</h2>
         <div class="bg-surface border border-line rounded-xl overflow-hidden">
             {% if account_messages %}
-            <ul class="divide-y divide-line">
+            <ul class="divide-y divide-line max-h-[560px] overflow-y-auto">
                 {% for msg in account_messages %}
                 <li class="p-4 flex flex-col gap-1.5 hover:bg-subtle/50 transition-colors">
                     <div class="flex items-center justify-between text-[13px]">
                         <span class="font-semibold flex items-center gap-2">
                             <span class="pill {% if msg.direction == 'incoming' %}bg-ok/10 text-ok{% else %}bg-accent/10 text-accent{% endif %}">
-                                {% if msg.direction == 'incoming' %}In{% else %}Out{% endif %}
+                                {% if msg.direction == 'incoming' %}In{% elif msg.is_ai %}<i class="fa-solid fa-robot"></i> AI{% else %}Out{% endif %}
                             </span>
                             <a href="{% url 'dashboard-contact' msg.contact.pk %}" class="hover:underline truncate max-w-[140px]">
                                 {{ msg.contact.name|default:msg.contact.username|default:msg.contact.platform_user_id }}
@@ -317,7 +320,7 @@
                             {{ msg.created_at|date:"d M, H:i" }}
                         </time>
                     </div>
-                    <p class="text-[14px] text-ink leading-snug break-words">
+                    <p class="text-[14px] text-ink leading-snug break-words line-clamp-2" title="{{ msg.message_text }}">
                         {{ msg.message_text|default:"(Media / Attachment)" }}
                     </p>
                     {% if msg.status and msg.status != 'delivered' and msg.status != 'read' %}

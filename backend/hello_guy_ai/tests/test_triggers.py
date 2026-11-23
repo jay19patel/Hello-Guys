@@ -6,12 +6,13 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from demo_crm.models import Lead
-from hello_guy_ai import engine, prompt, triggers
+from hello_guy_ai.core import engine, prompt
+from hello_guy_ai.core.safe_expr import ExpressionError, compile_expression, evaluate
 from hello_guy_ai.models import Run, Source, Thread, Trigger
-from hello_guy_ai.safe_expr import ExpressionError, compile_expression, evaluate
-from hello_guy_ai.tasks import fire_trigger
+from hello_guy_ai.services import triggers
+from hello_guy_ai.tasks.actors import fire_trigger
 from hello_guy_ai.tests.conftest import FakeLLM, text_stream, tool_call_stream
+from hello_guy_ai.tests.demo_crm.models import Lead
 
 pytestmark = pytest.mark.django_db
 NAMES = {"obj", "event"}
@@ -61,17 +62,17 @@ def test_trigger_validation(user):
     assert {"agent_id", "content_type", "condition", "prompt_template"} <= set(err.value.message_dict)
     with pytest.raises(ValidationError) as err:
         Trigger(
-            name="s", agent_id="hello_guy", event="scheduled", cron="every day", prompt_template="x", run_as=user
+            name="s", agent_id="demo", event="scheduled", cron="every day", prompt_template="x", run_as=user
         ).full_clean()
     assert "cron" in err.value.message_dict
     own = ContentType.objects.get_for_model(Trigger)
     with pytest.raises(ValidationError):  # cannot watch the AI app's own models
         Trigger(
-            name="t", agent_id="hello_guy", event="created", content_type=own, prompt_template="x", run_as=user
+            name="t", agent_id="demo", event="created", content_type=own, prompt_template="x", run_as=user
         ).full_clean()
     Trigger(
         name="ok",
-        agent_id="hello_guy",
+        agent_id="demo",
         event="created",
         content_type=ct,
         prompt_template="New lead {{ obj.name }}",
@@ -85,7 +86,7 @@ def test_trigger_validation(user):
 def lead_trigger(user, **kw):
     defaults = {
         "name": "New lead",
-        "agent_id": "hello_guy",
+        "agent_id": "demo",
         "event": "created",
         "content_type": ContentType.objects.get_for_model(Lead),
         "prompt_template": "Lead {{ obj.name }} ({{ obj.value }}) was {{ event }}.",
@@ -150,13 +151,13 @@ def test_fire_skips_deleted_rows_and_inactive_run_as(user):
 
 
 def test_trigger_threads_hidden_from_chat_list(api_client, user):
-    Thread.objects.create(created_by=user, assistant_id="hello_guy", source=Source.TRIGGER)
+    Thread.objects.create(created_by=user, assistant_id="demo", source=Source.TRIGGER)
     assert api_client.get("/api/ai/threads").json()["count"] == 0
 
 
 def test_scheduled_triggers_fire_exactly_once(user):
     trigger = Trigger.objects.create(
-        name="Daily", agent_id="hello_guy", event="scheduled", cron="0 9 * * *", prompt_template="Report", run_as=user
+        name="Daily", agent_id="demo", event="scheduled", cron="0 9 * * *", prompt_template="Report", run_as=user
     )
     Trigger.objects.filter(pk=trigger.pk).update(created_at=timezone.now() - timedelta(days=3))
     now = timezone.now()
@@ -169,7 +170,7 @@ def test_scheduler_command_once(user, broker):
     from django.core.management import call_command
 
     trigger = Trigger.objects.create(
-        name="Hourly", agent_id="hello_guy", event="scheduled", cron="0 * * * *", prompt_template="x", run_as=user
+        name="Hourly", agent_id="demo", event="scheduled", cron="0 * * * *", prompt_template="x", run_as=user
     )
     Trigger.objects.filter(pk=trigger.pk).update(created_at=timezone.now() - timedelta(hours=2))
     call_command("hello_guy_scheduler", "--once")

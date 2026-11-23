@@ -1,25 +1,25 @@
 import pytest
 
-from hello_guy_ai.memory import (
+from hello_guy_ai.services.memory import (
     INJECT_ALL_CAP,
     MAX_ACTIVE_PER_BUCKET,
     bind_update_memory,
     build_memory_block,
     save_memory,
 )
+from hello_guy_ai.core.runtime import ToolContext, ToolError, tool_context
 from hello_guy_ai.models import AgentMemory
-from hello_guy_ai.runtime import ToolContext, ToolError, tool_context
 
 pytestmark = pytest.mark.django_db
 
 
 def test_tool_stamps_identity_from_context_not_model(user):
-    tool = bind_update_memory("hello_guy")
+    tool = bind_update_memory("demo")
     assert set(tool.args_model.model_fields) == {"content", "scope", "memory_id", "keywords"}  # no user/agent args
     with tool_context(ToolContext(user=user, agent_key="ignored")):
         out = tool.call(tool.parse_args('{"content": "Prefers Hinglish", "scope": "user"}'))
     mem = AgentMemory.objects.get()
-    assert '"added"' in out and mem.user == user and mem.agent_key == "hello_guy"
+    assert '"added"' in out and mem.user == user and mem.agent_key == "demo"
 
 
 def test_shared_scope_is_staff_only(user, staff):

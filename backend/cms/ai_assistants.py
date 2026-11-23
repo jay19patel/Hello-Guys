@@ -4,7 +4,7 @@ Each agent gets only the tools its job needs (see cms/ai_tools.py). Write tools 
 for the user's approval. Staff only: these work on internal site data.
 """
 
-from hello_guy_ai.assistant import AIAssistant
+from hello_guy_ai import AIAssistant, tool
 
 STYLE = (
     "Always reply in clear, professional English, even if the user writes in Hindi or Hinglish. "
@@ -98,9 +98,11 @@ class WebsiteAssistant(AIAssistant):
     instructions = (
         "You are the assistant on NJ Tech Studio's website, talking to a visitor (a potential client). "
         "Be warm, concise and professional.\n"
-        "KNOWLEDGE: answer only from tools: list_services (what we offer), search_projects (portfolio), "
+        "KNOWLEDGE: when a reference context about the studio is included below, answer from it first. "
+        "Use tools only for lists, the latest or most popular items, exact names, or what the context lacks: "
+        "list_services (what we offer), search_projects (portfolio), list_tech_skills (technologies), "
         "search_blog_posts / get_blog_post / top_blog_posts (articles), search_faqs (common questions). "
-        "Never invent prices, timelines, clients or facts; if the tools don't have it, say the team will confirm.\n"
+        "Never invent prices, timelines, clients or facts; if neither has it, say the team will confirm.\n"
         "LEADS: when the visitor wants a project, a quote or to talk to the team, collect their name, email and a "
         "short description of what they need (phone optional). Read the details back and ask them to confirm, "
         "then call create_inquiry once and share the inquiry id. Never call it without a confirmed email.\n"
@@ -117,8 +119,14 @@ class WebsiteAssistant(AIAssistant):
     ]
     temperature = 0.3
     max_tool_iterations = 4
+    # Website content synced into RAG (cms/ai_knowledge.py), retrieved every turn. No query rewrite:
+    # it costs one extra LLM call per turn, and visitor questions are usually self-contained.
+    has_rag = True
+    knowledge_bases = ["company-public"]
+    rewrite_query = False
     builtin_tools = [
         "list_services",
+        "list_tech_skills",
         "search_projects",
         "search_blog_posts",
         "get_blog_post",
@@ -133,3 +141,70 @@ class WebsiteAssistant(AIAssistant):
 
         # The website user, plus staff so you can test it in the internal chat.
         return super().can_run(user) and (user.is_staff or user.get_username() == ai_settings.PUBLIC_USER)
+
+
+class HelloGuyAssistant(AIAssistant):
+    id = "hello_guy"
+    name = "Hello Guy"
+    description = "General assistant for your website: content, projects, inquiries, reminders and data changes."
+    instructions = (
+        "You are Hello Guy, a friendly and precise assistant for the team.\n"
+        "WEBSITE DATA: a reference context from the website (services, projects, articles, FAQs) is included "
+        "below when relevant; use it first for 'what/how/do you' questions. Use the direct tools for counts, "
+        "lists, latest/most popular items, exact names and inquiries: site_content_summary, search_blog_posts / "
+        "get_blog_post, search_projects, search_faqs, list_tech_skills, list_inquiries. One call is usually "
+        "enough; never guess data, and if nothing has it, say so plainly.\n"
+        "REPORTS: for totals, counts, rankings or 'top N' questions use db_aggregate; for record lists use db_read. "
+        "Call get_current_datetime first when the question has a date range (today, last month, this week).\n"
+        "CHANGES: only to create/update records, use db_list_models and db_describe, then the db_ write tools. "
+        "They pause for the user's approval; before calling one, say in one sentence what you will do.\n"
+        "REMINDERS: call get_current_datetime first, then create_reminder with the time in the user's timezone. "
+        "If AM/PM is unclear, pick the next sensible working-hours time and say which one you chose.\n"
+        "NOTIFICATIONS: when the user asks what they missed or which notifications they have not seen, "
+        "call list_notifications.\n"
+        "MEMORY: save stable facts the user teaches you (preferences, mappings, rules) with update_memory.\n"
+        + STYLE
+    )
+    suggestions = [
+        "Give me an overview of all website content",
+        "Which blog posts are the most popular?",
+        "Show unreplied inquiries",
+        "Remind me at 5 pm today to send the client invoice",
+    ]
+    has_rag = True
+    knowledge_bases = ["hello_guy", "company-public"]  # uploaded docs + synced website content (cms/ai_knowledge.py)
+    memory = True
+    builtin_tools = [
+        "get_current_datetime",
+        "site_content_summary",
+        "search_blog_posts",
+        "get_blog_post",
+        "top_blog_posts",
+        "search_projects",
+        "search_faqs",
+        "list_tech_skills",
+        "list_inquiries",
+        "get_inquiry",
+        # generic ORM tools (allowlist: HELLO_GUY_AI["ORM_TOOLS_MODELS"]; delete needs ALLOW_DELETE)
+        "db_list_models",
+        "db_describe",
+        "db_read",
+        "db_aggregate",
+        "db_create",
+        "db_update",
+        "db_delete",
+        "create_reminder",
+        "list_reminders",
+        "update_reminder",
+        "cancel_reminder",
+        "list_notifications",
+    ]
+
+    @tool
+    def get_my_profile(self) -> dict:
+        """Get the current user's username, full name and email."""
+        return {
+            "username": self.user.get_username(),
+            "full_name": self.user.get_full_name(),
+            "email": self.user.email,
+        }

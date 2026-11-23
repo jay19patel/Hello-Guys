@@ -5,6 +5,9 @@ import environ
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# Set LiteLLM to use local model cost map fallback without attempting external downloads
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 # Initialize environment variables
 env = environ.Env()
 
@@ -73,7 +76,7 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
     'https://njtechstudio.in',
     'https://www.njtechstudio.in',
 ])
-CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=True)
+CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=False)  # only CORS_ALLOWED_ORIGINS
 
 ROOT_URLCONF = 'config.urls'
 
@@ -185,6 +188,8 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': False,
         },
+        # LiteLLM logs every request at INFO; keep warnings and errors only.
+        'LiteLLM': {'level': 'WARNING'},
         'django.request': {
             'handlers': ['console'],
             'level': 'ERROR',
@@ -205,6 +210,11 @@ HELLO_GUY_AI = {
         "cms.techskill",
         "cms.youtubevideo",
     ],
+    "REDIS_URL": env('REDIS_URL', default='redis://localhost:6379/0'),
+    "LLM_FALLBACK_MODELS": env.list('LLM_FALLBACK_MODELS', default=[]),
+    "DAILY_TOKEN_LIMIT_PER_USER": env.int('AI_DAILY_TOKEN_LIMIT_PER_USER', default=0),
+    "NOTIFY_EMAIL": env.bool('AI_NOTIFY_EMAIL', default=False),
+    "RETENTION_DAYS": env.int('AI_RETENTION_DAYS', default=0),
     "PUBLIC_AGENT": "website_assistant",
     "PUBLIC_USER": "website-bot",
 }

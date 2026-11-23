@@ -17,6 +17,7 @@
   }
 
   const SAFE_URL = /^(https?:|mailto:|\/(?!\/))/i; // no javascript:, data:, protocol-relative
+  const SAME_ORIGIN_URL = /^\/(?![\/\\])/; // "/media/x.png", never "//evil.com" or "/\evil.com"
   const FILE_URL = /\.(pdf|docx?|xlsx?|csv|pptx?|zip|txt|md|json)(\?|#|$)/i;
 
   function attachment(label, href) {
@@ -38,13 +39,21 @@
       if ((m = part.match(/^\*\*(.+)\*\*$/) || part.match(/^__(.+)__$/))) inline(parent.appendChild(el("strong")), m[1]);
       else if ((m = part.match(/^`(.+)`$/))) parent.appendChild(el("code", "", m[1]));
       else if ((m = part.match(/^!\[(.*)\]\((\S+)\)$/))) {
-        if (SAFE_URL.test(m[2])) {
+        // Only same-origin images auto-load. An external image URL fires a request with no click, so a
+        // prompt-injected answer could leak chat data in its query string. External images become links.
+        if (SAME_ORIGIN_URL.test(m[2])) {
           const img = el("img", "md-img");
           img.src = m[2];
           img.alt = m[1];
           img.loading = "lazy";
           img.referrerPolicy = "no-referrer";
           parent.appendChild(img);
+        } else if (SAFE_URL.test(m[2])) {
+          const a = el("a", "", m[1] || m[2]);
+          a.href = m[2];
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          parent.appendChild(a);
         } else parent.appendChild(document.createTextNode(m[1]));
       } else if ((m = part.match(/^\[(.+)\]\((\S+)\)$/))) {
         if (SAFE_URL.test(m[2]) && FILE_URL.test(m[2])) parent.appendChild(attachment(m[1], m[2]));

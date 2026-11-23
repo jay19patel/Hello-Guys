@@ -5,8 +5,9 @@ import fakeredis
 import pytest
 from litellm.types.utils import ChatCompletionDeltaToolCall, Delta, Function, ModelResponseStream, StreamingChoices
 
-from hello_guy_ai import events, views
+from hello_guy_ai.core import events
 from hello_guy_ai.models import KnowledgeBase
+from hello_guy_ai import views as sse
 
 
 @pytest.fixture(autouse=True)
@@ -23,9 +24,9 @@ def fake_redis(monkeypatch):
     sync_client = fakeredis.FakeRedis(server=server, decode_responses=True)
     monkeypatch.setattr(events, "get_redis", lambda: sync_client)
     monkeypatch.setattr(
-        views.aioredis.Redis, "from_url", lambda *a, **k: fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
+        sse.aioredis.Redis, "from_url", lambda *a, **k: fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
     )
-    monkeypatch.setattr(views.redis.Redis, "from_url", lambda *a, **k: fakeredis.FakeRedis(server=server, decode_responses=True))
+    monkeypatch.setattr(sse.redis.Redis, "from_url", lambda *a, **k: fakeredis.FakeRedis(server=server, decode_responses=True))
     return sync_client
 
 

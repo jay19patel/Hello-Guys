@@ -4,9 +4,9 @@ import pytest
 from django.test import AsyncClient
 from django.utils import timezone
 
-from hello_guy_ai.events import RunEventPublisher
+from hello_guy_ai.core.events import RunEventPublisher
 from hello_guy_ai.models import AgentMemory, Message, Run, Thread
-from hello_guy_ai.tasks import resume_assistant, run_assistant
+from hello_guy_ai.tasks.actors import resume_assistant, run_assistant
 
 pytestmark = pytest.mark.django_db
 JSON = "application/json"
@@ -14,13 +14,13 @@ QUESTIONS = [{"key": "c1", "tool": "db_create", "prompt": "Create 1 lead", "argu
 
 
 def create_thread(client):
-    res = client.post("/api/ai/threads", {"assistant_id": "hello_guy"}, content_type=JSON)
+    res = client.post("/api/ai/threads", {"assistant_id": "demo"}, content_type=JSON)
     assert res.status_code == 201, res.content
     return res.json()["id"]
 
 
 def paused_run(user):
-    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    thread = Thread.objects.create(created_by=user, assistant_id="demo")
     return Run.objects.create(thread=thread, status=Run.Status.PAUSED, questions=QUESTIONS)
 
 
@@ -29,7 +29,7 @@ def test_requires_login(client):
 
 
 def test_list_assistants(api_client):
-    assert "hello_guy" in [a["id"] for a in api_client.get("/api/ai/assistants").json()]
+    assert "demo" in [a["id"] for a in api_client.get("/api/ai/assistants").json()]
 
 
 def test_send_message_queues_run(api_client, django_capture_on_commit_callbacks, broker):
@@ -95,7 +95,7 @@ def test_stop_paused_and_queued(api_client, user, fake_redis):
     run.refresh_from_db()
     assert run.status == "stopped" and run.questions is None
 
-    queued = Run.objects.create(thread=Thread.objects.create(created_by=user, assistant_id="hello_guy"))
+    queued = Run.objects.create(thread=Thread.objects.create(created_by=user, assistant_id="demo"))
     assert api_client.post(f"/api/ai/runs/{queued.pk}/stop").json() == {"status": "stopped"}
     running = Run.objects.create(thread=queued.thread, status=Run.Status.RUNNING)
     assert api_client.post(f"/api/ai/runs/{running.pk}/stop").json() == {"status": "stopping"}
@@ -105,20 +105,20 @@ def test_stop_paused_and_queued(api_client, user, fake_redis):
 def test_feedback(client, user, staff):
     for who in (user, staff):
         client.force_login(who)
-        thread = Thread.objects.create(created_by=who, assistant_id="hello_guy")
+        thread = Thread.objects.create(created_by=who, assistant_id="demo")
         run = Run.objects.create(thread=thread, status=Run.Status.SUCCEEDED)
         url = f"/api/ai/runs/{run.pk}/feedback"
         res = client.post(url, {"rating": "down", "comment": "Use INR not USD"}, content_type=JSON).json()
         assert res["rating"] == "down"
         # staff feedback becomes shared agent memory; a normal user's cannot (anti-poisoning)
         assert (res["memory_id"] is not None) is who.is_staff
-    assert AgentMemory.objects.filter(origin="feedback", agent_key="hello_guy").count() == 1
-    unfinished = Run.objects.create(thread=Thread.objects.create(created_by=staff, assistant_id="hello_guy"))
+    assert AgentMemory.objects.filter(origin="feedback", agent_key="demo").count() == 1
+    unfinished = Run.objects.create(thread=Thread.objects.create(created_by=staff, assistant_id="demo"))
     assert client.post(f"/api/ai/runs/{unfinished.pk}/feedback", {"rating": "up"}, content_type=JSON).status_code == 409
 
 
 def test_messages_hide_tool_rows_by_default(api_client, user):
-    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    thread = Thread.objects.create(created_by=user, assistant_id="demo")
     Message.objects.create(thread=thread, role="user", content="q")
     Message.objects.create(thread=thread, role="assistant", content="", tool_calls=[{"id": "1"}])
     Message.objects.create(thread=thread, role="tool", content="r", tool_call_id="1", name="t")
@@ -128,7 +128,7 @@ def test_messages_hide_tool_rows_by_default(api_client, user):
 
 
 def test_stale_run_unlocked_but_paused_waits(api_client, user, django_capture_on_commit_callbacks, broker):
-    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    thread = Thread.objects.create(created_by=user, assistant_id="demo")
     stale = Run.objects.create(thread=thread, status=Run.Status.RUNNING)
     Run.objects.filter(pk=stale.pk).update(last_active_at=timezone.now() - timezone.timedelta(days=1))
     with django_capture_on_commit_callbacks(execute=True):
@@ -138,7 +138,7 @@ def test_stale_run_unlocked_but_paused_waits(api_client, user, django_capture_on
 
 @pytest.mark.django_db(transaction=True)
 def test_sse_streams_and_settled_fallbacks(user, fake_redis):
-    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    thread = Thread.objects.create(created_by=user, assistant_id="demo")
     run = Run.objects.create(thread=thread, status=Run.Status.RUNNING)
     pub = RunEventPublisher(run.pk, client=fake_redis)
     pub.publish("token", {"text": "Hi"})
@@ -161,7 +161,7 @@ def test_sse_streams_and_settled_fallbacks(user, fake_redis):
 def test_sse_streams_under_wsgi_too(user, fake_redis):
     from django.test import Client
 
-    run = Run.objects.create(thread=Thread.objects.create(created_by=user, assistant_id="hello_guy"), status="running")
+    run = Run.objects.create(thread=Thread.objects.create(created_by=user, assistant_id="demo"), status="running")
     RunEventPublisher(run.pk, client=fake_redis).publish("done", {"content": "Hi"})
     client = Client()  # WSGI request: must get a sync iterator, or runserver buffers the whole run
     client.force_login(user)
@@ -181,7 +181,7 @@ def _collect(client, url) -> str:
 
 
 def test_history_keeps_failed_run_error_after_reload(user, client):
-    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    thread = Thread.objects.create(created_by=user, assistant_id="demo")
     run = Run.objects.create(thread=thread, status=Run.Status.FAILED, error="RateLimitError: litellm 429 raw details")
     thread.messages.create(role="user", content="hi", run=run)
     client.force_login(user)

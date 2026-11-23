@@ -7,21 +7,22 @@ Security model (every call runs as the *requesting* user, from the run context):
   4. Field filter      sensitive-looking fields (password, token, secret...) are invisible + unwritable.
   5. No relation hops  filters like owner__password__startswith are rejected.
   6. Writes pause      create/update/delete require human approval unless the run auto-approves.
+  7. Deletes off       db_delete is refused unless HELLO_GUY_AI["ALLOW_DELETE"] is True.
 """
 
 import json
-import re
-from typing import Any
+from typing import Any, Literal
 
 from django.apps import apps
 from django.contrib.auth import get_permission_codename
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.db.models import Avg, Count, Max, Min, Sum
 
 from hello_guy_ai.conf import ai_settings
-from hello_guy_ai.runtime import ToolError, current_context, tool
+from hello_guy_ai.core.runtime import SENSITIVE_FIELD_PATTERN as SENSITIVE
+from hello_guy_ai.core.runtime import ToolError, current_context, tool
 
-SENSITIVE = re.compile(r"password|passwd|secret|token|api_?key|private|otp|salt|hash|session", re.I)
 ALLOWED_LOOKUPS = {
     "exact",
     "iexact",
@@ -44,6 +45,7 @@ ALLOWED_LOOKUPS = {
 }
 MAX_READ = 100
 MAX_WRITE = 50
+AGGREGATES = {"count": Count, "sum": Sum, "avg": Avg, "min": Min, "max": Max}
 
 
 @tool
@@ -98,6 +100,36 @@ def db_read(
     limit = min(max(int(limit), 1), MAX_READ)
     rows = list(qs.values("pk", *columns)[: limit + 1])
     return {"model": model, "records": rows[:limit], "truncated": len(rows) > limit}
+
+
+@tool
+def db_aggregate(
+    model: str,
+    metric: Literal["count", "sum", "avg", "min", "max"],
+    field: str | None = None,
+    filters: dict[str, Any] | None = None,
+    group_by: str | None = None,
+    order: Literal["desc", "asc"] = "desc",
+    limit: int = 10,
+) -> dict:
+    """Totals and rankings. metric over field (field not needed for count), optional filters like db_read.
+    group_by: a field (use <fk>_id for relations) -> one row per value, sorted by the metric.
+    Example "top 5 customers by revenue last month": model=shop.order, metric=sum, field=total,
+    filters={"created_at__gte": "2026-10-01", "created_at__lt": "2026-11-01"}, group_by=customer_id, limit=5."""
+    m = _model(model)
+    user = current_context().user
+    _require(user, m, "view")
+    allowed = _fields(m)
+    if metric != "count" and not field:
+        raise ToolError(f"metric '{metric}' needs a field")
+    value = AGGREGATES[metric](_column(allowed, field) if field else "pk")
+    qs = _queryset(m, user).filter(**_clean_filters(allowed, filters or {}))
+    if not group_by:
+        return {"model": model, "metric": metric, "field": field, "value": qs.aggregate(value=value)["value"]}
+    key = _column(allowed, group_by)
+    limit = min(max(int(limit), 1), MAX_READ)
+    rows = qs.values(key).annotate(value=value).order_by(("-" if order == "desc" else "") + "value")[:limit]
+    return {"model": model, "metric": metric, "field": field, "group_by": key, "rows": list(rows)}
 
 
 def _confirm_create(args: dict) -> str:
@@ -166,16 +198,19 @@ def db_update(model: str, ids: list[int | str], values: dict[str, Any]) -> dict:
 @tool(requires_confirmation=True, confirm_prompt=_confirm_delete)
 def db_delete(model: str, ids: list[int | str]) -> dict:
     """Delete records by id. Irreversible."""
+    if not ai_settings.ALLOW_DELETE:
+        raise ToolError("Deleting records is disabled by the administrator. Tell the user it must be done manually.")
     m = _model(model)
     user = current_context().user
     _require(user, m, "delete")
     _check_batch(ids)
     found = list(_queryset(m, user).filter(pk__in=ids))
     deleted = []
-    for obj in found:
-        pk = obj.pk
-        obj.delete()  # per object so signals and on_delete rules run
-        deleted.append(pk)
+    with transaction.atomic():  # all or nothing: never leave a half-deleted batch
+        for obj in found:
+            pk = obj.pk
+            obj.delete()  # per object so signals and on_delete rules run
+            deleted.append(pk)
     missing = [i for i in ids if str(i) not in {str(d) for d in deleted}]
     return {"model": model, "deleted": deleted, **({"not_found": missing} if missing else {})}
 
@@ -249,6 +284,8 @@ def _clean_filters(allowed: dict[str, models.Field], filters: dict[str, Any]) ->
         lookup = parts[1] if len(parts) == 2 else "exact"
         if lookup not in ALLOWED_LOOKUPS:
             raise ToolError(f"Filter '{key}': lookup '{lookup}' not allowed. Use one of {sorted(ALLOWED_LOOKUPS)}.")
+        if lookup == "in" and (not isinstance(value, list) or len(value) > MAX_READ):
+            raise ToolError(f"Filter '{key}': 'in' needs a list of at most {MAX_READ} values.")
         clean[f"{_column(allowed, parts[0])}__{lookup}"] = value
     return clean
 

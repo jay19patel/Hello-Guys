@@ -15,7 +15,7 @@ from django.utils.text import slugify
 from django.core.validators import validate_email
 
 from cms.models import FAQ, BlogPost, InquirySubmission, Project, Solution, TechSkill, Testimonial, YouTubeVideo
-from hello_guy_ai.runtime import ToolError, current_context, tool
+from hello_guy_ai import ToolError, current_context, tool
 
 MAX_LIMIT = 50
 
@@ -212,6 +212,17 @@ def create_blog_draft(title: str, content: str, category: str = "Tutorial") -> d
         title=title.strip()[:200], slug=slug, content=content, category=category.strip()[:60] or "Tutorial", is_published=False
     )
     return {"slug": post.slug, "title": post.title, "is_published": False, "admin_url": f"/admin/cms/blogpost/{post.pk}/change/"}
+
+
+@tool
+def list_tech_skills() -> dict[str, list[str]]:
+    """Technologies and skills the studio works with, grouped by category. Use it for "do you know X?"
+    and "which technologies do you use?" questions."""
+    _require_view(TechSkill)
+    grouped: dict[str, list[str]] = {}
+    for name, category in TechSkill.objects.filter(is_active=True).values_list("name", "category"):
+        grouped.setdefault(category, []).append(name)
+    return grouped
 
 
 @tool

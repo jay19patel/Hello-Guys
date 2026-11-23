@@ -2,7 +2,7 @@ import os
 
 from django.db import migrations, models
 
-from meta_connector.utils import encrypt_token
+from hello_guy_ai.crypto import encrypt as encrypt_token
 
 
 def copy_env_keys(apps, schema_editor):

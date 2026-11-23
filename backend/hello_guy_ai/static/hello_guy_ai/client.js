@@ -32,8 +32,19 @@
       createThread: (assistantId) =>
         request("/threads", { method: "POST", body: JSON.stringify({ assistant_id: assistantId }) }),
       messages: (threadId) => request(`/threads/${threadId}/messages?limit=200`),
+      // The browser's timezone lets the assistant read "5 baje" as 5 PM *here* (reminders, date ranges).
       send: (threadId, content) =>
-        request(`/threads/${threadId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+        request(`/threads/${threadId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ content, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "" }),
+        }),
+      notifications: () => request("/notifications?limit=30"),
+      unreadCount: () => request("/notifications/unread-count"),
+      markRead: (ids) => request("/notifications/read", { method: "POST", body: JSON.stringify({ ids }) }),
+      reminders: () => request("/reminders?limit=100"),
+      pauseReminder: (id) => request(`/reminders/${id}/pause`, { method: "POST" }),
+      resumeReminder: (id) => request(`/reminders/${id}/resume`, { method: "POST" }),
+      deleteReminder: (id) => request(`/reminders/${id}`, { method: "DELETE" }),
       thread: (threadId) => request(`/threads/${threadId}`),
       resume: (runId, answers) =>
         request(`/runs/${runId}/resume`, { method: "POST", body: JSON.stringify({ answers }) }),

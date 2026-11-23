@@ -1,9 +1,21 @@
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.db import transaction
 
-from hello_guy_ai import services
-from hello_guy_ai.models import AgentMemory, Document, KnowledgeBase, LLMModel, Message, Run, Thread, Trigger
+from hello_guy_ai.models import (
+    AgentMemory,
+    Document,
+    KnowledgeBase,
+    LLMModel,
+    Message,
+    Notification,
+    Reminder,
+    Run,
+    Thread,
+    Trigger,
+)
+from hello_guy_ai.services import chat
+from hello_guy_ai.services.rag import embedding_config
 
 
 class SuperuserOnlyAdmin(admin.ModelAdmin):
@@ -26,6 +38,11 @@ class SuperuserOnlyAdmin(admin.ModelAdmin):
 
 
 class LLMModelForm(forms.ModelForm):
+    api_base = forms.URLField(
+        required=False,
+        assume_scheme="https",
+        help_text="Custom API base URL (e.g. http://localhost:11434 for local Ollama).",
+    )
     api_key = forms.CharField(
         required=False,
         strip=True,
@@ -36,7 +53,18 @@ class LLMModelForm(forms.ModelForm):
 
     class Meta:
         model = LLMModel
-        fields = ("name", "model_id", "api_base", "api_key", "clear_api_key", "params", "enabled", "is_default")
+        fields = (
+            "name",
+            "kind",
+            "model_id",
+            "api_base",
+            "api_key",
+            "clear_api_key",
+            "params",
+            "min_score",
+            "enabled",
+            "is_default",
+        )
 
     def clean_model_id(self):
         import litellm
@@ -46,13 +74,14 @@ class LLMModelForm(forms.ModelForm):
             litellm.get_llm_provider(model_id)
         except Exception:
             raise forms.ValidationError(
-                "Add the provider prefix, e.g. mistral/ministral-8b-2512, openai/gpt-4o-mini, ollama_chat/llama3.1:8b."
+                "Add the provider prefix, e.g. mistral/ministral-8b-2512, openai/gpt-4o-mini, ollama_chat/llama3.1:8b "
+                "(embedding: mistral/mistral-embed, ollama/nomic-embed-text)."
             )
         return model_id
 
     def save(self, commit=True):
         llm = super().save(commit=False)
-        llm.api_key = self.initial.get("api_key", "")  # keep the stored ciphertext unless changed below
+        llm.api_key = self.initial.get("api_key", "")
         if self.cleaned_data.get("clear_api_key"):
             llm.api_key = ""
         elif self.cleaned_data.get("api_key"):
@@ -65,7 +94,32 @@ class LLMModelForm(forms.ModelForm):
 @admin.register(LLMModel)
 class LLMModelAdmin(SuperuserOnlyAdmin):
     form = LLMModelForm
-    list_display = ("name", "model_id", "api_base", "has_api_key", "enabled", "is_default")
+    list_display = ("name", "kind", "model_id", "min_score", "has_api_key", "enabled", "is_default")
+    list_filter = ("kind",)
+
+    # Vectors of different embedding models cannot be mixed: a change rebuilds the knowledge index.
+    def save_model(self, request, obj, form, change):
+        before = embedding_config()[0]
+        super().save_model(request, obj, form, change)
+        self._reindex_if_changed(request, before)
+
+    def delete_model(self, request, obj):
+        before = embedding_config()[0]
+        super().delete_model(request, obj)
+        self._reindex_if_changed(request, before)
+
+    def _reindex_if_changed(self, request, before: str) -> None:
+        after = embedding_config()[0]
+        if after == before:
+            return
+        from hello_guy_ai.tasks.actors import reindex_knowledge
+
+        transaction.on_commit(reindex_knowledge.send)
+        self.message_user(
+            request,
+            f"Embedding model changed ({before} -> {after}): every knowledge document is being re-indexed.",
+            messages.WARNING,
+        )
 
     @admin.display(boolean=True, description="API key")
     def has_api_key(self, obj):
@@ -95,26 +149,27 @@ class KnowledgeBaseAdmin(admin.ModelAdmin):
             f.instance.uploaded_by = f.instance.uploaded_by or request.user
         super().save_formset(request, form, formset, change)
         for f in new_files:
-            transaction.on_commit(lambda pk=f.instance.pk: services.enqueue_ingest(pk))
+            transaction.on_commit(lambda pk=f.instance.pk: chat.enqueue_ingest(pk))
 
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = ("title", "knowledge_base", "status", "chunk_count", "created_at")
-    list_filter = ("knowledge_base", "status")
-    readonly_fields = ("status", "chunk_count", "error", "uploaded_by")
+    list_display = ("title", "knowledge_base", "content_type", "status", "chunk_count", "created_at")
+    list_filter = ("knowledge_base", "status", "content_type")
+    readonly_fields = ("status", "chunk_count", "error", "uploaded_by", "content_type", "object_id", "content_hash")
+    exclude = ("content",)  # synced records: edit the source object, not this copy
     actions = ["reingest"]
 
     def save_model(self, request, obj, form, change):
         obj.uploaded_by = obj.uploaded_by or request.user
         super().save_model(request, obj, form, change)
         if "file" in form.changed_data:
-            transaction.on_commit(lambda: services.enqueue_ingest(obj.pk))
+            transaction.on_commit(lambda: chat.enqueue_ingest(obj.pk))
 
     @admin.action(description="Re-ingest selected documents")
     def reingest(self, request, queryset):
         for doc in queryset:
-            services.enqueue_ingest(doc.pk)
+            chat.enqueue_ingest(doc.pk)
 
 
 @admin.register(AgentMemory)
@@ -165,3 +220,17 @@ class RunAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(Reminder)
+class ReminderAdmin(admin.ModelAdmin):
+    list_display = ("message", "user", "due_at", "recurrence", "timezone", "status", "last_fired_at")
+    list_filter = ("status",)
+    search_fields = ("message", "user__username")
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("title", "user", "is_read", "read_at", "created_at")
+    list_filter = ("is_read",)
+    search_fields = ("title", "body", "user__username")

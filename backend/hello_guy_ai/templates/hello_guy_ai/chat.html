@@ -37,6 +37,14 @@
       <h1 id="title">New chat</h1>
       <span id="agent-pill" class="agent-pill"></span>
     </div>
+    <button id="sched-btn" class="ghost-btn" type="button" aria-controls="sched" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span id="sched-label">Scheduled</span>
+    </button>
+    <button id="notif-btn" class="ghost-btn" type="button" aria-controls="notif" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span id="notif-label">Notifications</span>
+    </button>
     <button id="info-btn" class="ghost-btn" type="button" aria-controls="info" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
       <span>Agent details</span>
@@ -45,6 +53,25 @@
 
   <div class="content">
     <div id="messages" aria-live="polite"></div>
+    <aside id="sched" class="info-panel" aria-label="Scheduled reminders and tasks" hidden>
+      <div class="info-head">
+        <h2>Scheduled</h2>
+        <button id="sched-close" class="hg-act" type="button" aria-label="Close scheduled list">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <p class="info-desc">Reminders and recurring tasks. Ask the assistant to add or change one.</p>
+      <ul id="sched-list" class="info-tools"></ul>
+    </aside>
+    <aside id="notif" class="info-panel" aria-label="Notifications" hidden>
+      <div class="info-head">
+        <h2>Notifications</h2>
+        <button id="notif-close" class="hg-act" type="button" aria-label="Close notifications">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <ul id="notif-list" class="info-tools"></ul>
+    </aside>
     <aside id="info" class="info-panel" aria-label="Agent details" hidden>
       <div class="info-head">
         <h2 id="info-name"></h2>
@@ -185,9 +212,104 @@
     }) : [el("li", "info-tool", "This agent only chats; it has no tools.")]));
   }
 
+  const PANELS = ["info", "notif", "sched"];
+
+  function showPanel(id, open) {
+    PANELS.forEach((p) => {
+      const on = p === id && open;
+      $(p).hidden = !on;
+      $(`${p}-btn`).setAttribute("aria-expanded", String(on));
+    });
+  }
+
   function toggleInfo(open = $("info").hidden) {
-    $("info").hidden = !open;
-    $("info-btn").setAttribute("aria-expanded", String(open));
+    showPanel("info", open);
+  }
+
+  // ---- notifications --------------------------------------------------------------------
+
+  async function refreshUnread() {
+    try {
+      const { count } = await client.unreadCount();
+      $("notif-label").textContent = count ? `Notifications (${count})` : "Notifications";
+    } catch (_) { /* offline: keep the old label */ }
+  }
+
+  async function toggleNotifications(open = $("notif").hidden) {
+    showPanel("notif", open);
+    if (!open) return;
+    const { items } = await client.notifications();
+    $("notif-list").replaceChildren(...(items.length ? items.map((n) => {
+      const li = el("li", "info-tool");
+      const top = li.appendChild(el("div", "info-tool-top"));
+      top.appendChild(el("span", "info-tool-name", n.title));
+      if (!n.is_read) top.appendChild(el("span", "badge-warn", "New"));
+      li.appendChild(el("code", "info-tool-id", timeAgo(n.created_at)));
+      if (n.body) li.appendChild(el("div", "info-tool-desc")).appendChild(HG.renderMarkdown(n.body));
+      if (n.url) {
+        const a = li.appendChild(el("a", "", "Open chat ↗"));
+        a.href = n.url;
+      }
+      return li;
+    }) : [el("li", "info-tool", "No notifications yet.")]));
+    const unread = items.filter((n) => !n.is_read).map((n) => n.id);
+    if (unread.length) await client.markRead(unread); // seen now
+    refreshUnread();
+  }
+
+  // ---- scheduled reminders & tasks ------------------------------------------------------
+
+  function whenText(r) {
+    const opts = { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" };
+    try {
+      return new Date(r.due_at).toLocaleString([], { ...opts, timeZone: r.timezone });
+    } catch (_) {
+      return new Date(r.due_at).toLocaleString([], opts); // unknown timezone in this browser
+    }
+  }
+
+  async function refreshScheduled() {
+    const { items, count } = await client.reminders();
+    const active = items.filter((r) => r.status === "scheduled").length;
+    $("sched-label").textContent = count ? `Scheduled (${active}${active < count ? ` + ${count - active} paused` : ""})` : "Scheduled";
+    return items;
+  }
+
+  function reminderItem(r) {
+    const paused = r.status === "paused";
+    const li = el("li", "info-tool");
+    const top = li.appendChild(el("div", "info-tool-top"));
+    top.appendChild(el("span", "info-tool-name", r.message));
+    if (paused) top.appendChild(el("span", "badge-warn", "Paused"));
+    if (r.agent_id) top.appendChild(el("span", "badge-warn", "Assistant task"));
+    li.appendChild(el("code", "info-tool-id", `${paused ? "Was due" : "Next"}: ${whenText(r)} (${r.timezone})`));
+    li.appendChild(el("p", "info-tool-desc", r.recurrence ? `Repeats: ${r.recurrence}` : "One-time"));
+    const actions = li.appendChild(el("div", "info-tool-top"));
+    const act = (label, fn) => {
+      const b = actions.appendChild(el("button", "hg-chip", label));
+      b.type = "button";
+      b.onclick = async () => {
+        b.disabled = true;
+        try { await fn(); } catch (err) { view.notice(err.message); }
+        renderScheduled();
+      };
+    };
+    act(paused ? "Resume" : "Pause", () => (paused ? client.resumeReminder(r.id) : client.pauseReminder(r.id)));
+    act("Delete", async () => {
+      if (confirm(`Delete "${r.message}"? This cannot be undone.`)) await client.deleteReminder(r.id);
+    });
+    return li;
+  }
+
+  async function renderScheduled() {
+    const items = await refreshScheduled();
+    $("sched-list").replaceChildren(...(items.length ? items.map(reminderItem)
+      : [el("li", "info-tool", "Nothing scheduled. Try: \"Remind me at 5 pm to send the invoice\".")]));
+  }
+
+  async function toggleScheduled(open = $("sched").hidden) {
+    showPanel("sched", open);
+    if (open) await renderScheduled();
   }
 
   // ---- threads --------------------------------------------------------------------------
@@ -272,6 +394,7 @@
       loadThreads(); // the new chat shows up in the sidebar right away
       await sending;
       await loadThreads();
+      refreshCounts(); // the answer may have created a reminder or read notifications
     } catch (err) {
       view.notice(err.message);
     }
@@ -284,6 +407,14 @@
   document.body.addEventListener("click", (e) => { if (e.target === document.body) closeNav(); }); // tap on the dimmed overlay
   $("info-btn").onclick = () => toggleInfo();
   $("info-close").onclick = () => toggleInfo(false);
+  $("notif-btn").onclick = () => toggleNotifications().catch((err) => view.notice(err.message));
+  $("notif-close").onclick = () => toggleNotifications(false);
+  $("sched-btn").onclick = () => toggleScheduled().catch((err) => view.notice(err.message));
+  $("sched-close").onclick = () => toggleScheduled(false);
+  const refreshCounts = () => { refreshUnread(); refreshScheduled().catch(() => {}); };
+  refreshCounts();
+  setInterval(refreshCounts, 60000);
+  if (params.get("notifications")) toggleNotifications(true).catch(() => {});
   $("input").addEventListener("input", autosize);
   $("input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit($("input").value); }
@@ -294,7 +425,7 @@
     submit($("input").value);
   };
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { toggleInfo(false); closeNav(); }
+    if (e.key === "Escape") { showPanel(null, false); closeNav(); }
   });
 
   loadAgents()

@@ -10,24 +10,31 @@ DEFAULTS: dict[str, Any] = {
     "LLM_API_BASE": "http://localhost:11434",  # None/"" for hosted providers
     "LLM_TIMEOUT_SECONDS": 120,
     "LLM_NUM_RETRIES": 4,  # total attempts; waits 1s, 2s, 4s between them
-    # RAG
+    "LLM_FALLBACK_MODELS": [],  # tried in order when the main model fails, e.g. ["ollama_chat/llama3.1:8b"]
+    "DAILY_TOKEN_LIMIT_PER_USER": 0,  # prompt+completion tokens per user per day; 0 = no limit
+    # RAG. The admin's default "Embedding" LLM model wins over these two (fallback when none is set).
     "EMBEDDING_MODEL": "ollama/nomic-embed-text",
     "EMBEDDING_API_BASE": "http://localhost:11434",
-    "EMBEDDING_DIM": 768,
     "EMBEDDING_BATCH_SIZE": 32,
     "MILVUS_URI": "data/milvus.db",  # file path = Milvus Lite, http://host:19530 = Milvus server
     "MILVUS_TOKEN": "",
-    "MILVUS_COLLECTION": "hello_guy_chunks_v2",  # v2 schema: kb_id instead of assistant_id
+    "MILVUS_COLLECTION": "hello_guy_chunks",  # prefix: one collection per embedding model is created
     "CHUNK_SIZE": 1000,
     "CHUNK_OVERLAP": 150,
+    "MAX_DOCUMENT_MB": 20,  # upload limit for knowledge base files
     # Built-in ORM tools: "app_label.model" allowlist. Empty = agents cannot touch your data.
     "ORM_TOOLS_MODELS": [],
+    "ALLOW_DELETE": False,  # db_delete is refused unless True (it still needs the user's approval)
     # Runtime
     "REDIS_URL": "redis://localhost:6379/0",
     "HISTORY_LIMIT": 20,
+    "HISTORY_MAX_CHARS": 60000,  # oldest turns are dropped to fit (~15k tokens); keeps the context window safe
     "RUN_TIME_LIMIT_SECONDS": 300,
     "STREAM_TTL_SECONDS": 900,
     "SSE_MAX_SECONDS": 600,
+    "RETENTION_DAYS": 0,  # manage.py hello_guy_prune deletes chats/notifications older than this; 0 = keep forever
+    # Notifications: in-app always; email too when True (uses Django's EMAIL_* settings and the user's email).
+    "NOTIFY_EMAIL": False,
     # Public website chat (/api/ai/public/*): visitors chat with PUBLIC_AGENT, running as PUBLIC_USER.
     # Empty = public chat disabled. Create the user with: python manage.py setup_website_bot
     "PUBLIC_AGENT": "",

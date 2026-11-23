@@ -53,6 +53,10 @@ class PlatformAccount(models.Model):
         help_text="Optional custom verify token for this specific account"
     )
     is_active = models.BooleanField(default=True, db_index=True)
+    ai_auto_reply = models.BooleanField(
+        default=False,
+        help_text="Reply to incoming DMs with the website AI assistant (one AI thread per contact)"
+    )
 
     # Token health, filled from Meta's /debug_token (see TokenService). checked_at=None means never checked.
     token_type = models.CharField(max_length=20, blank=True, default='', help_text="PAGE, USER or SYSTEM_USER")

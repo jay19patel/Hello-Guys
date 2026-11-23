@@ -15,7 +15,7 @@ class SiteSettings(TimeStampedModel):
     
     # Contact info
     contact_email = models.EmailField(default='justjayy19@gmail.com')
-    phone_number = models.CharField(max_length=50, blank=True, default='+91 98765 43210')
+    phone_number = models.CharField(max_length=50, blank=True)  # no placeholder: the AI tells visitors this number
     location = models.CharField(max_length=150, blank=True, default='Gujarat, India')
     
     # Social links

@@ -6,6 +6,7 @@ from meta_connector.models import WebhookLog, PlatformAccount, Contact, Message
 from meta_connector.services.message_service import MessageService
 from meta_connector.services.profile_service import ProfileService
 from meta_connector.services.auto_dm_service import AutoDMService
+from meta_connector.services.ai_reply import queue_reply
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ def _process_whatsapp_webhook(payload: dict, webhook_log: WebhookLog):
                 else:
                     msg_type = Message.TYPE_UNKNOWN
 
-                Message.objects.create(
+                queue_reply(Message.objects.create(
                     platform_account=account,
                     contact=contact,
                     message_id=message_id,
@@ -204,7 +205,7 @@ def _process_whatsapp_webhook(payload: dict, webhook_log: WebhookLog):
                     longitude=lon,
                     raw_payload=msg,
                     status=Message.STATUS_DELIVERED
-                )
+                ))
                 logger.info("Saved incoming WhatsApp message: %s from %s", message_id, from_number)
 
 
@@ -342,7 +343,7 @@ def _process_instagram_webhook(payload: dict, webhook_log: WebhookLog):
                 else:
                     msg_type = Message.TYPE_UNKNOWN
 
-            Message.objects.create(
+            queue_reply(Message.objects.create(
                 platform_account=account,
                 contact=contact,
                 message_id=mid,
@@ -353,5 +354,5 @@ def _process_instagram_webhook(payload: dict, webhook_log: WebhookLog):
                 media_id=media_id,
                 raw_payload=msg,
                 status=Message.STATUS_DELIVERED
-            )
+            ))
             logger.info("Saved incoming Instagram message: %s from user: %s", mid, sender_id)

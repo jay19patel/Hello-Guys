@@ -1,23 +1,29 @@
-"""Re-ingest knowledge documents (after changing EMBEDDING_MODEL / MILVUS_COLLECTION, or upgrading)."""
+"""Re-index knowledge documents.
+
+python manage.py hello_guy_reindex          # full rebuild of the current embedding model's collection
+python manage.py hello_guy_reindex --kb faq # re-ingest one knowledge base's documents
+"""
 
 from django.core.management.base import BaseCommand
 
 from hello_guy_ai.models import Document
-from hello_guy_ai.services import enqueue_ingest
+from hello_guy_ai.services.chat import enqueue_ingest
 
 
 class Command(BaseCommand):
-    help = "Queue every (or one knowledge base's) document for re-ingestion"
+    help = "Rebuild the knowledge index (all documents, or one knowledge base's)"
 
     def add_arguments(self, parser):
         parser.add_argument("--kb", help="Knowledge base slug")
 
     def handle(self, *args, kb: str | None = None, **options):
-        docs = Document.objects.all()
-        if kb:
-            docs = docs.filter(knowledge_base__slug=kb)
-        count = 0
-        for pk in docs.values_list("pk", flat=True):
+        if not kb:
+            from hello_guy_ai.tasks.actors import reindex_knowledge
+
+            reindex_knowledge.send()  # the worker drops the collection and re-ingests everything
+            self.stdout.write(self.style.SUCCESS("Full re-index queued"))
+            return
+        ids = list(Document.objects.filter(knowledge_base__slug=kb).values_list("pk", flat=True))
+        for pk in ids:
             enqueue_ingest(pk)
-            count += 1
-        self.stdout.write(self.style.SUCCESS(f"Queued {count} document(s)"))
+        self.stdout.write(self.style.SUCCESS(f"Queued {len(ids)} document(s)"))

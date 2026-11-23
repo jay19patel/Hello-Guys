@@ -3,13 +3,13 @@ import json
 import pytest
 from django.contrib.auth.models import Permission
 
-from demo_crm.models import Lead
-from hello_guy_ai import engine, events, prompt
-from hello_guy_ai.engine import AgentRunner
+from hello_guy_ai.core import engine, events, prompt
+from hello_guy_ai.core.engine import AgentRunner
+from hello_guy_ai.core.prompt import sanitize_history
 from hello_guy_ai.models import AgentMemory, Message, Run, Thread
-from hello_guy_ai.prompt import sanitize_history
-from hello_guy_ai.rag import Chunk
+from hello_guy_ai.services.rag import Chunk
 from hello_guy_ai.tests.conftest import FakeLLM, stream_events, text_stream, tool_call_stream
+from hello_guy_ai.tests.demo_crm.models import Lead
 
 pytestmark = pytest.mark.django_db
 
@@ -31,7 +31,7 @@ def crm_user(user):
 
 
 def make_run(user, content="hi", **run_fields):
-    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    thread = Thread.objects.create(created_by=user, assistant_id="demo")
     run = Run.objects.create(thread=thread, **run_fields)
     Message.objects.create(thread=thread, run=run, role="user", content=content)
     return run
@@ -49,7 +49,7 @@ def execute(run, llm, monkeypatch, rag=None, resume=False):
 def test_tool_call_then_answer(user, fake_redis, monkeypatch):
     llm = FakeLLM(tool_call_stream("get_current_datetime", {}), text_stream("It is noon."))
     run = execute(make_run(user), llm, monkeypatch)
-    assert run.status == "succeeded" and run.iterations == 2 and run.config_snapshot["agent"] == "hello_guy"
+    assert run.status == "succeeded" and run.iterations == 2 and run.config_snapshot["agent"] == "demo"
     assert list(run.thread.messages.values_list("role", flat=True)) == ["user", "assistant", "tool", "assistant"]
     sent = llm.calls[1]["messages"]
     assert sent[-2]["tool_calls"][0]["function"]["name"] == "get_current_datetime" and sent[-1]["role"] == "tool"
@@ -148,7 +148,7 @@ def test_bad_tool_arguments_go_back_to_llm(user, monkeypatch):
 
 
 def test_memory_and_auto_rag_reach_system_prompt(staff, kb, fake_redis, monkeypatch):
-    AgentMemory.objects.create(agent_key="hello_guy", scope="agent", content="Currency is INR")
+    AgentMemory.objects.create(agent_key="demo", scope="agent", content="Currency is INR")
     kb.documents.create(title="Pricing", file="pricing.txt", status="ready")
     run = make_run(staff, "aur uska price?")
     thread = run.thread
@@ -177,7 +177,7 @@ def test_memory_and_auto_rag_reach_system_prompt(staff, kb, fake_redis, monkeypa
 
 
 def test_sanitize_history_drops_unanswered_and_orphan_tool_messages(user):
-    thread = Thread.objects.create(created_by=user, assistant_id="hello_guy")
+    thread = Thread.objects.create(created_by=user, assistant_id="demo")
     msgs = [
         Message(thread=thread, role="tool", content="orphan", tool_call_id="old", name="t"),
         Message(thread=thread, role="user", content="q"),
