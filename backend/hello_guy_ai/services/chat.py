@@ -71,6 +71,17 @@ def create_thread(user: Any, assistant_id: str, name: str = "") -> Thread:
     return Thread.objects.create(created_by=user, assistant_id=assistant_id, name=name[:255])
 
 
+def external_thread(user: Any, assistant_id: str, external_id: str, name: str = "") -> Thread:
+    """The one thread for an outside conversation (a WhatsApp contact, a Slack channel...), created on first use."""
+    check_can_run(user, assistant_id)
+    key = {"created_by": user, "assistant_id": assistant_id, "external_id": external_id}
+    try:
+        with transaction.atomic():
+            return Thread.objects.get_or_create(**key, defaults={"name": name[:255]})[0]
+    except IntegrityError:  # created by a concurrent call between the get and the create
+        return Thread.objects.get(**key)
+
+
 def rename_thread(thread: Thread, name: str) -> Thread:
     thread.name = _clean_text(name, 255, "Name")
     thread.save(update_fields=["name", "updated_at"])

@@ -2,7 +2,6 @@ from datetime import datetime, time, timedelta
 from django.db.models import Count, Q
 from django.db.models.functions import ExtractHour, ExtractIsoWeekDay, TruncDate
 from django.utils import timezone
-from hello_guy_ai.conf import ai_settings
 from meta_connector.models import AutoDMLog, Contact, Message, PlatformAccount
 
 RANGES = (7, 30, 90)
@@ -16,7 +15,6 @@ def _message_kpis(qs):
         received=Count('id', filter=INCOMING_DM),
         sent=Count('id', filter=Q(direction=Message.DIRECTION_OUTGOING)),
         comments=Count('id', filter=Q(message_type=Message.TYPE_COMMENT)),
-        ai=Count('id', filter=Q(direction=Message.DIRECTION_OUTGOING, sent_by__username=ai_settings.PUBLIC_USER)),
     )
 
 
@@ -50,9 +48,9 @@ def insights_context(days: int) -> dict:
     prev_dm_sent = AutoDMLog.objects.filter(created_at__gte=prev_start, created_at__lt=start, status=AutoDMLog.STATUS_SENT).count()
 
     kpis = [
+        {'label': 'Messages', 'icon': 'fa-regular fa-comments', 'value': cur['total'], 'delta': _delta(cur['total'], before['total'])},
         {'label': 'Received DMs', 'icon': 'fa-solid fa-arrow-down', 'value': cur['received'], 'delta': _delta(cur['received'], before['received'])},
         {'label': 'Replies sent', 'icon': 'fa-solid fa-arrow-up', 'value': cur['sent'], 'delta': _delta(cur['sent'], before['sent'])},
-        {'label': 'AI replies', 'icon': 'fa-solid fa-robot', 'value': cur['ai'], 'delta': _delta(cur['ai'], before['ai'])},
         {'label': 'Comments', 'icon': 'fa-regular fa-comment', 'value': cur['comments'], 'delta': _delta(cur['comments'], before['comments'])},
         {'label': 'New contacts', 'icon': 'fa-solid fa-user-plus', 'value': new_contacts, 'delta': _delta(new_contacts, prev_new_contacts)},
         {'label': 'Auto-DMs sent', 'icon': 'fa-regular fa-paper-plane', 'value': dm.get('sent', 0), 'delta': _delta(dm.get('sent', 0), prev_dm_sent)},
@@ -100,11 +98,8 @@ def insights_context(days: int) -> dict:
     team_replies = []
     for r in (period.filter(direction=Message.DIRECTION_OUTGOING)
               .values('sent_by__username', 'sent_by__first_name', 'sent_by__last_name').annotate(n=Count('id')).order_by('-n')):
-        is_ai = r['sent_by__username'] == ai_settings.PUBLIC_USER
-        name = 'AI assistant' if is_ai else (
-            ' '.join(filter(None, [r['sent_by__first_name'], r['sent_by__last_name']])) or r['sent_by__username'])
-        team_replies.append({'name': name or 'Auto-DM / phone app', 'is_person': bool(r['sent_by__username']) and not is_ai,
-                             'is_ai': is_ai, 'n': r['n']})
+        name = ' '.join(filter(None, [r['sent_by__first_name'], r['sent_by__last_name']])) or r['sent_by__username']
+        team_replies.append({'name': name or 'Automated / phone app', 'is_person': bool(r['sent_by__username']), 'n': r['n']})
     max_replies = max([t['n'] for t in team_replies] or [0])
 
     dm_attempts = dm.get('sent', 0) + dm.get('failed', 0)

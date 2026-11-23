@@ -32,7 +32,9 @@ def public_agent(request):
 
 @router.post("/threads", response={201: PublicThreadOut, 404: ErrorOut}, throttle=[AnonRateThrottle("10/m")])
 def public_create_thread(request):
-    thread = chat.create_thread(chat.public_user(), ai_settings.PUBLIC_AGENT)
+    """One thread per visitor IP (same as WhatsApp per number, Instagram per account): a returning visitor continues."""
+    ip = AnonRateThrottle("10/m").get_ident(request) or "unknown"  # honours NINJA_NUM_PROXIES (X-Forwarded-For)
+    thread = chat.external_thread(chat.public_user(), ai_settings.PUBLIC_AGENT, f"web:{ip}", f"website: {ip}")
     return Status(201, {"thread_id": thread.pk})
 
 

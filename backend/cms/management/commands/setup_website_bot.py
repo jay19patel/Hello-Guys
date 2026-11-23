@@ -44,6 +44,7 @@ class Command(BaseCommand):
 
         user, created = get_user_model().objects.get_or_create(username=username)
         user.is_active, user.is_staff, user.is_superuser = True, False, False
+        user.first_name = user.first_name or "AI assistant"  # how its replies are labelled in the Meta dashboard
         user.set_unusable_password()  # never logs in; the public API acts as this user
         user.save()
         user.user_permissions.clear()

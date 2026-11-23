@@ -6,3 +6,6 @@ class CoreConfig(AppConfig):
     name = 'core'
     verbose_name = 'Core Portal & System Engine'
 
+
+    def ready(self):
+        from core import meta_ai  # noqa: F401  AI auto-reply for Meta DMs (registers its signal receiver + worker actor)

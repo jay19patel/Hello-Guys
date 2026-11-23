@@ -1,8 +1,8 @@
-"""AI auto-reply for Instagram and WhatsApp DMs.
+"""AI auto-reply for Instagram / WhatsApp DMs: the only code that knows both meta_connector and hello_guy_ai.
 
-Each contact gets one hello_guy_ai thread (Contact.ai_thread), so the assistant remembers the conversation,
-just like a visitor's thread in the website chat. Same assistant (PUBLIC_AGENT) and same user (PUBLIC_USER).
-Turn it on per account: PlatformAccount.ai_auto_reply.
+Each contact gets one hello_guy_ai thread (external_id "whatsapp:<phone>" / "instagram:<IG user id>"), so the
+assistant remembers the conversation, like a visitor's thread in the website chat ("web:<ip>"). Same assistant (PUBLIC_AGENT), same user (PUBLIC_USER).
+Turn it on per account: PlatformAccount.ai_auto_reply. Remove it: delete this file and its import in core/apps.py.
 """
 
 import logging
@@ -10,6 +10,7 @@ import re
 
 import dramatiq
 from django.db import transaction
+from django.dispatch import receiver
 
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.core.engine import AgentRunner
@@ -17,14 +18,22 @@ from hello_guy_ai.exceptions import ThreadBusy
 from hello_guy_ai.models import Message as AIMessage, Run
 from hello_guy_ai.services import chat
 from hello_guy_ai.tasks.actors import CHAT_QUEUE, RUN_LIMIT_MS  # importing it also installs the Redis broker
-from meta_connector.models import Contact, Message, PlatformAccount
+from meta_connector.models import Message, PlatformAccount
 from meta_connector.services.message_service import MessageService
+from meta_connector.signals import message_received
 
 logger = logging.getLogger(__name__)
 
 # Meta rejects longer texts: Instagram 1000 chars, WhatsApp 4096.
 MAX_REPLY_CHARS = {PlatformAccount.PLATFORM_INSTAGRAM: 1000, PlatformAccount.PLATFORM_WHATSAPP: 4096}
 BUSY_RETRIES = 10
+
+
+@receiver(message_received)
+def queue_reply(sender, message: Message, **kwargs) -> None:
+    if (message.platform_account.ai_auto_reply and (message.message_text or '').strip()
+            and not message.contact.is_blocked):
+        transaction.on_commit(lambda: reply_with_ai.send(message.pk))
 
 
 def for_platform(text: str, platform: str) -> str:
@@ -36,26 +45,6 @@ def for_platform(text: str, platform: str) -> str:
     return text.strip()[:MAX_REPLY_CHARS[platform]]
 
 
-def queue_reply(message: Message) -> None:
-    """Called by the webhook processor for each new incoming DM."""
-    if (message.platform_account.ai_auto_reply and (message.message_text or '').strip()
-            and not message.contact.is_blocked):
-        transaction.on_commit(lambda: reply_with_ai.send(message.pk))
-
-
-def _thread_for(contact: Contact, user):
-    if contact.ai_thread_id:
-        return contact.ai_thread
-    label = contact.name or contact.username or contact.phone or contact.platform_user_id
-    thread = chat.create_thread(user, ai_settings.PUBLIC_AGENT, name=f"{contact.platform_account.platform}: {label}"[:255])
-    # Two DMs at once from a new contact: the first one to link its thread wins, the other is dropped.
-    if not Contact.objects.filter(pk=contact.pk, ai_thread__isnull=True).update(ai_thread=thread):
-        thread.delete()
-        contact.refresh_from_db(fields=['ai_thread'])
-        return contact.ai_thread
-    return thread
-
-
 # One run per thread: a DM that arrives while the previous answer is still running waits and retries.
 # Nothing is retried after the run starts, so a reply is never sent twice.
 @dramatiq.actor(
@@ -65,12 +54,15 @@ def _thread_for(contact: Contact, user):
     retry_when=lambda retries, exc: isinstance(exc, ThreadBusy) and retries < BUSY_RETRIES,
 )
 def reply_with_ai(message_id: int) -> None:
-    msg = Message.objects.select_related('contact', 'platform_account', 'contact__ai_thread').filter(pk=message_id).first()
+    msg = Message.objects.select_related('contact', 'platform_account').filter(pk=message_id).first()
     if msg is None:
         return
     contact, account = msg.contact, msg.platform_account
     user = chat.public_user()
-    thread = _thread_for(contact, user)
+    label = contact.name or contact.username or contact.phone or contact.platform_user_id
+    # Same key style as the website ("web:<ip>"): "whatsapp:<phone>" / "instagram:<IG user id>".
+    key = f"{account.platform}:{contact.platform_user_id}"
+    thread = chat.external_thread(user, ai_settings.PUBLIC_AGENT, key, f"{account.platform}: {label}")
     _, run = chat.post_message(user, thread, msg.message_text, enqueue=False)
     AgentRunner(run).execute()
     run.refresh_from_db()
@@ -83,7 +75,6 @@ def reply_with_ai(message_id: int) -> None:
         return
     _, ok, error = MessageService.send_message(
         account.platform, contact.platform_user_id, for_platform(answer, account.platform),
-        account_id=account.pk, sent_by=user)  # sent_by = website-bot: the dashboard shows it as an AI reply
+        account_id=account.pk, sent_by=user)  # shows as "AI assistant" (the bot user's name) in the dashboard
     if not ok:
         logger.warning("AI reply to %s contact #%s failed: %s", account.platform, contact.pk, error)
-

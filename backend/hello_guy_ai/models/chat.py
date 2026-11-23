@@ -20,12 +20,22 @@ class Thread(models.Model):
     source = models.CharField(max_length=16, choices=Source.choices, default=Source.CHAT)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hello_guy_threads")
     timezone = models.CharField(max_length=64, blank=True, help_text="User's IANA timezone, sent by the browser")
+    external_id = models.CharField(
+        max_length=255, blank=True, help_text="Caller's own key for this conversation, e.g. 'meta:contact:4' (one thread each)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ("-updated_at",)
         indexes = [models.Index(fields=["created_by", "-updated_at"], name="hg_thread_user_upd")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["created_by", "assistant_id", "external_id"],
+                condition=~Q(external_id=""),
+                name="hg_thread_one_per_external_id",
+            )
+        ]
 
     def __str__(self) -> str:
         return self.name or str(self.id)

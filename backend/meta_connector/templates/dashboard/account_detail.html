@@ -92,7 +92,7 @@
     <div class="flex flex-col gap-2">
         <span class="caps flex items-center gap-2 text-accent"><i class="fa-solid fa-arrow-up"></i> Outgoing</span>
         <span class="text-[28px] leading-[32px] font-semibold tabular-nums text-accent">{{ outgoing_messages }}</span>
-        <span class="text-[13px] text-muted">{% if ai_replies %}{{ ai_replies }} by AI{% else %}Sent &amp; automated{% endif %}</span>
+        <span class="text-[13px] text-muted">Sent &amp; automated</span>
     </div>
     <div class="flex flex-col gap-2">
         <span class="caps flex items-center gap-2 text-muted"><i class="fa-solid fa-users"></i> Contacts</span>
@@ -310,7 +310,7 @@
                     <div class="flex items-center justify-between text-[13px]">
                         <span class="font-semibold flex items-center gap-2">
                             <span class="pill {% if msg.direction == 'incoming' %}bg-ok/10 text-ok{% else %}bg-accent/10 text-accent{% endif %}">
-                                {% if msg.direction == 'incoming' %}In{% elif msg.is_ai %}<i class="fa-solid fa-robot"></i> AI{% else %}Out{% endif %}
+                                {% if msg.direction == 'incoming' %}In{% else %}Out{% endif %}
                             </span>
                             <a href="{% url 'dashboard-contact' msg.contact.pk %}" class="hover:underline truncate max-w-[140px]">
                                 {{ msg.contact.name|default:msg.contact.username|default:msg.contact.platform_user_id }}

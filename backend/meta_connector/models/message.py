@@ -115,12 +115,6 @@ class Message(models.Model):
             models.Index(fields=['message_type']),
         ]
 
-    @property
-    def is_ai(self) -> bool:
-        """Sent by the AI auto-reply, which sends as the website-bot user (services/ai_reply.py)."""
-        from hello_guy_ai.conf import ai_settings
-        return self.sent_by_id is not None and self.sent_by.get_username() == ai_settings.PUBLIC_USER
-
     def __str__(self):
         text_snippet = (self.message_text[:30] + '...') if len(self.message_text) > 30 else (self.message_text or f"[{self.message_type}]")
         return f"[{self.direction.upper()}] {self.contact} - {text_snippet}"

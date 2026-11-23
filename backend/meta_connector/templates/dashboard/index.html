@@ -209,7 +209,7 @@
                                     <i class="fa-regular fa-comment text-[12px] text-ig shrink-0" title="Comment on a post"></i>
                                 {% elif msg.direction == 'outgoing' %}
                                     <i class="fa-solid shrink-0 text-[12px] {% if msg.status == 'failed' %}fa-circle-exclamation text-bad{% elif msg.status == 'read' %}fa-check-double text-accent{% elif msg.status == 'delivered' %}fa-check-double{% else %}fa-check{% endif %}" title="{{ msg.get_status_display }}"></i>
-                                    <span class="shrink-0">{% if msg.is_ai %}<span class="text-accent font-medium">AI</span>{% elif msg.sent_by == request.user %}You{% elif msg.sent_by %}{{ msg.sent_by.get_full_name|default:msg.sent_by.username }}{% elif msg.raw_payload.auto_dm %}Auto-DM{% elif msg.raw_payload.is_echo %}Phone{% else %}Sent{% endif %}:</span>
+                                    <span class="shrink-0">{% if msg.sent_by == request.user %}You{% elif msg.sent_by %}{{ msg.sent_by.get_full_name|default:msg.sent_by.username }}{% elif msg.raw_payload.auto_dm %}Auto-DM{% elif msg.raw_payload.is_echo %}Phone{% else %}Sent{% endif %}:</span>
                                 {% endif %}
                                 <span class="truncate {% if not msg.message_text %}italic{% endif %}">{% if msg.message_text %}{{ msg.message_text }}{% else %}{{ msg.get_message_type_display }}{% endif %}</span>
                             </span>
@@ -296,7 +296,7 @@
             {% for t in team_replies %}
             <li class="flex flex-col gap-1.5">
                 <div class="flex items-center gap-2 text-[14px]">
-                    <i class="{% if t.is_ai %}fa-solid fa-robot text-accent{% elif t.is_person %}fa-regular fa-user text-muted{% else %}fa-solid fa-bolt text-muted{% endif %} w-4 text-center"></i>
+                    <i class="{% if t.is_person %}fa-regular fa-user{% else %}fa-solid fa-robot{% endif %} w-4 text-center text-muted"></i>
                     <span class="font-medium truncate">{{ t.name }}</span>
                     <span class="ml-auto tabular-nums font-semibold">{{ t.n }}</span>
                 </div>

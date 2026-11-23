@@ -6,9 +6,13 @@ from meta_connector.models import WebhookLog, PlatformAccount, Contact, Message
 from meta_connector.services.message_service import MessageService
 from meta_connector.services.profile_service import ProfileService
 from meta_connector.services.auto_dm_service import AutoDMService
-from meta_connector.services.ai_reply import queue_reply
+from meta_connector.signals import message_received
 
 logger = logging.getLogger(__name__)
+
+
+def _received(message: Message) -> None:
+    message_received.send(sender=Message, message=message)
 
 
 def process_webhook_payload(webhook_log_id: int):
@@ -191,7 +195,7 @@ def _process_whatsapp_webhook(payload: dict, webhook_log: WebhookLog):
                 else:
                     msg_type = Message.TYPE_UNKNOWN
 
-                queue_reply(Message.objects.create(
+                _received(Message.objects.create(
                     platform_account=account,
                     contact=contact,
                     message_id=message_id,
@@ -343,7 +347,7 @@ def _process_instagram_webhook(payload: dict, webhook_log: WebhookLog):
                 else:
                     msg_type = Message.TYPE_UNKNOWN
 
-            queue_reply(Message.objects.create(
+            _received(Message.objects.create(
                 platform_account=account,
                 contact=contact,
                 message_id=mid,

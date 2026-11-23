@@ -1,4 +1,3 @@
-from hello_guy_ai.conf import ai_settings
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from meta_connector.roles import ADMIN, AGENT, VIEWER, has_role, role_required
@@ -26,8 +25,6 @@ def account_detail_view(request, pk):
     total_messages = Message.objects.filter(platform_account=account).count()
     incoming_messages = Message.objects.filter(platform_account=account, direction=Message.DIRECTION_INCOMING).count()
     outgoing_messages = Message.objects.filter(platform_account=account, direction=Message.DIRECTION_OUTGOING).count()
-    ai_replies = Message.objects.filter(platform_account=account, direction=Message.DIRECTION_OUTGOING,
-                                        sent_by__username=ai_settings.PUBLIC_USER).count()
     total_contacts = Contact.objects.filter(platform_account=account).count()
 
     # Recent contacts for this channel
@@ -49,7 +46,6 @@ def account_detail_view(request, pk):
         'total_messages': total_messages,
         'incoming_messages': incoming_messages,
         'outgoing_messages': outgoing_messages,
-        'ai_replies': ai_replies,
         'total_contacts': total_contacts,
         'account_contacts': account_contacts,
         'account_messages': account_messages,

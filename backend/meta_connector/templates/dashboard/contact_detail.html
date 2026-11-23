@@ -66,8 +66,7 @@
                     <div class="max-w-[85%] sm:max-w-[70%] rounded-2xl rounded-br-md px-4 py-2.5 flex flex-col gap-1 {% if msg.status == 'failed' %}bg-bad/10 border border-bad/30{% else %}bg-accent text-on-accent{% endif %}">
                         <p class="whitespace-pre-line break-words">{% if msg.message_text %}{{ msg.message_text }}{% else %}<i>{{ msg.get_message_type_display }}</i>{% endif %}</p>
                         <span class="flex items-center justify-end gap-1.5 text-[11px] {% if msg.status == 'failed' %}text-bad{% else %}opacity-80{% endif %}">
-                            {% if msg.is_ai %}<span title="Automatic reply by the AI assistant"><i class="fa-solid fa-robot"></i> AI ·</span>
-                            {% elif msg.sent_by %}<span title="Sent by {{ msg.sent_by.username }}">{% if msg.sent_by == request.user %}You{% else %}{{ msg.sent_by.get_full_name|default:msg.sent_by.username }}{% endif %} ·</span>
+                            {% if msg.sent_by %}<span title="Sent by {{ msg.sent_by.username }}">{% if msg.sent_by == request.user %}You{% else %}{{ msg.sent_by.get_full_name|default:msg.sent_by.username }}{% endif %} ·</span>
                             {% elif msg.raw_payload.auto_dm %}<span><i class="fa-solid fa-robot"></i> Auto-DM ·</span>
                             {% elif msg.raw_payload.is_echo %}<span title="Sent from the Instagram / WhatsApp app"><i class="fa-solid fa-mobile-screen"></i> Phone ·</span>{% endif %}
                             <time datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>

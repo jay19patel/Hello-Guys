@@ -6,8 +6,10 @@ from django.core.management import call_command
 from hello_guy_ai.core import engine, prompt
 from hello_guy_ai.tests.conftest import FakeLLM, broker, clear_cache, fake_redis, text_stream  # noqa: F401  fixtures
 from hello_guy_ai.tests.test_engine import StubRag
+from core import meta_ai as ai_reply
+from hello_guy_ai.models import Thread
+from hello_guy_ai.services import chat
 from meta_connector.models import Contact, Message, PlatformAccount, WebhookLog
-from meta_connector.services import ai_reply
 from meta_connector.services.webhook_processor import process_webhook_payload
 
 pytestmark = pytest.mark.django_db
@@ -48,9 +50,10 @@ def test_one_thread_per_contact_and_replies_sent(account, broker, monkeypatch, d
             ai_reply.reply_with_ai(Message.objects.get(message_id=mid).pk)  # what the worker runs
 
     contact = Contact.objects.get()
-    assert contact.ai_thread is not None and contact.ai_thread.runs.count() == 2  # one thread, both turns
+    thread = Thread.objects.get()  # one thread for the contact, both turns in it
+    assert thread.external_id == "whatsapp:919999999999" and thread.runs.count() == 2
     assert [c.kwargs["text"] for c in send.call_args_list] == ["Hi Ravi! We build AI chatbots.", "Sure, share your email."]
-    assert [m.is_ai for m in Message.objects.filter(direction='outgoing')] == [True, True]  # dashboard labels them AI
+    assert {m.sent_by for m in Message.objects.filter(direction='outgoing')} == {chat.public_user()}  # "AI assistant"
     history = [m["content"] for m in llm.calls[1]["messages"] if m["role"] in ("user", "assistant")]
     assert history[-3:] == ["Do you build chatbots?", "Hi Ravi! We build AI chatbots.", "I want a quote"]
 

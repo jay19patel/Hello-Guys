@@ -16,7 +16,7 @@ Base URL: `https://<your-backend>/api/ai/public`
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | GET | `/agent` | | `{name, description, suggestions[]}` for the welcome screen |
-| POST | `/threads` | | `201 {thread_id}` (rate limit: 10/min per IP) |
+| POST | `/threads` | | `201 {thread_id}`: one thread per visitor IP, so a returning visitor gets the same one (rate limit: 10/min per IP) |
 | GET | `/threads/{thread_id}/messages` | | `{items: [{role, content, run_status, run_error, …}]}` history |
 | POST | `/threads/{thread_id}/messages` | `{"content": "…"}` (max 2000 chars) | `202 {run_id, stream_url}` (rate limit: 10/min per IP) |
 | GET | `stream_url` from the POST (`/api/ai/runs/{run_id}/stream`) | | Server-Sent Events |

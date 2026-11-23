@@ -27,10 +27,6 @@ class Contact(models.Model):
     first_seen = models.DateTimeField(auto_now_add=True)
     last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
     is_blocked = models.BooleanField(default=False, db_index=True)
-    ai_thread = models.ForeignKey(
-        'hello_guy_ai.Thread', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
-        help_text="This contact's AI conversation (keeps the chat history between messages)"
-    )
 
     class Meta:
         verbose_name = _('Contact')
