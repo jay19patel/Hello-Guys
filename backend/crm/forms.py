@@ -124,7 +124,16 @@ class GoogleCredentialsForm(forms.ModelForm):
     class Meta:
         model = GoogleAccount
         fields = ["client_id", "calendar_id"]
-        help_texts = {"calendar_id": "Calendar for CRM meetings: 'primary' or a calendar's ID."}
+        help_texts = {"calendar_id": "Automatically locked to the connected Google account email (read-only)."}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cal = self.fields["calendar_id"]
+        cal.disabled = True
+        cal.widget.attrs["class"] = "opacity-75 cursor-not-allowed bg-subtle/60"
+        if self.instance and self.instance.is_connected and self.instance.email:
+            self.initial["calendar_id"] = self.instance.email
+            self.instance.calendar_id = self.instance.email
 
     def save(self, commit=True):
         account = super().save(commit=False)

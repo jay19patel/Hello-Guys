@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from crm import views
 
@@ -6,6 +7,7 @@ app_name = "crm"
 
 urlpatterns = [
     path("", views.OverviewView.as_view(), name="overview"),
+    path("ai-meetings/", RedirectView.as_view(pattern_name="crm:meetings", permanent=False), name="ai-meetings"),
     path("opportunities/", views.OpportunityListView.as_view(), name="opportunities"),
     path("opportunities/new/", views.OpportunityCreateView.as_view(), name="opportunity-create"),
     path("opportunities/<int:pk>/", views.OpportunityDetailView.as_view(), name="opportunity"),

@@ -12,9 +12,17 @@ wheels/
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Database
 *.sqlite3
 *.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
 *.db
 db.sqlite3
+
+# Media, Playwright browser profile & logs
+backend/media/
+playwright_google_profile/
+*.log

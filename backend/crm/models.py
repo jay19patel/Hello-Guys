@@ -196,6 +196,18 @@ class Meeting(TimeStamped):
         """(email, RSVP from Google Calendar or "") for the template."""
         return [(email, self.guest_responses.get(email.lower(), "")) for email in self.attendees or []]
 
+    @property
+    def rsvp_summary(self) -> dict[str, int]:
+        """Counts of invited, accepted, declined, tentative (maybe), and pending RSVPs."""
+        guests = self.guests
+        counts = {"total": len(guests), "accepted": 0, "declined": 0, "tentative": 0, "pending": 0}
+        for _, status in guests:
+            if status in ("accepted", "declined", "tentative"):
+                counts[status] += 1
+            else:
+                counts["pending"] += 1
+        return counts
+
     def clean(self) -> None:
         if self.start_at and self.end_at and self.end_at <= self.start_at:
             raise ValidationError({"end_at": "The meeting must end after it starts."})

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'meta_connector.apps.MetaConnectorConfig',
     'cms.apps.CmsConfig',
     'crm.apps.CrmConfig',
+    'voice_agent.apps.VoiceAgentConfig',
 ]
 
 MIDDLEWARE = [

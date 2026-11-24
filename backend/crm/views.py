@@ -548,7 +548,14 @@ class MeetingListView(CRMView, ListView):
         return qs.filter(start_at__gte=now - timedelta(hours=1))
 
     def get_context_data(self, **kwargs):
-        return super().get_context_data(show_past=self.request.GET.get("when") == "past", **kwargs)
+        from voice_agent.models import VoiceBotSession
+        voice_sessions = VoiceBotSession.objects.select_related("customer", "opportunity", "meeting").order_by("-created_at")[:15]
+        return super().get_context_data(
+            show_past=self.request.GET.get("when") == "past",
+            voice_sessions=voice_sessions,
+            customers=Customer.objects.order_by("name")[:100],
+            **kwargs,
+        )
 
 
 class MeetingCreateView(CRMView, CreateView):
@@ -558,11 +565,24 @@ class MeetingCreateView(CRMView, CreateView):
     extra_context = {"title": "Schedule a meeting"}
 
     def get_initial(self):
-        return {"customer": self.request.GET.get("customer"), "opportunity": self.request.GET.get("opportunity")}
+        cid = self.request.GET.get("customer")
+        initial = {"customer": cid, "opportunity": self.request.GET.get("opportunity")}
+        if cid and str(cid).isdigit():
+            cust = Customer.objects.filter(pk=cid).first()
+            if cust and cust.email:
+                initial["attendees"] = [cust.email]
+        return initial
 
     def form_valid(self, form):
         form.instance.organizer = self.request.user
-        meeting = form.save()
+        meeting = form.save(commit=False)
+        attendees = list(meeting.attendees or [])
+        if meeting.customer and meeting.customer.email:
+            cust_email = meeting.customer.email.strip()
+            if cust_email and cust_email.lower() not in {e.lower() for e in attendees}:
+                attendees.insert(0, cust_email)
+        meeting.attendees = attendees
+        meeting.save()
         services.add_note(user=self.request.user, customer=meeting.customer, opportunity=meeting.opportunity,
                           kind=Activity.Kind.MEETING, body=f"Meeting scheduled: {meeting}")
         sync_to_calendar(self.request, meeting, "Meeting scheduled")
@@ -577,9 +597,49 @@ class MeetingDetailView(CRMView, ActionsMixin, DetailView):
     queryset = Meeting.objects.select_related("customer", "opportunity", "organizer")
 
     def get_context_data(self, **kwargs):
-        kwargs.setdefault("form", MeetingForm(instance=self.object))
-        return super().get_context_data(outcome_form=MeetingOutcomeForm(initial={"outcome": self.object.outcome}),
-                                        **kwargs)
+        meeting = self.object
+        google_account = GoogleAccount.get_solo()
+        if (
+            self.request.method == "GET"
+            and google_account.is_connected
+            and meeting.google_event_id
+            and meeting.status == Meeting.Status.SCHEDULED
+        ):
+            try:
+                google.pull_meeting(meeting)
+            except google.GoogleError:
+                pass
+        kwargs.setdefault("form", MeetingForm(instance=meeting))
+        active_voice_session = meeting.voice_sessions.filter(status__in=["queued", "in_meeting"]).order_by("-created_at").first()
+        latest_voice_session = active_voice_session or meeting.voice_sessions.order_by("-created_at").first()
+        return super().get_context_data(
+            outcome_form=MeetingOutcomeForm(initial={"outcome": meeting.outcome}),
+            google_account=google_account,
+            customer=meeting.customer,
+            opportunity=meeting.opportunity,
+            active_voice_session=latest_voice_session,
+            **kwargs,
+        )
+
+    def post_add_guest(self):
+        from django.core.exceptions import ValidationError
+        from django.core.validators import validate_email
+        email = (self.request.POST.get("email") or "").strip()
+        try:
+            validate_email(email)
+        except ValidationError:
+            messages.error(self.request, "Enter a valid email address.")
+            return redirect("crm:meeting", self.object.pk)
+        meeting = self.object
+        attendees = list(meeting.attendees or [])
+        if email.lower() not in {e.lower() for e in attendees}:
+            attendees.append(email)
+            meeting.attendees = attendees
+            meeting.save(update_fields=["attendees", "updated_at"])
+            sync_to_calendar(self.request, meeting, f"Invited {email}")
+        else:
+            messages.info(self.request, f"{email} is already invited.")
+        return redirect("crm:meeting", meeting.pk)
 
     def post_update(self):
         form = MeetingForm(self.request.POST, instance=self.object)
@@ -734,8 +794,12 @@ class SettingsView(CRMView, ActionsMixin, TemplateView):
     def get_context_data(self, **kwargs):
         account = GoogleAccount.get_solo()
         kwargs.setdefault("form", GoogleCredentialsForm(instance=account))
-        return super().get_context_data(account=account, redirect_uri=redirect_uri(self.request),
-                                        scopes=google.SCOPES, **kwargs)
+        return super().get_context_data(
+            account=account,
+            redirect_uri=redirect_uri(self.request),
+            scopes=google.SCOPES,
+            **kwargs,
+        )
 
     def post_credentials(self):
         form = GoogleCredentialsForm(self.request.POST, instance=GoogleAccount.get_solo())

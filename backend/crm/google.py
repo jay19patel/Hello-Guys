@@ -5,6 +5,7 @@ Scopes are the narrowest that do the job: `calendar.events` (events only) and `d
 folders the CRM itself created or uploaded; the rest of the Drive stays private).
 """
 
+import io
 import logging
 import uuid
 from datetime import datetime, timedelta
@@ -84,6 +85,7 @@ def exchange_code(account: GoogleAccount, code: str, redirect_uri: str, code_ver
     userinfo = _execute(build("oauth2", "v2", credentials=creds, cache_discovery=False).userinfo().get())
     account.refresh_token = creds.refresh_token
     account.email = userinfo.get("email", "")
+    account.calendar_id = account.email or "primary"
     account.scopes = " ".join(creds.granted_scopes or SCOPES)
     account.connected_at = timezone.now()
     account.last_error = ""
@@ -100,6 +102,7 @@ def disconnect(account: GoogleAccount) -> None:
             logger.warning("Could not revoke the Google token (it is removed locally anyway)")
     account.refresh_token = ""
     account.email = account.scopes = ""
+    account.calendar_id = "primary"
     account.connected_at = None
     account.save()
 
@@ -189,12 +192,16 @@ def _event_time(value: dict) -> datetime | None:
     return datetime.fromisoformat(value["dateTime"]) if value.get("dateTime") else None  # all-day: None
 
 
-def pull_meeting(meeting: Meeting, events, calendar_id: str) -> list[str]:
+def pull_meeting(meeting: Meeting, events=None, calendar_id: str | None = None) -> list[str]:
     """Copy what changed in Google Calendar (cancelled, rescheduled, renamed, moved, guests' RSVPs) into the CRM
     meeting and log it. Returns the changes. Google wins only when its copy is newer than the CRM's, so a CRM
     edit that is still being pushed is never overwritten."""
     from crm import services  # crm.services imports meta_connector; not needed when google.py loads
 
+    if events is None:
+        events = _service("calendar", "v3").events()
+    if calendar_id is None:
+        calendar_id = GoogleAccount.get_solo().calendar_id
     event = _execute(events.get(calendarId=calendar_id, eventId=meeting.google_event_id), missing_ok=True)
     changes, dirty = [], False
     if not event or event.get("status") == "cancelled":
@@ -321,6 +328,26 @@ def pull_files() -> int:
             gfile.save(update_fields=["name", "url"])
             changed += 1
     return changed
+
+
+def upload_text_as_doc(customer: Customer, name: str, content: str, user=None) -> GoogleFile:
+    """Create a native Google Doc in the customer's Drive folder populated with plain-text content."""
+    files = _service("drive", "v3").files()
+    media = MediaIoBaseUpload(io.BytesIO(content.encode("utf-8")), mimetype="text/plain", resumable=False)
+    body = {
+        "name": name[:255],
+        "mimeType": MIME[GoogleFile.Kind.DOCUMENT],
+        "parents": [customer_folder(customer, files)],
+    }
+    item = _execute(files.create(body=body, media_body=media, fields=FILE_FIELDS))
+    return GoogleFile.objects.create(
+        customer=customer,
+        kind=GoogleFile.Kind.DOCUMENT,
+        google_id=item["id"],
+        name=item.get("name", name),
+        url=item.get("webViewLink", ""),
+        created_by=user,
+    )
 
 
 def upload_file(customer: Customer, uploaded, user=None) -> GoogleFile:

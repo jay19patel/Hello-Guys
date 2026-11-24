@@ -232,6 +232,10 @@
             {% endif %}
         </section>
 
+        {% if can_edit %}
+        {% include "crm/_voice_bot_widget.html" %}
+        {% endif %}
+
         <section class="card p-5 text-[13.5px]">
             <h2 class="caps">Meetings</h2>
             <ul class="mt-2.5 flex flex-col gap-2.5">
