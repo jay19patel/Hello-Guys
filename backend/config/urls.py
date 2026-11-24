@@ -20,17 +20,18 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/token/', ThrottledObtainAuthToken.as_view(), name='api_token_auth'),
 
-    # Meta Connector Dashboard
-    path('dashboard/login/', auth_views.LoginView.as_view(template_name='dashboard/login.html', redirect_authenticated_user=True), name='dashboard-login'),
-    path('dashboard/logout/', auth_views.LogoutView.as_view(), name='dashboard-logout'),
-    path('dashboard/settings/', SettingsView.as_view(), name='dashboard-settings'),
-    path('dashboard/webhooks/', WebhookActionsView.as_view(), name='dashboard-webhooks'),
-    path('dashboard/accounts/<int:pk>/', AccountDetailView.as_view(), name='dashboard-account'),
-    path('dashboard/insights/', RedirectView.as_view(pattern_name='dashboard', query_string=True), name='dashboard-insights'),
-    path('dashboard/contacts/<int:pk>/', ContactDetailView.as_view(), name='dashboard-contact'),
-    path('dashboard/approvals/', ApprovalQueueView.as_view(), name='dashboard-approvals'),
-    path('dashboard/approvals/<int:pk>/action/', ApprovalActionView.as_view(), name='dashboard-approval-action'),
-    path('dashboard/', DashboardIndexView.as_view(), name='dashboard'),
+    # Meta Inbox (/meta/)
+    path('meta/login/', auth_views.LoginView.as_view(template_name='dashboard/login.html', redirect_authenticated_user=True), name='dashboard-login'),
+    path('meta/logout/', auth_views.LogoutView.as_view(), name='dashboard-logout'),
+    path('meta/settings/', SettingsView.as_view(), name='dashboard-settings'),
+    path('meta/webhooks/', WebhookActionsView.as_view(), name='dashboard-webhooks'),
+    path('meta/accounts/<int:pk>/', AccountDetailView.as_view(), name='dashboard-account'),
+    path('meta/insights/', RedirectView.as_view(pattern_name='dashboard', query_string=True), name='dashboard-insights'),
+    path('meta/contacts/<int:pk>/', ContactDetailView.as_view(), name='dashboard-contact'),
+    path('meta/approvals/', ApprovalQueueView.as_view(), name='dashboard-approvals'),
+    path('meta/approvals/<int:pk>/action/', ApprovalActionView.as_view(), name='dashboard-approval-action'),
+    path('meta/', DashboardIndexView.as_view(), name='dashboard'),
+    path('dashboard/', RedirectView.as_view(pattern_name='dashboard', permanent=False)),
 
     # CMS content is managed via Django Admin (/admin/cms/)
     # Legacy /cms/ redirect to admin CMS section

@@ -29,30 +29,27 @@
 <a href="{% url 'crm:meetings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'meetings' or url_name == 'meeting' or url_name == 'meeting-create' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-calendar-days w-4 text-center shrink-0"></i> Meetings
 </a>
-
-<div class="caps px-3 pt-4 pb-1">Messaging</div>
-<a href="{% url 'dashboard-approvals' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-wand-magic-sparkles w-4 text-center shrink-0"></i> AI Approvals
-    {% if approvals_pending %}<span class="ml-auto pill bg-warn/15 text-warn">{{ approvals_pending }}</span>{% endif %}
-</a>
 <a href="{% url 'crm:inbox' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'inbox' or url_name == 'inbox-thread' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> Live chat
     {% if inbox_waiting %}<span class="ml-auto pill bg-bad/10 text-bad" title="Chats waiting for a person">{{ inbox_waiting }}</span>{% endif %}
 </a>
-<a href="{% url 'dashboard' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-brands fa-meta w-4 text-center shrink-0"></i> Meta inbox
-</a>
-
-{% if is_admin %}
-<div class="caps px-3 pt-4 pb-1">System</div>
-<a href="{% url 'crm:settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'settings' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
-    <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> CRM Settings
-</a>
-<a href="/admin/crm/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django admin
-</a>
-{% endif %}
 {% endwith %}
+{% endblock %}
+
+{% block sidebar_system %}
+{% if is_admin %}
+{% with url_name=request.resolver_match.url_name %}
+<div class="border-t border-line/70 px-3 py-2.5 flex flex-col gap-0.5 text-[13.5px]">
+    <div class="caps px-3 pb-1">System</div>
+    <a href="{% url 'crm:settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'settings' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+        <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> CRM Settings
+    </a>
+    <a href="/admin/crm/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+        <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django admin
+    </a>
+</div>
+{% endwith %}
+{% endif %}
 {% endblock %}
 
 {% block user_role_label %}{{ crm_role|default:"No role" }}{% endblock %}

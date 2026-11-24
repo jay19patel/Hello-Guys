@@ -16,8 +16,8 @@
             <p class="text-muted text-[14px]">{{ exception|default:"Your role doesn't allow this page or action." }} Ask an admin if you need it.</p>
         </div>
         <div class="flex flex-wrap justify-center gap-2.5 pt-2 w-full">
-            <a href="/dashboard/" class="btn btn-primary">Back to dashboard</a>
-            <form method="post" action="/dashboard/logout/">
+            <a href="{% url 'dashboard' %}" class="btn btn-primary">Back to Meta Inbox</a>
+            <form method="post" action="{% url 'dashboard-logout' %}">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-ghost">Sign in as someone else</button>
             </form>

@@ -8,35 +8,17 @@
 </a>
 {% endblock %}
 
-{% block nav_aria_label %}Meta Inbox & CRM{% endblock %}
+{% block nav_aria_label %}Meta Inbox{% endblock %}
 
 {% block sidebar_nav %}
 {% with url_name=request.resolver_match.url_name current_pk=request.resolver_match.kwargs.pk %}
-<div class="caps px-3 pt-1 pb-1">Messaging</div>
+<div class="caps px-3 pt-1 pb-1">Meta Inbox</div>
 <a href="{% url 'dashboard' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-chart-simple w-4 text-center shrink-0"></i> Overview
 </a>
 <a href="{% url 'dashboard-approvals' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard-approvals' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-wand-magic-sparkles w-4 text-center shrink-0"></i> AI Approvals
     {% if approvals_pending %}<span class="ml-auto pill bg-warn/15 text-warn">{{ approvals_pending }}</span>{% endif %}
-</a>
-<a href="{% url 'crm:inbox' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> Live Chat
-</a>
-
-<div class="caps px-3 pt-4 pb-1">CRM</div>
-<a href="{% url 'crm:overview' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-gauge-high w-4 text-center shrink-0"></i> CRM Overview
-</a>
-<a href="{% url 'crm:customers' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-user-tie w-4 text-center shrink-0"></i> Customers
-</a>
-<a href="{% url 'crm:opportunities' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-columns w-4 text-center shrink-0"></i> Opportunities
-</a>
-<a href="{% url 'crm:follow-ups' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-regular fa-clock w-4 text-center shrink-0"></i> Follow-ups
-    {% if followups_due %}<span class="ml-auto pill bg-bad/10 text-bad">{{ followups_due }}</span>{% endif %}
 </a>
 
 {% for group in nav_account_groups %}
@@ -49,17 +31,23 @@
 </a>
 {% endfor %}
 {% endfor %}
-
-{% if is_admin %}
-<div class="caps px-3 pt-4 pb-1">System</div>
-<a href="{% url 'dashboard-settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard-settings' and not request.GET.edit %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
-    <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> Meta Settings
-</a>
-<a href="/admin/meta_connector/contact/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django Admin
-</a>
-{% endif %}
 {% endwith %}
+{% endblock %}
+
+{% block sidebar_system %}
+{% if is_admin %}
+{% with url_name=request.resolver_match.url_name %}
+<div class="border-t border-line/70 px-3 py-2.5 flex flex-col gap-0.5 text-[13.5px]">
+    <div class="caps px-3 pb-1">System</div>
+    <a href="{% url 'dashboard-settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard-settings' and not request.GET.edit %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+        <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> Meta Settings
+    </a>
+    <a href="/admin/meta_connector/contact/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+        <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django Admin
+    </a>
+</div>
+{% endwith %}
+{% endif %}
 {% endblock %}
 
 {% block user_role_label %}{{ dashboard_role|default:"No role" }}{% endblock %}

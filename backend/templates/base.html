@@ -33,6 +33,8 @@
             {% block sidebar_nav %}{% endblock %}
         </nav>
 
+        {% block sidebar_system %}{% endblock %}
+
         <div class="border-t border-line p-3 flex items-center gap-3 bg-subtle/30">
             {% block sidebar_footer %}
             <span class="w-8 h-8 rounded-full bg-accent/10 text-accent border border-accent/20 flex items-center justify-center font-semibold text-[12px] shrink-0">
@@ -62,7 +64,7 @@
                     <i class="fa-solid fa-bars" aria-hidden="true"></i>
                 </button>
                 <div class="hidden sm:flex items-center gap-1 bg-subtle border border-line rounded-xl p-1 text-[12.5px] font-medium">
-                    <a href="{% url 'dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':10' == '/dashboard' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meta Inbox</a>
+                    <a href="{% url 'dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/meta' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meta Inbox</a>
                     <a href="{% url 'crm:overview' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/crm' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">CRM</a>
                 </div>
             </div>
