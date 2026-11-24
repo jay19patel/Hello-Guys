@@ -1,0 +1,12 @@
+<div class="px-6 py-12 text-center flex flex-col items-center gap-2.5">
+    <span class="w-11 h-11 rounded-2xl bg-subtle border border-line flex items-center justify-center text-muted">
+        <i class="fa-solid {{ icon|default:'fa-inbox' }} text-base"></i>
+    </span>
+    <p class="text-[14px] font-semibold text-ink">{{ title|default:"Nothing here yet" }}</p>
+    {% if subtitle %}
+    <p class="text-[13px] text-muted max-w-sm">{{ subtitle }}</p>
+    {% endif %}
+    {% if action_url and action_label %}
+    <a href="{{ action_url }}" class="btn btn-primary btn-sm mt-2">{{ action_label }}</a>
+    {% endif %}
+</div>

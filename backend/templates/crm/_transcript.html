@@ -1,0 +1,11 @@
+{# Chat bubbles: needs `transcript` (who: visitor/ai/staff, name, text, at) #}
+{% for m in transcript %}
+<div class="flex {% if m.who == 'visitor' %}justify-start{% else %}justify-end{% endif %}" data-id="{{ m.id }}">
+    <div class="bubble shadow-soft {% if m.who == 'visitor' %}bg-surface border border-line text-ink{% elif m.who == 'staff' %}bg-accent text-on-accent{% else %}bg-accent/10 text-ink border border-accent/20{% endif %}">
+        <p class="text-[11px] font-semibold opacity-80 mb-0.5">{% if m.who == 'visitor' %}Visitor{% elif m.who == 'staff' %}{{ m.name|default:"Team" }}{% else %}AI assistant{% endif %} · {{ m.at|date:"d M H:i" }}</p>
+        <p class="text-[13.5px]">{{ m.text }}</p>
+    </div>
+</div>
+{% empty %}
+<p class="text-muted text-[13.5px]" data-empty>No messages yet.</p>
+{% endfor %}

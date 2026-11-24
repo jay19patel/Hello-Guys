@@ -1,0 +1,205 @@
+{% extends "dashboard/base.html" %}
+{% load humanize %}
+{% block title %}{{ contact.name|default:contact.username|default:contact.platform_user_id }} · Hello Guys{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<header class="flex flex-col gap-4">
+    <a href="{% url 'dashboard' %}" class="self-start text-[13.5px] font-medium text-muted hover:text-ink inline-flex items-center gap-2 transition-colors">
+        <i class="fa-solid fa-arrow-left text-[12px]"></i> Contacts
+    </a>
+    <div class="card p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+        <span class="relative w-16 h-16 shrink-0">
+            <span class="w-16 h-16 rounded-full bg-subtle border border-line text-[20px] font-semibold flex items-center justify-center">{{ contact.get_avatar_initials }}</span>
+            {% if contact.profile_pic_url %}<img src="{{ contact.profile_pic_url }}" referrerpolicy="no-referrer" alt="" class="absolute inset-0 w-16 h-16 rounded-full object-cover bg-subtle" onerror="this.remove()">{% endif %}
+            <span class="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-surface border border-line flex items-center justify-center shadow-soft">
+                <i class="fa-brands {% if is_wa %}fa-whatsapp text-wa{% else %}fa-instagram text-ig{% endif %} text-[14px]"></i>
+            </span>
+        </span>
+        <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+            <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight truncate text-ink">{{ display }}</h1>
+            <p class="text-muted text-[13.5px] truncate">
+                {% if instagram_handle %}@{{ instagram_handle }} · {% endif %}{% if contact.phone %}+{{ contact.phone }} · {% endif %}via {{ account.display_name }}
+            </p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            {% if is_wa and contact.phone %}
+            <a href="https://wa.me/{{ contact.phone }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-brands fa-whatsapp text-wa"></i> WhatsApp</a>
+            {% elif instagram_handle %}
+            <a href="https://www.instagram.com/{{ instagram_handle }}/" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-brands fa-instagram text-ig"></i> Profile</a>
+            {% endif %}
+            {% if is_admin %}<a href="/admin/meta_connector/contact/{{ contact.pk }}/change/" class="btn btn-ghost btn-sm" title="Edit in Django Admin"><i class="fa-regular fa-pen-to-square"></i><span class="sr-only sm:not-sr-only">Edit</span></a>{% endif %}
+        </div>
+    </div>
+</header>
+
+<div class="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-[var(--section-gap)] items-start">
+
+    <!-- Conversation -->
+    <section class="card overflow-hidden flex flex-col h-[70vh] min-h-[460px]" aria-labelledby="chat-title">
+        <div class="flex items-center justify-between gap-3 px-5 h-14 border-b border-line shrink-0 bg-surface">
+            <h2 id="chat-title" class="font-display font-semibold flex items-center gap-2 text-[15px]">
+                Conversation
+                {% if account.ai_auto_reply %}
+                <span class="pill bg-accent/10 text-accent" title="New messages from this contact get an AI reply"><i class="fa-solid fa-robot"></i> AI replying</span>
+                {% endif %}
+            </h2>
+            {% if window_open %}
+            <span class="pill bg-ok/10 text-ok" title="Meta allows free-form replies until {{ window_closes|date:'d M, H:i' }}"><i class="fa-regular fa-clock"></i> Reply window open · closes {{ window_closes|naturaltime }}</span>
+            {% elif has_dm %}
+            <span class="pill bg-warn/10 text-warn" title="The contact last messaged more than 24 hours ago"><i class="fa-regular fa-clock"></i> Reply window closed</span>
+            {% endif %}
+        </div>
+
+        <div id="chatScroll" class="flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-bg/70" data-live="conversation">
+            {% if conversation %}
+            <ol class="flex flex-col gap-2.5">
+                {% for msg in conversation %}
+                {% ifchanged msg.created_at.date %}
+                <li class="flex justify-center py-3"><span class="pill bg-surface border border-line text-muted shadow-soft">{{ msg.created_at|naturalday:"d M Y"|capfirst }}</span></li>
+                {% endifchanged %}
+
+                {% if msg.message_type == 'comment' %}
+                <li data-key="m{{ msg.pk }}" class="flex justify-start">
+                    <div class="max-w-[85%] sm:max-w-[70%] rounded-2xl rounded-bl-md border border-dashed border-ig/40 bg-surface px-4 py-2.5 flex flex-col gap-1 shadow-soft">
+                        <span class="text-[12px] font-semibold text-ig flex items-center gap-1.5"><i class="fa-regular fa-comment"></i> Commented on a post</span>
+                        <p class="whitespace-pre-line break-words">{{ msg.message_text|default:"(empty comment)" }}</p>
+                        <time class="text-[11px] text-muted self-end" datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>
+                    </div>
+                </li>
+                {% elif msg.direction == 'outgoing' %}
+                <li data-key="m{{ msg.pk }}" class="flex justify-end">
+                    <div class="max-w-[85%] sm:max-w-[70%] rounded-2xl rounded-br-md px-4 py-2.5 flex flex-col gap-1 shadow-soft {% if msg.status == 'failed' %}bg-bad/10 border border-bad/30{% else %}bg-accent text-on-accent{% endif %}">
+                        <p class="whitespace-pre-line break-words">{% if msg.message_text %}{{ msg.message_text }}{% else %}<i>{{ msg.get_message_type_display }}</i>{% endif %}</p>
+                        <span class="flex items-center justify-end gap-1.5 text-[11px] {% if msg.status == 'failed' %}text-bad{% else %}opacity-80{% endif %}">
+                            {% if msg.sent_by %}<span title="Sent by {{ msg.sent_by.username }}">{% if msg.sent_by == request.user %}You{% else %}{{ msg.sent_by.get_full_name|default:msg.sent_by.username }}{% endif %} ·</span>
+                            {% elif msg.raw_payload.auto_dm %}<span><i class="fa-solid fa-robot"></i> Auto-DM ·</span>
+                            {% elif msg.raw_payload.is_echo %}<span title="Sent from the Instagram / WhatsApp app"><i class="fa-solid fa-mobile-screen"></i> Phone ·</span>{% endif %}
+                            <time datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>
+                            <i class="fa-solid {% if msg.status == 'failed' %}fa-circle-exclamation{% elif msg.status == 'read' %}fa-check-double{% elif msg.status == 'delivered' %}fa-check-double opacity-70{% else %}fa-check{% endif %}" title="{{ msg.get_status_display }}" aria-hidden="true"></i>
+                            {% if msg.status == 'failed' %}<span>Not delivered</span>{% else %}<span class="sr-only">{{ msg.get_status_display }}</span>{% endif %}
+                        </span>
+                    </div>
+                </li>
+                {% else %}
+                <li data-key="m{{ msg.pk }}" class="flex justify-start">
+                    <div class="max-w-[85%] sm:max-w-[70%] rounded-2xl rounded-bl-md bg-surface border border-line px-4 py-2.5 flex flex-col gap-1 shadow-soft">
+                        {% if msg.media_url and msg.message_type == 'image' or msg.media_url and msg.message_type == 'sticker' %}
+                        <a href="{{ msg.media_url }}" target="_blank" rel="noopener" class="block -mx-2 -mt-0.5">
+                            <img src="{{ msg.media_url }}" referrerpolicy="no-referrer" loading="lazy" alt="Image from {{ display }}"
+                                 class="rounded-xl max-h-72 w-auto object-cover bg-subtle" onerror="this.parentElement.replaceWith(Object.assign(document.createElement('span'), {className: 'italic text-muted', textContent: 'Image no longer available'}))">
+                        </a>
+                        {% if msg.message_text %}<p class="whitespace-pre-line break-words">{{ msg.message_text }}</p>{% endif %}
+                        {% elif msg.message_text %}
+                        <p class="whitespace-pre-line break-words">{{ msg.message_text }}</p>
+                        {% else %}
+                        <p class="italic text-muted flex items-center gap-2">
+                            <i class="fa-regular {% if msg.message_type == 'image' or msg.message_type == 'sticker' %}fa-image{% elif msg.message_type == 'video' %}fa-file-video{% elif msg.message_type == 'audio' %}fa-file-audio{% elif msg.message_type == 'document' %}fa-file-lines{% elif msg.message_type == 'location' %}fa-map{% elif msg.message_type == 'reaction' %}fa-face-smile{% else %}fa-file{% endif %}"></i>
+                            {{ msg.get_message_type_display }}{% if msg.caption %}: {{ msg.caption }}{% endif %}
+                        </p>
+                        {% if msg.media_url %}<a href="{{ msg.media_url }}" target="_blank" rel="noopener" class="text-[13px] text-accent hover:underline">Open attachment</a>{% endif %}
+                        {% endif %}
+                        <time class="text-[11px] text-muted self-end" datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>
+                    </div>
+                </li>
+                {% endif %}
+                {% endfor %}
+            </ol>
+            {% else %}
+            <div class="h-full flex flex-col items-center justify-center">
+                {% include "components/_empty_state.html" with icon="fa-comments" title="No messages yet" subtitle="No messages with this contact yet." %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Composer -->
+        {% if can_reply %}
+        {% with closed=window_closed %}
+        {% if closed %}
+        <p id="windowNote" class="border-t border-line px-5 pt-3 text-[13px] text-warn flex items-start gap-2 shrink-0">
+            <i class="fa-solid fa-lock mt-0.5" aria-hidden="true"></i>
+            <span>{% if is_wa %}Template required: WhatsApp only allows free-form replies within 24 hours of the contact's last message.{% else %}Instagram only allows replies within 24 hours of the contact's last message.{% endif %} You can reply again once they message you.</span>
+        </p>
+        {% endif %}
+        <form method="post" class="{% if not closed %}border-t border-line {% endif %}p-3 flex items-end gap-2 shrink-0 bg-surface" id="composer">
+            {% csrf_token %}
+            <label for="replyText" class="sr-only">Reply to {{ display }}</label>
+            <textarea id="replyText" name="text" rows="1" maxlength="1000" required {% if closed %}disabled aria-describedby="windowNote"{% endif %}
+                      placeholder="{% if closed %}Reply window closed{% elif has_dm %}Write a reply…{% else %}This contact has only commented, so a DM may be rejected by Meta.{% endif %}"
+                      class="flex-1 resize-none max-h-40 rounded-xl border border-line bg-bg px-4 py-2.5 text-[14px] leading-[20px] placeholder:text-muted focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20 disabled:opacity-60 disabled:cursor-not-allowed"></textarea>
+            <button class="btn btn-primary h-[42px] w-[42px] p-0 rounded-xl shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Send" title="Send (Enter)" {% if closed %}disabled{% endif %}><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
+        </form>
+        {% endwith %}
+        {% else %}
+        <p class="border-t border-line px-5 py-4 text-[14px] text-muted flex items-center gap-2 shrink-0"><i class="fa-regular fa-eye"></i> View only — your role can read conversations but not reply.</p>
+        {% endif %}
+    </section>
+
+    <!-- Details -->
+    <aside class="flex flex-col gap-[var(--section-gap)]">
+        <section class="flex flex-col gap-3" aria-labelledby="details-title">
+            <h2 id="details-title" class="font-display font-semibold text-[15px]">Details</h2>
+            <dl class="card divide-y divide-line text-[13.5px]">
+                <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">Channel</dt>
+                    <dd>{% if is_wa %}<span class="pill bg-wa/10 text-wa">WhatsApp</span>{% else %}<span class="pill bg-ig/10 text-ig">Instagram</span>{% endif %}</dd></div>
+                {% if contact.phone %}<div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">Phone</dt><dd class="tabular-nums font-medium">+{{ contact.phone }}</dd></div>{% endif %}
+                <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">Email</dt>
+                    <dd class="truncate">{% if contact.email %}<a href="mailto:{{ contact.email }}" class="text-accent hover:underline">{{ contact.email }}</a>{% else %}<span class="text-muted">Not shared yet</span>{% endif %}</dd></div>
+                <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">First seen</dt><dd title="{{ contact.first_seen|date:'d M Y, H:i' }}">{{ contact.first_seen|date:"d M Y" }}</dd></div>
+                <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">Last active</dt><dd>{% if contact.last_message_at %}{{ contact.last_message_at|naturaltime }}{% else %}—{% endif %}</dd></div>
+                <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">User ID</dt><dd class="font-mono text-[12.5px] truncate" title="{{ contact.platform_user_id }}">{{ contact.platform_user_id }}</dd></div>
+            </dl>
+        </section>
+
+        <section class="card grid grid-cols-3 divide-x divide-line overflow-hidden" aria-label="Message counts" data-live="counts">
+            <div class="p-4 flex flex-col gap-1"><span class="text-[22px] font-display font-bold tabular-nums" data-count="{{ counts.incoming }}" data-count-key="in">{{ counts.incoming }}</span><span class="caps">Received</span></div>
+            <div class="p-4 flex flex-col gap-1"><span class="text-[22px] font-display font-bold tabular-nums" data-count="{{ counts.outgoing }}" data-count-key="out">{{ counts.outgoing }}</span><span class="caps">Sent</span></div>
+            <div class="p-4 flex flex-col gap-1"><span class="text-[22px] font-display font-bold tabular-nums" data-count="{{ counts.comments }}" data-count-key="comments">{{ counts.comments }}</span><span class="caps">Comments</span></div>
+        </section>
+
+        {% if auto_dm_logs %}
+        <section class="flex flex-col gap-3" aria-labelledby="autodm-title">
+            <h2 id="autodm-title" class="font-display font-semibold text-[15px]">Auto-DM history</h2>
+            <ul class="card divide-y divide-line">
+                {% for log in auto_dm_logs %}
+                <li class="flex items-start gap-3 px-4 py-3">
+                    <span class="w-6 shrink-0 pt-0.5 text-center">
+                        <i class="fa-solid {% if log.status == 'sent' %}fa-paper-plane text-ok{% elif log.status == 'failed' %}fa-circle-exclamation text-bad{% else %}fa-forward text-muted{% endif %}" title="{{ log.get_status_display }}"></i>
+                    </span>
+                    <span class="flex-1 min-w-0 flex flex-col">
+                        <span class="truncate text-[13.5px]">“{{ log.comment_text }}”</span>
+                        <span class="text-[12.5px] text-muted">{{ log.get_status_display }} · {{ log.created_at|naturaltime }}</span>
+                        {% if log.detail %}<span class="text-[12.5px] {% if log.status == 'failed' %}text-bad{% else %}text-muted{% endif %}">{{ log.detail }}</span>{% endif %}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const chat = document.getElementById('chatScroll');
+    const nearBottom = () => chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
+    chat.scrollTop = chat.scrollHeight;
+
+    let pinned = true;
+    document.addEventListener('live:before', e => { if (e.detail === chat) pinned = nearBottom(); });
+    document.addEventListener('live:updated', () => { if (pinned) chat.scrollTo({top: chat.scrollHeight, behavior: 'smooth'}); });
+
+    const box = document.getElementById('replyText'), form = document.getElementById('composer');
+    if (box) {
+        box.addEventListener('input', () => { box.style.height = 'auto'; box.style.height = box.scrollHeight + 'px'; });
+        box.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (box.value.trim()) form.requestSubmit(); }
+        });
+        form.addEventListener('submit', () => {
+            const btn = form.querySelector('button');
+            btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        });
+    }
+</script>
+{% endblock %}

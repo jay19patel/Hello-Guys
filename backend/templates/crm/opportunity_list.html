@@ -1,0 +1,56 @@
+{% extends "crm/base.html" %}
+{% block title %}Opportunities · CRM{% endblock %}
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Opportunities</h1>
+        <p class="text-muted">What each customer is interested in, from first message to won.</p>
+    </div>
+    {% if can_edit %}<a href="{% url 'crm:opportunity-create' %}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> New opportunity</a>{% endif %}
+</header>
+
+<form method="get" class="flex flex-wrap items-end gap-3" role="search">
+    <input type="hidden" name="status" value="{{ status }}">
+    <div class="field flex-1 min-w-[200px]"><label for="q" class="sr-only">Search</label><input type="text" id="q" name="q" value="{{ q }}" placeholder="Title, customer, email, phone or reference"></div>
+    <div class="field"><label for="service" class="sr-only">Service</label>
+        <select id="service" name="service"><option value="">All services</option>{% for s in services %}<option value="{{ s.pk }}" {% if service == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+    </div>
+    <label class="flex items-center gap-2 text-[13.5px] h-9 px-2 cursor-pointer select-none"><input type="checkbox" name="mine" value="1" {% if request.GET.mine %}checked{% endif %} class="w-4 h-4 accent-[rgb(var(--accent))]"> Mine</label>
+    <button class="btn btn-ghost"><i class="fa-solid fa-magnifying-glass"></i> Filter</button>
+</form>
+
+<nav class="flex flex-wrap gap-1 bg-subtle border border-line rounded-xl p-1 w-fit" aria-label="Status">
+    {% with base_q=q|urlencode %}
+    <a href="?status=open&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == 'open' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Open</a>
+    {% for value, label in statuses %}
+    <a href="?status={{ value }}&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == value %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">{{ label }}</a>
+    {% endfor %}
+    <a href="?status=all&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
+    {% endwith %}
+</nav>
+
+<div class="card overflow-hidden">
+    {% if page_obj %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-left">
+            <thead><tr class="table-head border-b border-line"><th>Opportunity</th><th>Customer</th><th>Service</th><th>Status</th><th>Owner</th><th>Added</th></tr></thead>
+            <tbody class="divide-y divide-line">
+                {% for opp in page_obj %}
+                <tr class="hover:bg-subtle/60 transition-colors">
+                    <td class="cell px-5"><a href="{% url 'crm:opportunity' opp.pk %}" class="font-semibold text-ink hover:text-accent transition-colors">{{ opp.title }}</a><div class="text-[12px] text-muted">{{ opp.reference }} · {{ opp.get_source_display }}</div></td>
+                    <td class="cell px-5 text-[13px]"><a href="{% url 'crm:customer' opp.customer_id %}" class="hover:text-accent font-medium">{{ opp.customer.name }}</a>{% if opp.customer.company %}<div class="text-muted">{{ opp.customer.company }}</div>{% endif %}</td>
+                    <td class="cell px-5 text-[13px]">{{ opp.service|default:"—" }}</td>
+                    <td class="cell px-5">{% include "crm/_status.html" %}</td>
+                    <td class="cell px-5 text-[13px]">{% include "crm/_user.html" with u=opp.assigned_to empty="—" %}</td>
+                    <td class="cell px-5 text-[13px] text-muted whitespace-nowrap">{{ opp.created_at|timesince }} ago</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {% include "components/_empty_state.html" with icon="fa-filter" title="No opportunities match" subtitle="Try clearing your filters or add a new opportunity." %}
+    {% endif %}
+</div>
+{% include "crm/_pagination.html" %}
+{% endblock %}

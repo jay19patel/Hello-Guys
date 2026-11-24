@@ -1,0 +1,16 @@
+{# Timeline: needs `activities` #}
+<ol class="flex flex-col gap-3">
+    {% for a in activities %}
+    <li class="flex gap-3">
+        <span class="w-7 h-7 rounded-full bg-subtle border border-line flex items-center justify-center shrink-0 text-[12px] text-muted">
+            <i class="fa-solid {% if a.kind == 'call' %}fa-phone{% elif a.kind == 'email' %}fa-envelope{% elif a.kind == 'meeting' %}fa-calendar{% elif a.kind == 'status' %}fa-arrow-right-arrow-left{% elif a.kind == 'message' %}fa-comment{% elif a.kind == 'system' %}fa-gear{% else %}fa-note-sticky{% endif %}"></i>
+        </span>
+        <div class="min-w-0 flex-1">
+            <p class="text-[13.5px] whitespace-pre-line break-words text-ink">{{ a.body }}</p>
+            <p class="text-[12px] text-muted mt-0.5">{{ a.get_kind_display }} · {% include "crm/_user.html" with u=a.created_by empty="System" %} · <time datetime="{{ a.created_at|date:'c' }}" title="{{ a.created_at }}">{{ a.created_at|timesince }} ago</time></p>
+        </div>
+    </li>
+    {% empty %}
+    <li class="text-[13.5px] text-muted py-2">No activity yet.</li>
+    {% endfor %}
+</ol>

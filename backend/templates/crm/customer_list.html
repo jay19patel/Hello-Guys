@@ -1,0 +1,57 @@
+{% extends "crm/base.html" %}
+{% block title %}Customers · CRM{% endblock %}
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Customers</h1>
+        <p class="text-muted">People and companies you work with.</p>
+    </div>
+    {% if can_edit %}<a href="{% url 'crm:customer-create' %}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> New customer</a>{% endif %}
+</header>
+
+<form method="get" class="flex gap-3" role="search">
+    <div class="field flex-1">
+        <label for="q" class="sr-only">Search</label>
+        <input type="text" id="q" name="q" value="{{ q }}" placeholder="Name, company, email, phone or @instagram">
+    </div>
+    <button class="btn btn-ghost"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+</form>
+
+<div class="card overflow-hidden">
+    {% if page_obj %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-left">
+            <thead>
+                <tr class="table-head border-b border-line">
+                    <th>Customer</th>
+                    <th>Email / phone</th>
+                    <th>Instagram</th>
+                    <th>Open opportunities</th>
+                    <th>Owner</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-line">
+                {% for c in page_obj %}
+                <tr class="hover:bg-subtle/60 transition-colors">
+                    <td class="cell px-5">
+                        <a href="{% url 'crm:customer' c.pk %}" class="font-semibold text-ink hover:text-accent transition-colors">{{ c.name }}</a>
+                        {% if c.company %}<div class="text-[12px] text-muted">{{ c.company }}</div>{% endif %}
+                    </td>
+                    <td class="cell px-5 text-[13px]">
+                        {{ c.email }}
+                        {% if c.phone %}<div class="text-muted tabular-nums">{{ c.phone }}</div>{% endif %}
+                    </td>
+                    <td class="cell px-5 text-[13px]">{% if c.instagram_username %}@{{ c.instagram_username }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                    <td class="cell px-5 tabular-nums font-medium">{{ c.open_count }}</td>
+                    <td class="cell px-5 text-[13px]">{% include "crm/_user.html" with u=c.owner empty="—" %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {% include "components/_empty_state.html" with icon="fa-user-tie" title="No customers yet" subtitle="Add one, or they appear when someone sends an enquiry." %}
+    {% endif %}
+</div>
+{% include "crm/_pagination.html" %}
+{% endblock %}

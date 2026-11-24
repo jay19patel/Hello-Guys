@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>No access · Hello Guys</title>
+    {% include "components/_theme_head.html" %}
+</head>
+<body class="bg-bg text-ink min-h-screen flex items-center justify-center px-4 antialiased">
+    <main class="card max-w-md w-full p-8 text-center flex flex-col items-center gap-4">
+        <span class="w-12 h-12 rounded-2xl bg-bad/10 text-bad border border-bad/20 flex items-center justify-center text-lg">
+            <i class="fa-solid fa-shield-halved"></i>
+        </span>
+        <div class="flex flex-col gap-1.5">
+            <h1 class="font-display text-[22px] font-bold text-ink">You don't have access to this</h1>
+            <p class="text-muted text-[14px]">{{ exception|default:"Your role doesn't allow this page or action." }} Ask an admin if you need it.</p>
+        </div>
+        <div class="flex flex-wrap justify-center gap-2.5 pt-2 w-full">
+            <a href="/dashboard/" class="btn btn-primary">Back to dashboard</a>
+            <form method="post" action="/dashboard/logout/">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-ghost">Sign in as someone else</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

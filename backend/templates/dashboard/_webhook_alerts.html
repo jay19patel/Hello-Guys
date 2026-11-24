@@ -1,0 +1,31 @@
+{% if webhook_health.failed_webhooks %}
+<div class="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3" role="alert">
+    <i class="fa-solid fa-triangle-exclamation text-warn shrink-0"></i>
+    <p class="flex-1 text-[13.5px] text-ink">
+        <b>{{ webhook_health.failed_webhooks }} webhook{{ webhook_health.failed_webhooks|pluralize }} not processed.</b>
+        Their messages are saved safely but not shown yet. Retry to process them.
+        <a href="/admin/meta_connector/webhooklog/?processed__exact=0" class="text-accent font-medium hover:underline">See errors</a>
+    </p>
+    <form method="post" action="{% url 'dashboard-webhooks' %}" class="shrink-0">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="retry">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="btn btn-ghost btn-sm"><i class="fa-solid fa-rotate-right"></i> Retry now</button>
+    </form>
+</div>
+{% endif %}
+{% if webhook_health.signature_failures %}
+<div class="rounded-xl border border-bad/30 bg-bad/10 px-4 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3" role="alert">
+    <i class="fa-solid fa-shield-halved text-bad shrink-0"></i>
+    <p class="flex-1 text-[13.5px] text-ink">
+        <b>{{ webhook_health.signature_failures }} webhook{{ webhook_health.signature_failures|pluralize }} rejected</b> (last {{ webhook_health.last_signature_failure_at|timesince }} ago) because the signature didn't match.
+        If this is Meta, the <b>App Secret</b> in <a href="{% url 'dashboard-settings' %}" class="text-accent font-medium hover:underline">Settings</a> is wrong, and those messages are lost after Meta stops retrying.
+    </p>
+    <form method="post" action="{% url 'dashboard-webhooks' %}" class="shrink-0">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="dismiss_signature">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="btn btn-ghost btn-sm">Dismiss</button>
+    </form>
+</div>
+{% endif %}

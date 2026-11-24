@@ -1,0 +1,56 @@
+{% extends "crm/base.html" %}
+{% block title %}Settings · CRM{% endblock %}
+{% block content %}
+<header>
+    <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">CRM settings</h1>
+    <p class="text-muted">Connect one Google account for meetings (Calendar + Meet) and customer files (Drive: Docs, Sheets, folders, uploads).</p>
+</header>
+
+<section class="card p-6 flex flex-col gap-5">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-brands fa-google text-accent"></i> Google</h2>
+        {% if account.is_connected %}
+        <span class="pill bg-ok/10 text-ok border border-ok/20"><i class="fa-solid fa-circle-check"></i> Connected as {{ account.email|default:"(unknown)" }}</span>
+        {% else %}
+        <span class="pill bg-subtle border border-line text-muted">Not connected</span>
+        {% endif %}
+    </div>
+    {% if account.connected_at %}<p class="text-[13px] text-muted">Connected {{ account.connected_at|date:"d M Y, H:i" }}.</p>{% endif %}
+    {% if account.last_error %}<p class="text-[13.5px] text-bad"><i class="fa-solid fa-circle-exclamation"></i> Last error: {{ account.last_error }}</p>{% endif %}
+
+    <details class="rounded-xl border border-line p-4 bg-subtle/30" {% if not account.is_configured %}open{% endif %}>
+        <summary class="font-semibold text-[14px] flex items-center justify-between">Setup steps <i class="fa-solid fa-chevron-down chev text-muted transition-transform"></i></summary>
+        <ol class="mt-3 list-decimal pl-5 flex flex-col gap-2 text-[13.5px]">
+            <li>In <a href="https://console.cloud.google.com/apis/library" target="_blank" rel="noopener" class="text-accent font-medium hover:underline">Google Cloud Console</a>, enable the <b>Google Calendar API</b> and the <b>Google Drive API</b>.</li>
+            <li>Configure the OAuth consent screen (internal for a Workspace account, or add yourself as a test user).</li>
+            <li>Create credentials: <b>OAuth client ID</b> → type <b>Web application</b>.</li>
+            <li>Add this <b>Authorized redirect URI</b>:
+                <span class="mt-1 flex items-center gap-2"><code id="redirectUri" class="px-2.5 py-1 rounded-lg bg-surface border border-line text-[12.5px] font-mono break-all">{{ redirect_uri }}</code>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="copyText('redirectUri', this)" aria-label="Copy redirect URI"><i class="fa-regular fa-copy"></i></button></span>
+            </li>
+            <li>Paste the Client ID and Client secret below, save, then click <b>Connect Google</b>.</li>
+        </ol>
+        <p class="mt-3 text-[12.5px] text-muted">Access asked for: {% for s in scopes %}<code class="bg-surface px-1 py-0.5 rounded border border-line">{{ s }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}. Drive access is limited to files and folders the CRM creates.</p>
+    </details>
+
+    <form method="post" class="flex flex-col gap-4">{% csrf_token %}
+        <input type="hidden" name="action" value="credentials">
+        <div class="grid sm:grid-cols-2 gap-4">{% include "components/_fields.html" %}</div>
+        {% if account.client_secret_encrypted %}<p class="text-[13px] text-muted"><i class="fa-solid fa-lock"></i> A client secret is saved (encrypted).</p>{% endif %}
+        <div><button class="btn btn-ghost">Save credentials</button></div>
+    </form>
+
+    <div class="flex flex-wrap gap-2 pt-4 border-t border-line">
+        {% if account.is_configured %}
+        <form method="post" action="{% url 'crm:google-connect' %}">{% csrf_token %}
+            <button class="btn btn-primary"><i class="fa-brands fa-google"></i> {% if account.is_connected %}Reconnect{% else %}Connect{% endif %} Google</button>
+        </form>
+        {% endif %}
+        {% if account.is_connected %}
+        <form method="post" onsubmit="return confirm('Disconnect Google? Existing events and files stay in Google.')">{% csrf_token %}
+            <input type="hidden" name="action" value="disconnect"><button class="btn btn-ghost text-bad"><i class="fa-solid fa-link-slash"></i> Disconnect</button>
+        </form>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

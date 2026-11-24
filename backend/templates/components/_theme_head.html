@@ -1,0 +1,256 @@
+{# Global Design System: Theme prefs, Tailwind CDN, Plus Jakarta Sans + Inter, Alpine.js, Lucide + FontAwesome, CSS tokens & components #}
+<script>
+    (function () {
+        let p = {};
+        try { p = JSON.parse(localStorage.getItem('mc-display') || '{}'); } catch (e) {}
+        const dark = p.theme === 'dark' || (p.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.dataset.density = p.density || 'comfortable';
+    })();
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+    const v = n => `rgb(var(--${n}) / <alpha-value>)`;
+    tailwind.config = {
+        darkMode: 'class',
+        theme: {
+            extend: {
+                fontFamily: {
+                    sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                    display: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                },
+                colors: {
+                    bg: v('bg'),
+                    surface: v('surface'),
+                    subtle: v('subtle'),
+                    line: v('line'),
+                    ink: v('ink'),
+                    muted: v('muted'),
+                    accent: v('accent'),
+                    'on-accent': v('on-accent'),
+                    ok: v('ok'),
+                    warn: v('warn'),
+                    bad: v('bad'),
+                    wa: v('wa'),
+                    ig: v('ig'),
+                },
+                boxShadow: {
+                    'soft': '0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06)',
+                    'card': '0 4px 16px -4px rgb(15 23 42 / 0.06), 0 1px 3px 0 rgb(15 23 42 / 0.04)',
+                },
+            },
+        },
+    };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
+<script defer src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.lucide) lucide.createIcons();
+    });
+    document.addEventListener('live:updated', () => {
+        if (window.lucide) lucide.createIcons();
+    });
+</script>
+<style>
+    :root {
+        --bg: 248 250 252;          /* #F8FAFC soft slate canvas */
+        --surface: 255 255 255;     /* #FFFFFF crisp card surface */
+        --subtle: 241 245 249;      /* #F1F5F9 hover / muted fill */
+        --line: 226 232 240;        /* #E2E8F0 subtle border */
+        --ink: 15 23 42;            /* #0F172A high-contrast slate */
+        --muted: 100 116 139;       /* #64748B secondary text */
+        --accent: 79 70 229;        /* #4F46E5 Indigo 600 */
+        --on-accent: 255 255 255;
+        --ok: 5 150 105;            /* #059669 Emerald 600 */
+        --warn: 217 119 6;          /* #D97706 Amber 600 */
+        --bad: 225 29 72;           /* #E11D48 Rose 600 */
+        --wa: 22 163 74;
+        --ig: 219 39 119;
+        --cell-y: 14px;
+        --section-gap: 32px;
+    }
+    :root.dark {
+        --bg: 11 15 25;             /* #0B0F19 */
+        --surface: 17 24 39;        /* #111827 */
+        --subtle: 30 41 59;         /* #1E293B */
+        --line: 38 49 68;           /* #263144 */
+        --ink: 241 245 249;         /* #F1F5F9 */
+        --muted: 148 163 184;       /* #94A3B8 */
+        --accent: 129 140 248;      /* #818CF8 Indigo 400 */
+        --on-accent: 15 23 42;
+        --ok: 52 211 153;
+        --warn: 251 191 36;
+        --bad: 251 113 133;
+        --wa: 74 222 128;
+        --ig: 244 114 182;
+        color-scheme: dark;
+    }
+    :root[data-density="compact"] { --cell-y: 9px; --section-gap: 20px; }
+
+    [x-cloak] { display: none !important; }
+
+    body {
+        font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        font-size: 14px;
+        line-height: 20px;
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+    h1, h2, h3, .font-display {
+        font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: -0.02em;
+    }
+
+    .cell { padding-top: var(--cell-y); padding-bottom: var(--cell-y); }
+    .stack { display: flex; flex-direction: column; gap: var(--section-gap); }
+
+    .card {
+        background: rgb(var(--surface));
+        border: 1px solid rgb(var(--line));
+        border-radius: 14px;
+        box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.03), 0 1px 3px 0 rgb(15 23 42 / 0.04);
+    }
+
+    /* Form controls rendered by Django widgets */
+    .field input[type=text],
+    .field input[type=password],
+    .field input[type=email],
+    .field input[type=url],
+    .field input[type=number],
+    .field input[type=tel],
+    .field input[type=datetime-local],
+    .field input[type=date],
+    .field input[type=file],
+    .field select,
+    .field textarea {
+        width: 100%;
+        background: rgb(var(--surface));
+        color: rgb(var(--ink));
+        border: 1px solid rgb(var(--line));
+        border-radius: 10px;
+        padding: 9px 12px;
+        font-size: 14px;
+        line-height: 20px;
+        transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+    }
+    .field input:hover, .field select:hover, .field textarea:hover {
+        border-color: rgb(var(--muted) / 0.55);
+    }
+    .field textarea { min-height: 92px; resize: vertical; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+        outline: none;
+        border-color: rgb(var(--accent));
+        box-shadow: 0 0 0 3px rgb(var(--accent) / 0.16);
+    }
+    .field input[type=checkbox] {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        accent-color: rgb(var(--accent));
+        cursor: pointer;
+    }
+    .field-error input, .field-error select, .field-error textarea {
+        border-color: rgb(var(--bad));
+    }
+
+    /* Buttons */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 38px;
+        padding: 0 15px;
+        border-radius: 10px;
+        font-size: 13.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: all .15s ease;
+    }
+    .btn-primary {
+        background: rgb(var(--accent));
+        color: rgb(var(--on-accent));
+        box-shadow: 0 1px 2px 0 rgb(var(--accent) / 0.25);
+    }
+    .btn-primary:hover {
+        background: rgb(var(--accent) / 0.92);
+        transform: translateY(-0.5px);
+    }
+    .btn-ghost {
+        color: rgb(var(--ink));
+        background: rgb(var(--surface));
+        border: 1px solid rgb(var(--line));
+    }
+    .btn-ghost:hover {
+        background: rgb(var(--subtle));
+        border-color: rgb(var(--muted) / 0.45);
+    }
+    .btn-sm { height: 32px; padding: 0 11px; font-size: 13px; border-radius: 8px; }
+    .btn:focus-visible, a:focus-visible, button:focus-visible, summary:focus-visible {
+        outline: 2px solid rgb(var(--accent));
+        outline-offset: 2px;
+    }
+
+    /* Badges & Typography helpers */
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .caps {
+        font-size: 11px;
+        line-height: 16px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: rgb(var(--muted));
+    }
+    .table-head > th {
+        padding: 12px 20px;
+        font-size: 11px;
+        line-height: 16px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: rgb(var(--muted));
+        background: rgb(var(--subtle) / 0.55);
+    }
+    .bubble {
+        max-width: 75%;
+        border-radius: 14px;
+        padding: 10px 14px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    details > summary { list-style: none; cursor: pointer; }
+    details > summary::-webkit-details-marker { display: none; }
+    details[open] .chev { transform: rotate(180deg); }
+
+    /* Motion */
+    @keyframes enter { from { opacity: 0; transform: translateY(6px); background-color: rgb(var(--accent) / 0.10); } to { opacity: 1; transform: none; } }
+    @keyframes flash { from { background-color: rgb(var(--accent) / 0.12); } to { background-color: transparent; } }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .enter { animation: enter .45s cubic-bezier(.2,.7,.2,1) both, flash 2.4s ease-out .45s; }
+    .stack > * { animation: rise .35s cubic-bezier(.2,.7,.2,1) both; }
+    .stack > *:nth-child(2) { animation-delay: .04s; }
+    .stack > *:nth-child(3) { animation-delay: .08s; }
+    .stack > *:nth-child(4) { animation-delay: .12s; }
+    .stack > *:nth-child(n+5) { animation-delay: .16s; }
+    .lift { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+    .lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px -10px rgb(15 23 42 / 0.18); }
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+</style>

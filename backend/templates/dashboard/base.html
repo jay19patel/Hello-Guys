@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{% block page_title %}Hello Guys{% endblock %} · Hello Guys{% endblock %}
+
+{% block mobile_brand %}
+<div class="flex items-center gap-2">
+    <a href="{% url 'hub-portal' %}" class="text-xs text-muted hover:text-ink p-1.5 rounded-lg hover:bg-subtle transition-colors" title="Module Hub"><i class="fa-solid fa-shapes"></i></a>
+    <a href="{% url 'dashboard' %}" class="flex items-center gap-2 font-display font-bold text-[15px] text-ink">
+        <i class="fa-brands fa-meta text-accent"></i> Hello Guys
+    </a>
+</div>
+{% endblock %}
+
+{% block sidebar_brand %}
+<a href="{% url 'dashboard' %}" class="flex items-center gap-2.5">
+    <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-brands fa-meta"></i></span>
+    <span class="font-display font-bold text-[15px] text-ink">Hello Guys</span>
+</a>
+<a href="{% url 'hub-portal' %}" class="btn btn-ghost btn-sm px-2 text-xs text-muted hover:text-ink" title="Switch Module / Hub"><i class="fa-solid fa-shapes"></i></a>
+{% endblock %}
+
+{% block nav_aria_label %}Meta Connector{% endblock %}
+
+{% block sidebar_nav %}
+{% with url_name=request.resolver_match.url_name current_pk=request.resolver_match.kwargs.pk %}
+<a href="{% url 'dashboard' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-solid fa-chart-simple w-4 text-center shrink-0"></i> Overview
+</a>
+<a href="{% url 'crm:overview' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-address-book w-4 text-center shrink-0"></i> CRM
+</a>
+{% if is_admin %}
+<a href="{% url 'dashboard-settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard-settings' and not request.GET.edit %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> Settings
+</a>
+{% endif %}
+
+{% for group in nav_account_groups %}
+<div class="caps px-3 pt-5 pb-1">{{ group.name }}</div>
+{% for acc in group.accounts %}
+<a href="{% url 'dashboard-account' acc.pk %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard-account' and current_pk == acc.pk %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="{{ acc.platform_icon }} w-4 text-center shrink-0 {{ acc.platform_color_class }}"></i>
+    <span class="truncate">{{ acc.display_name }}</span>
+    {% if acc.token_health != 'ok' %}<span class="ml-auto w-2 h-2 rounded-full bg-bad shrink-0" title="Token needs attention"></span>{% endif %}
+</a>
+{% endfor %}
+{% endfor %}
+
+{% if is_admin %}
+<div class="caps px-3 pt-5 pb-1">Data</div>
+<a href="/admin/meta_connector/contact/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django Admin
+</a>
+{% endif %}
+{% endwith %}
+{% endblock %}
+
+{% block user_role_label %}{{ dashboard_role|default:"No role" }}{% endblock %}
+
+{% block page_alerts %}
+{% include "dashboard/_token_alerts.html" %}
+{% include "dashboard/_webhook_alerts.html" %}
+{% endblock %}
+
+{% block extra_scripts %}
+<p id="liveNote" class="sr-only" aria-live="polite"></p>
+<script>
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    function countTo(el, from, to) {
+        if (reduceMotion || from === to) { el.textContent = to.toLocaleString(); return; }
+        const start = performance.now(), dur = 700;
+        (function step(now) {
+            const t = Math.min(1, (now - start) / dur), eased = 1 - Math.pow(1 - t, 3);
+            el.textContent = Math.round(from + (to - from) * eased).toLocaleString();
+            if (t < 1) requestAnimationFrame(step);
+        })(start);
+    }
+    document.querySelectorAll('[data-count]').forEach(el => countTo(el, 0, +el.dataset.count));
+
+    (function () {
+        if (!document.querySelector('[data-live]')) return;
+        let liveVersion = null;
+        async function pollLive() {
+            if (document.hidden) return;
+            try {
+                const res = await fetch("{% url 'meta_connector:dashboard-overview' %}", {cache: 'no-store'});
+                const {version} = await res.json();
+                if (liveVersion !== null && version !== liveVersion) {
+                    const html = await (await fetch(window.location.pathname + window.location.search, {cache: 'no-store'})).text();
+                    const fresh = new DOMParser().parseFromString(html, 'text/html');
+                    document.querySelectorAll('[data-live]').forEach(el => {
+                        const next = fresh.querySelector(`[data-live="${el.dataset.live}"]`);
+                        if (!next) return;
+                        const seen = new Set([...el.querySelectorAll('[data-key]')].map(n => n.dataset.key));
+                        const oldCounts = Object.fromEntries([...el.querySelectorAll('[data-count-key]')].map(n => [n.dataset.countKey, +n.dataset.count]));
+                        document.dispatchEvent(new CustomEvent('live:before', {detail: el}));
+                        el.innerHTML = next.innerHTML;
+                        el.querySelectorAll('[data-key]').forEach(n => { if (seen.size && !seen.has(n.dataset.key)) n.classList.add('enter'); });
+                        el.querySelectorAll('[data-count-key]').forEach(n => countTo(n, oldCounts[n.dataset.countKey] ?? +n.dataset.count, +n.dataset.count));
+                    });
+                    document.dispatchEvent(new Event('live:updated'));
+                    const note = document.getElementById('liveNote');
+                    if (note) { note.textContent = ''; setTimeout(() => { note.textContent = 'New activity loaded.'; }, 50); }
+                }
+                liveVersion = version;
+            } catch (e) {}
+        }
+        pollLive();
+        setInterval(pollLive, 5000);
+        document.addEventListener('visibilitychange', pollLive);
+    })();
+</script>
+{% endblock %}

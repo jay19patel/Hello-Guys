@@ -1,0 +1,183 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ customer.name }} · CRM{% endblock %}
+{% block content %}
+<header class="flex flex-wrap items-start justify-between gap-3">
+    <div class="flex items-start gap-3">
+        <a href="{% url 'crm:customers' %}" class="btn btn-ghost btn-sm mt-1" aria-label="Back to customers"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight">{{ customer.name }}</h1>
+            <p class="text-muted text-[13px] mt-1">{% if customer.company %}{{ customer.company }} · {% endif %}customer since {{ customer.created_at|date:"d M Y" }} · {{ customer.get_source_display }}</p>
+        </div>
+    </div>
+    {% if can_edit %}
+    <div class="flex flex-wrap gap-2">
+        <a href="{% url 'crm:opportunity-create' %}?customer={{ customer.pk }}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add opportunity</a>
+        <a href="{% url 'crm:meeting-create' %}?customer={{ customer.pk }}" class="btn btn-ghost"><i class="fa-solid fa-calendar-plus"></i> Schedule meeting</a>
+    </div>
+    {% endif %}
+</header>
+
+<div class="grid lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 flex flex-col gap-6">
+        <section class="card overflow-hidden">
+            <h2 class="font-display font-semibold px-5 pt-5 text-[16px]">Opportunities <span class="text-muted font-normal text-[13.5px]">· what they are interested in</span></h2>
+            <div class="overflow-x-auto mt-3">
+                <table class="w-full text-left">
+                    <thead><tr class="table-head border-y border-line"><th>Title</th><th>Service</th><th>Status</th><th>Added</th></tr></thead>
+                    <tbody class="divide-y divide-line">
+                        {% for opp in opportunities %}
+                        <tr class="hover:bg-subtle/60 transition-colors">
+                            <td class="cell px-5"><a href="{% url 'crm:opportunity' opp.pk %}" class="font-semibold hover:text-accent transition-colors">{{ opp.title }}</a><div class="text-[12px] text-muted">{{ opp.get_source_display }}</div></td>
+                            <td class="cell px-5 text-[13px]">{{ opp.service|default:"—" }}</td>
+                            <td class="cell px-5">{% include "crm/_status.html" %}</td>
+                            <td class="cell px-5 text-[13px] text-muted whitespace-nowrap">{{ opp.created_at|date:"d M Y" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="px-5 py-8 text-center text-muted text-[13.5px]">Nothing yet.{% if can_edit %} <a href="{% url 'crm:opportunity-create' %}?customer={{ customer.pk }}" class="text-accent font-medium hover:underline">Add what they are interested in</a>.{% endif %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card p-5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-brands fa-google-drive text-accent"></i> Google Drive</h2>
+                {% if customer.drive_folder_url %}<a href="{{ customer.drive_folder_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-solid fa-folder-open"></i> Open folder</a>{% endif %}
+            </div>
+            {% if not google_connected %}
+            <p class="mt-3 text-[13.5px] text-muted">Google is not connected.{% if is_admin %} <a href="{% url 'crm:settings' %}" class="text-accent font-medium hover:underline">Connect it in Settings</a> to keep this customer's Google Docs, Sheets and files in one shared Drive folder.{% endif %}</p>
+            {% else %}
+                {% if can_edit %}
+                {% if not customer.drive_folder_id %}
+                <form method="post" class="mt-3">{% csrf_token %}<input type="hidden" name="action" value="drive-folder"><button class="btn btn-ghost"><i class="fa-solid fa-folder-plus"></i> Create customer folder</button></form>
+                {% endif %}
+                <div class="mt-4 grid sm:grid-cols-2 gap-4">
+                    <form method="post" class="flex flex-col gap-2">{% csrf_token %}
+                        <input type="hidden" name="action" value="drive-create">
+                        <span class="caps">New Google Doc, Sheet or folder</span>
+                        <div class="flex gap-2">
+                            <div class="field w-40"><label for="{{ drive_form.kind.id_for_label }}" class="sr-only">Type</label>{{ drive_form.kind }}</div>
+                            <div class="field flex-1"><label for="{{ drive_form.name.id_for_label }}" class="sr-only">Name</label><input type="text" name="name" id="{{ drive_form.name.id_for_label }}" maxlength="200" required placeholder="Name, e.g. Proposal v1"></div>
+                        </div>
+                        <button class="btn btn-ghost btn-sm self-start"><i class="fa-solid fa-plus"></i> Create</button>
+                    </form>
+                    <form method="post" enctype="multipart/form-data" class="flex flex-col gap-2">{% csrf_token %}
+                        <input type="hidden" name="action" value="drive-upload">
+                        <span class="caps">Upload a file (max 25 MB)</span>
+                        <div class="field"><label for="{{ upload_form.file.id_for_label }}" class="sr-only">File</label>{{ upload_form.file }}</div>
+                        <button class="btn btn-ghost btn-sm self-start"><i class="fa-solid fa-upload"></i> Upload</button>
+                    </form>
+                </div>
+                {% endif %}
+                <ul class="mt-5 divide-y divide-line">
+                    {% for f in files %}
+                    <li class="py-3 flex flex-col gap-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <a href="{{ f.url }}" target="_blank" rel="noopener" class="flex items-center gap-2 min-w-0 hover:text-accent font-medium">
+                                <i class="fa-solid {% if f.kind == 'spreadsheet' %}fa-table text-ok{% elif f.kind == 'document' %}fa-file-lines text-accent{% elif f.kind == 'folder' %}fa-folder{% else %}fa-file{% endif %} w-4"></i>
+                                <span class="truncate">{{ f.name }}</span>
+                            </a>
+                            <span class="flex items-center gap-2 shrink-0">
+                                <span class="text-[12px] text-muted">{{ f.get_kind_display }} · {{ f.created_at|date:"d M" }}</span>
+                                {% if is_admin %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="drive-delete"><input type="hidden" name="file" value="{{ f.pk }}"><button class="btn btn-ghost btn-sm text-bad" aria-label="Delete {{ f.name }}" onclick="return confirm('Move \'{{ f.name|escapejs }}\' to Google Drive trash?')"><i class="fa-solid fa-trash"></i></button></form>{% endif %}
+                            </span>
+                        </div>
+                        {% if f.shared_with %}<p class="text-[12px] text-muted">Shared with: {% for s in f.shared_with %}{{ s.email }} ({{ s.role }}){% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+                        {% if can_edit %}
+                        <form method="post" class="flex flex-wrap gap-2 items-center">{% csrf_token %}
+                            <input type="hidden" name="action" value="share"><input type="hidden" name="target" value="{{ f.pk }}">
+                            <div class="field flex-1 min-w-[180px]"><label class="sr-only" for="share-email-{{ f.pk }}">Email</label><input type="email" id="share-email-{{ f.pk }}" name="email" required placeholder="Share with email"></div>
+                            <div class="field"><label class="sr-only" for="share-role-{{ f.pk }}">Access</label><select id="share-role-{{ f.pk }}" name="role">{% for value, label in share_form.fields.role.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+                            <button class="btn btn-ghost btn-sm"><i class="fa-solid fa-share-nodes"></i> Share</button>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% empty %}
+                    <li class="py-4 text-[13.5px] text-muted">No files yet.</li>
+                    {% endfor %}
+                </ul>
+                {% if can_edit and customer.drive_folder_id %}
+                <form method="post" class="mt-4 pt-4 border-t border-line flex flex-wrap gap-2 items-center">{% csrf_token %}
+                    <input type="hidden" name="action" value="share"><input type="hidden" name="target" value="folder">
+                    <span class="caps w-full">Share the whole folder</span>
+                    <div class="field flex-1 min-w-[180px]"><label class="sr-only" for="share-folder-email">Email</label><input type="email" id="share-folder-email" name="email" required placeholder="customer@example.com" value="{{ customer.email }}"></div>
+                    <div class="field"><label class="sr-only" for="share-folder-role">Access</label><select id="share-folder-role" name="role">{% for value, label in share_form.fields.role.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+                    <button class="btn btn-ghost btn-sm"><i class="fa-solid fa-share-nodes"></i> Share folder</button>
+                </form>
+                {% endif %}
+            {% endif %}
+        </section>
+
+        <section class="card p-5">
+            <h2 class="font-display font-semibold text-[16px]">Activity</h2>
+            {% if can_edit %}
+            <form method="post" class="mt-4 flex flex-col sm:flex-row gap-2">{% csrf_token %}
+                <input type="hidden" name="action" value="note">
+                <div class="field sm:w-36"><label for="{{ note_form.kind.id_for_label }}" class="sr-only">Type</label>{{ note_form.kind }}</div>
+                <div class="field flex-1"><label for="{{ note_form.body.id_for_label }}" class="sr-only">Note</label>{{ note_form.body }}</div>
+                <button class="btn btn-primary self-start">Add</button>
+            </form>
+            {% endif %}
+            <div class="mt-5">{% include "crm/_activities.html" %}</div>
+        </section>
+
+        {% if can_edit %}
+        <section class="card p-5">
+            <h2 class="font-display font-semibold text-[16px]">Details</h2>
+            <form method="post" class="mt-4 flex flex-col gap-4">{% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                <div class="grid sm:grid-cols-2 gap-4">{% include "components/_fields.html" %}</div>
+                <div><button class="btn btn-primary">Save</button></div>
+            </form>
+        </section>
+        {% endif %}
+    </div>
+
+    <aside class="flex flex-col gap-6">
+        <section class="card p-5 text-[13.5px] flex flex-col gap-2.5">
+            <h2 class="caps">Contact</h2>
+            {% if customer.email %}<a href="mailto:{{ customer.email }}" class="hover:text-accent break-all flex items-center gap-2"><i class="fa-solid fa-envelope w-4 text-muted"></i> {{ customer.email }}</a>{% endif %}
+            {% if customer.phone %}<span class="flex items-center gap-2"><i class="fa-solid fa-phone w-4 text-muted"></i> {{ customer.phone }}</span>{% endif %}
+            {% if customer.instagram_username %}<a href="https://instagram.com/{{ customer.instagram_username|urlencode }}" target="_blank" rel="noopener" class="hover:text-accent flex items-center gap-2"><i class="fa-brands fa-instagram w-4 text-muted"></i> @{{ customer.instagram_username }}</a>{% endif %}
+            {% if customer.website %}<a href="{{ customer.website }}" target="_blank" rel="noopener" class="hover:text-accent break-all flex items-center gap-2"><i class="fa-solid fa-globe w-4 text-muted"></i> {{ customer.website }}</a>{% endif %}
+            <span class="text-muted">Owner: {% include "crm/_user.html" with u=customer.owner empty="unassigned" %}</span>
+            {% if customer.notes %}<p class="mt-2 pt-2 border-t border-line whitespace-pre-line text-muted">{{ customer.notes }}</p>{% endif %}
+        </section>
+
+        <section class="card p-5 text-[13.5px]">
+            <h2 class="caps">Inbox identities</h2>
+            <ul class="mt-2.5 flex flex-col gap-2">
+                {% for c in contacts %}
+                <li><a href="{% url 'dashboard-contact' c.pk %}" class="hover:text-accent flex items-center gap-2 font-medium">
+                    <i class="fa-brands {% if c.platform_account.platform == 'whatsapp' %}fa-whatsapp text-wa{% elif c.platform_account.platform == 'instagram' %}fa-instagram text-ig{% else %}fa-facebook-messenger{% endif %} w-4"></i>
+                    {{ c.name|default:c.username|default:c.phone|default:c.platform_user_id }}
+                </a></li>
+                {% empty %}<li class="text-muted">None linked.</li>{% endfor %}
+            </ul>
+            {% if can_edit and contacts %}
+            <form method="post" class="mt-4 pt-4 border-t border-line flex flex-col gap-2.5">{% csrf_token %}
+                <input type="hidden" name="action" value="message">
+                <div class="field"><label for="{{ message_form.contact.id_for_label }}" class="text-[13px] font-semibold">Send a message</label>{{ message_form.contact }}</div>
+                <div class="field"><label for="{{ message_form.text.id_for_label }}" class="sr-only">Message</label>{{ message_form.text }}</div>
+                <button class="btn btn-primary btn-sm self-start"><i class="fa-solid fa-paper-plane"></i> Send</button>
+            </form>
+            {% endif %}
+        </section>
+
+        <section class="card p-5 text-[13.5px]">
+            <h2 class="caps">Meetings</h2>
+            <ul class="mt-2.5 flex flex-col gap-2.5">
+                {% for m in meetings %}<li><a href="{% url 'crm:meeting' m.pk %}" class="font-medium hover:text-accent">{{ m.title }}</a><div class="text-[12px] text-muted">{{ m.start_at|date:"d M Y, H:i" }} · {{ m.get_status_display }}</div></li>
+                {% empty %}<li class="text-muted">None.</li>{% endfor %}
+            </ul>
+        </section>
+
+        {% if is_admin %}
+        <form method="post" onsubmit="return confirm('Delete this customer, their notes and meetings? Google files stay in Drive.')">{% csrf_token %}
+            <input type="hidden" name="action" value="delete"><button class="btn btn-ghost text-bad w-full"><i class="fa-solid fa-trash"></i> Delete customer</button>
+        </form>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

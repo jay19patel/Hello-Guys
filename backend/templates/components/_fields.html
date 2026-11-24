@@ -1,0 +1,35 @@
+{% if form.non_field_errors %}
+<div class="sm:col-span-2 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[13.5px] text-bad flex items-start gap-2.5" role="alert">
+    <i class="fa-solid fa-circle-exclamation mt-0.5 shrink-0"></i>
+    <span>{{ form.non_field_errors|join:" " }}</span>
+</div>
+{% endif %}
+
+{% for field in form %}
+{% if field.field.widget.input_type == 'checkbox' %}
+<label for="{{ field.id_for_label }}" class="field sm:col-span-2 flex items-center gap-3 p-3 rounded-xl border border-line bg-subtle/40 hover:bg-subtle/70 cursor-pointer select-none transition-colors {% if field.errors %}border-bad/50{% endif %}">
+    {{ field }}
+    <span class="flex flex-col">
+        <span class="text-[13.5px] font-medium text-ink">{{ field.label }}</span>
+        {% if field.help_text %}<span class="text-[12px] text-muted">{{ field.help_text }}</span>{% endif %}
+    </span>
+    {% for error in field.errors %}
+    <span class="ml-auto text-[12.5px] text-bad flex items-center gap-1"><i class="fa-solid fa-circle-exclamation"></i> {{ error }}</span>
+    {% endfor %}
+</label>
+{% else %}
+<div class="field flex flex-col gap-1.5 {% if field.field.widget.attrs.rows %}sm:col-span-2{% endif %} {% if field.errors %}field-error{% endif %}">
+    <label for="{{ field.id_for_label }}" class="text-[13px] font-semibold text-ink flex items-center gap-1">
+        {{ field.label }}
+        {% if field.field.required %}<span class="text-bad" aria-hidden="true">*</span>{% endif %}
+    </label>
+    {{ field }}
+    {% if field.help_text %}
+    <p class="text-[12.5px] leading-[18px] text-muted">{{ field.help_text }}</p>
+    {% endif %}
+    {% for error in field.errors %}
+    <p class="text-[12.5px] text-bad flex items-center gap-1.5"><i class="fa-solid fa-circle-exclamation shrink-0"></i> {{ error }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+{% endfor %}

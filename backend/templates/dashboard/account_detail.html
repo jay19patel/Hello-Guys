@@ -1,0 +1,332 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ profile.username|default:account.display_name }} ({{ account.get_platform_display }}) · Hello Guys{% endblock %}
+
+{% block content %}
+<!-- Account Header -->
+{% if account.platform == 'instagram' and profile %}
+<header class="card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+    <div class="flex items-center gap-5 min-w-0">
+        {% if profile.profile_picture_url %}
+        <img src="{{ profile.profile_picture_url }}" referrerpolicy="no-referrer" alt="" class="w-16 h-16 rounded-full object-cover shrink-0 border border-line">
+        {% else %}
+        <span class="w-16 h-16 rounded-2xl bg-ig/10 text-ig border border-ig/20 flex items-center justify-center text-[28px] shrink-0"><i class="fa-brands fa-instagram"></i></span>
+        {% endif %}
+        <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <h1 class="font-display text-[22px] leading-[28px] font-bold tracking-tight truncate">@{{ profile.username }}</h1>
+                <span class="pill {% if account.is_active %}bg-ok/10 text-ok{% else %}bg-subtle text-muted{% endif %}">
+                    <i class="fa-solid fa-circle text-[7px]"></i> {% if account.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+                <span class="pill {% if account.token_health == 'ok' %}bg-ok/10 text-ok{% elif account.token_health == 'expiring' or account.token_health == 'unknown' %}bg-warn/10 text-warn{% else %}bg-bad/10 text-bad{% endif %}">
+                    {% if account.token_health == 'ok' %}<i class="fa-solid fa-circle-check"></i> Token Valid{% elif account.token_health == 'expiring' %}Token Expiring{% elif account.token_health == 'missing' %}No Token{% else %}Token {{ account.token_health|title }}{% endif %}
+                </span>
+            </div>
+            <p class="text-muted text-[13.5px] mt-0.5">{{ profile.name }}{% if profile.name %} · {% endif %}{{ account.display_name }}</p>
+            {% if profile.biography %}<p class="text-[13px] leading-[20px] text-muted max-w-xl line-clamp-2 mt-1">{{ profile.biography }}</p>{% endif %}
+        </div>
+    </div>
+    <div class="flex items-center gap-4 sm:gap-6 shrink-0">
+        <div class="flex flex-col text-center"><span class="font-display text-[20px] font-bold tabular-nums">{{ profile.media_count|default:0 }}</span><span class="caps">Posts</span></div>
+        <div class="flex flex-col text-center"><span class="font-display text-[20px] font-bold tabular-nums">{{ profile.followers_count|default:0 }}</span><span class="caps">Followers</span></div>
+        <div class="flex flex-col text-center"><span class="font-display text-[20px] font-bold tabular-nums">{{ profile.follows_count|default:0 }}</span><span class="caps">Following</span></div>
+        <a href="https://www.instagram.com/{{ profile.username }}/" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="Open on Instagram"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+        {% if is_admin %}<a href="{% url 'dashboard-settings' %}?edit={{ account.pk }}" class="btn btn-ghost btn-sm" title="Edit account in settings"><i class="fa-solid fa-sliders"></i> Edit</a>{% endif %}
+    </div>
+</header>
+{% else %}
+<header class="card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+    <div class="flex items-center gap-4 min-w-0">
+        <span class="w-14 h-14 rounded-2xl flex items-center justify-center text-[26px] shrink-0
+            {% if account.platform == 'whatsapp' %}bg-wa/10 text-wa border border-wa/20{% elif account.platform == 'instagram' %}bg-ig/10 text-ig border border-ig/20{% else %}bg-[#0084FF]/10 text-[#0084FF]{% endif %}">
+            <i class="{{ account.platform_icon }}"></i>
+        </span>
+        <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <h1 class="font-display text-[22px] leading-[26px] font-bold tracking-tight truncate">{{ account.display_name }}</h1>
+                <span class="pill {% if account.is_active %}bg-ok/10 text-ok{% else %}bg-subtle text-muted{% endif %}">
+                    <i class="fa-solid fa-circle text-[7px]"></i> {% if account.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+                <span class="pill {% if account.token_health == 'ok' %}bg-ok/10 text-ok{% elif account.token_health == 'expiring' or account.token_health == 'unknown' %}bg-warn/10 text-warn{% else %}bg-bad/10 text-bad{% endif %}">
+                    {% if account.token_health == 'ok' %}<i class="fa-solid fa-circle-check"></i> Token Valid{% elif account.token_health == 'expiring' %}Token Expiring{% elif account.token_health == 'missing' %}No Token{% else %}Token {{ account.token_health|title }}{% endif %}
+                </span>
+                <span class="pill {% if account.ai_auto_reply %}bg-accent/10 text-accent{% else %}bg-subtle text-muted{% endif %}" title="Turn on or off in Edit Credentials">
+                    <i class="fa-solid fa-robot"></i> AI replies {% if account.ai_auto_reply %}on{% else %}off{% endif %}
+                </span>
+            </div>
+            <div class="flex items-center gap-2 text-[13px] text-muted font-mono mt-1">
+                <span class="font-semibold">{{ account.get_platform_display }}</span>
+                <span>·</span>
+                <span>{% if account.platform == 'whatsapp' %}Phone ID: {{ account.phone_number_id|default:"Not set" }}{% else %}ID: {{ account.instagram_id|default:"Not set" }}{% endif %}</span>
+            </div>
+        </div>
+    </div>
+    {% if is_admin %}
+    <div class="flex items-center gap-2 shrink-0">
+        <a href="{% url 'dashboard-settings' %}?edit={{ account.pk }}" class="btn btn-ghost btn-sm">
+            <i class="fa-solid fa-sliders"></i> Edit Credentials
+        </a>
+    </div>
+    {% endif %}
+</header>
+{% if profile_error %}
+<div class="rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[13.5px]">
+    <b>Could not load Meta profile.</b> Meta said: {{ profile_error }}
+    <div class="text-muted mt-1">Check the account credentials in <a href="{% url 'dashboard-settings' %}?edit={{ account.pk }}" class="text-accent underline font-medium">Settings → Edit Account</a>.</div>
+</div>
+{% endif %}
+{% endif %}
+
+<!-- KPI Number Cards -->
+<section aria-labelledby="kpi-title" class="card p-5 grid grid-cols-2 lg:grid-cols-4 gap-6">
+    <h2 id="kpi-title" class="sr-only">Key statistics</h2>
+    <div class="flex flex-col gap-1.5">
+        <span class="caps flex items-center gap-2 text-muted"><i class="fa-solid fa-comments text-accent"></i> Total Messages</span>
+        <span class="font-display text-[28px] leading-[32px] font-bold tabular-nums">{{ total_messages }}</span>
+        <span class="text-[12.5px] text-muted">All conversations</span>
+    </div>
+    <div class="flex flex-col gap-1.5">
+        <span class="caps flex items-center gap-2 text-ok"><i class="fa-solid fa-arrow-down"></i> Incoming</span>
+        <span class="font-display text-[28px] leading-[32px] font-bold tabular-nums text-ok">{{ incoming_messages }}</span>
+        <span class="text-[12.5px] text-muted">Received from contacts</span>
+    </div>
+    <div class="flex flex-col gap-1.5">
+        <span class="caps flex items-center gap-2 text-accent"><i class="fa-solid fa-arrow-up"></i> Outgoing</span>
+        <span class="font-display text-[28px] leading-[32px] font-bold tabular-nums text-accent">{{ outgoing_messages }}</span>
+        <span class="text-[12.5px] text-muted">Sent &amp; automated</span>
+    </div>
+    <div class="flex flex-col gap-1.5">
+        <span class="caps flex items-center gap-2 text-muted"><i class="fa-solid fa-users"></i> Contacts</span>
+        <span class="font-display text-[28px] leading-[32px] font-bold tabular-nums">{{ total_contacts }}</span>
+        <span class="text-[12.5px] text-muted">Connected people</span>
+    </div>
+</section>
+
+{% if account.platform == 'instagram' %}
+<!-- Default rule -->
+<section id="default-rule" class="grid lg:grid-cols-[240px_1fr] gap-4 lg:gap-10 scroll-mt-20" aria-labelledby="default-title">
+    <div class="flex flex-col gap-2">
+        <h2 id="default-title" class="font-display text-[16px] font-semibold">Default auto-DM</h2>
+        <p class="text-[13.5px] text-muted">Sent to people who comment on a post that has no message of its own. Keep it off to auto-DM only on selected posts.</p>
+        {% if default_rule.is_enabled %}
+        <span class="pill bg-ok/10 text-ok self-start"><i class="fa-solid fa-circle-check"></i> On for all posts</span>
+        {% else %}
+        <span class="pill bg-subtle text-muted self-start">Off</span>
+        {% endif %}
+    </div>
+    <form method="post" class="card p-5 grid sm:grid-cols-2 gap-5">
+        {% csrf_token %}
+        <input type="hidden" name="media_id" value="">
+        <fieldset class="contents" {% if not can_reply %}disabled{% endif %}>
+        {% include "components/_fields.html" with form=default_form %}
+        </fieldset>
+        {% if can_reply %}
+        <div class="sm:col-span-2 flex justify-end border-t border-line pt-4">
+            <button class="btn btn-primary">Save default</button>
+        </div>
+        {% else %}
+        <p class="sm:col-span-2 text-[13px] text-muted"><i class="fa-regular fa-eye"></i> View only — your role can't change auto-DM.</p>
+        {% endif %}
+    </form>
+</section>
+
+<!-- Media -->
+<section class="flex flex-col gap-4 border-t border-line pt-[var(--section-gap)]" aria-labelledby="media-title">
+    <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-col gap-0.5">
+            <h2 id="media-title" class="font-display text-[18px] leading-[24px] font-bold">Reels &amp; posts</h2>
+            <p class="text-[13.5px] text-muted">Open a post to give it its own auto-DM message.</p>
+        </div>
+        <div class="flex gap-2">
+            {% if not is_first_page %}<a href="{% url 'dashboard-account' account.pk %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-angles-left"></i> Newest</a>{% endif %}
+            {% if next_cursor %}<a href="?after={{ next_cursor|urlencode }}" class="btn btn-ghost btn-sm">Older <i class="fa-solid fa-angle-right"></i></a>{% endif %}
+        </div>
+    </div>
+
+    {% if media_error %}
+    <div class="rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[13.5px]"><b>Could not load posts.</b> Meta said: {{ media_error }}</div>
+    {% elif not media %}
+    <div class="card">
+        {% include "components/_empty_state.html" with icon="fa-film" title="No posts yet" subtitle="No posts on this account yet." %}
+    </div>
+    {% else %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        {% for item in media %}
+        {% with on=item.rule.is_enabled %}
+        <article id="media-{{ item.id }}" class="card overflow-hidden flex flex-col scroll-mt-20">
+            <a href="{{ item.permalink }}" target="_blank" rel="noopener" class="relative block aspect-square bg-subtle" aria-label="Open post on Instagram">
+                {% if item.thumb %}
+                <img src="{{ item.thumb }}" referrerpolicy="no-referrer" loading="lazy" alt="" class="w-full h-full object-cover"
+                     onerror="this.hidden=true; this.nextElementSibling.classList.remove('hidden')">
+                {% endif %}
+                <span class="absolute inset-0 flex items-center justify-center text-muted text-[28px] -z-0 {% if item.thumb %}hidden{% endif %}"><i class="fa-solid fa-film"></i></span>
+                <span class="absolute top-3 left-3 pill bg-black/65 text-white backdrop-blur-xs">
+                    {% if item.media_product_type == 'REELS' %}<i class="fa-solid fa-clapperboard"></i> Reel
+                    {% elif item.media_type == 'CAROUSEL_ALBUM' %}<i class="fa-solid fa-clone"></i> Carousel
+                    {% elif item.media_type == 'VIDEO' %}<i class="fa-solid fa-video"></i> Video
+                    {% else %}<i class="fa-regular fa-image"></i> Post{% endif %}
+                </span>
+                <span class="absolute top-3 right-3 pill {% if item.rule and on %}bg-ok text-white{% elif item.rule %}bg-black/65 text-white{% elif default_rule.is_enabled %}bg-white/90 text-slate-900{% else %}bg-black/45 text-white{% endif %}">
+                    {% if item.rule and on %}Auto-DM ON{% elif item.rule %}Auto-DM OFF{% elif default_rule.is_enabled %}Using default{% else %}No auto-DM{% endif %}
+                </span>
+            </a>
+            <div class="p-4 flex-1 flex flex-col gap-3">
+                <p class="text-[13.5px] leading-[20px] line-clamp-2 min-h-[40px] {% if not item.caption %}text-muted{% endif %}">{{ item.caption|default:"No caption" }}</p>
+                <div class="flex items-center gap-4 text-[12.5px] text-muted tabular-nums">
+                    <span title="Likes"><i class="fa-regular fa-heart"></i> {{ item.like_count|default:0 }}</span>
+                    <span title="Comments"><i class="fa-regular fa-comment"></i> {{ item.comments_count|default:0 }}</span>
+                    <span title="Auto-DMs sent" class="{% if item.dm_sent %}text-ok font-semibold{% endif %}"><i class="fa-regular fa-paper-plane"></i> {{ item.dm_sent }}</span>
+                    <time class="ml-auto" datetime="{{ item.timestamp }}">{{ item.timestamp|slice:":10" }}</time>
+                </div>
+                <details {% if item.form.errors %}open{% endif %} class="border-t border-line pt-3 mt-auto">
+                    <summary class="flex items-center justify-between text-[13.5px] font-semibold text-accent">
+                        <span>{% if item.rule %}Edit auto-DM{% else %}Set auto-DM for this post{% endif %}</span>
+                        <i class="fa-solid fa-chevron-down text-[12px] chev transition-transform"></i>
+                    </summary>
+                    <form method="post" class="grid gap-4 pt-4">
+                        {% csrf_token %}
+                        <input type="hidden" name="media_id" value="{{ item.id }}">
+                        <fieldset class="contents" {% if not can_reply %}disabled{% endif %}>
+                        {% include "components/_fields.html" with form=item.form %}
+                        </fieldset>
+                        {% if can_reply %}
+                        <div class="flex items-center justify-between gap-2">
+                            {% if item.rule and is_admin %}
+                            <button name="action" value="remove" formnovalidate onclick="return confirm('Delete this post\'s own auto-DM rule? The post will use the default message.')" class="btn btn-sm text-muted hover:text-bad hover:bg-bad/10" title="Delete this post's own rule">Use default</button>
+                            {% else %}<span></span>{% endif %}
+                            <button class="btn btn-primary btn-sm">Save</button>
+                        </div>
+                        {% endif %}
+                    </form>
+                </details>
+            </div>
+        </article>
+        {% endwith %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+
+<!-- Activity -->
+<section class="flex flex-col gap-4 border-t border-line pt-[var(--section-gap)]" aria-labelledby="activity-title">
+    <div class="flex flex-col gap-0.5">
+        <h2 id="activity-title" class="font-display text-[18px] leading-[24px] font-bold">Comment activity</h2>
+        <p class="text-[13.5px] text-muted">The latest 25 comments an auto-DM rule looked at, and what happened.</p>
+    </div>
+    <div class="card overflow-hidden">
+        {% if logs %}
+        <ul class="divide-y divide-line">
+            {% for log in logs %}
+            <li class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-5 cell">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <span class="font-semibold truncate">@{{ log.contact.username|default:log.contact.platform_user_id }}</span>
+                    <span class="truncate text-muted text-[13.5px]" title="{{ log.comment_text }}">“{{ log.comment_text }}”</span>
+                    {% if log.detail %}<span class="text-[12.5px] {% if log.status == 'failed' %}text-bad{% else %}text-muted{% endif %}">{{ log.detail }}</span>{% endif %}
+                </div>
+                <div class="flex items-center gap-4 shrink-0">
+                    <span class="w-20 flex">
+                        <span class="pill {% if log.status == 'sent' %}bg-ok/10 text-ok{% elif log.status == 'failed' %}bg-bad/10 text-bad{% else %}bg-subtle text-muted{% endif %}">{{ log.get_status_display }}</span>
+                    </span>
+                    <span class="w-12 text-[13px]">{% if log.permalink %}<a href="{{ log.permalink }}" target="_blank" rel="noopener" class="text-accent hover:underline font-medium">Post</a>{% endif %}</span>
+                    <time class="w-24 text-right text-[12.5px] text-muted tabular-nums" datetime="{{ log.created_at|date:'c' }}">{{ log.created_at|date:"d M, H:i" }}</time>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        {% include "components/_empty_state.html" with icon="fa-paper-plane" title="No comments handled yet" subtitle="Turn on an auto-DM above, then comment on that post from a test account." %}
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Contacts & Messages on this Channel -->
+<div class="grid xl:grid-cols-[minmax(0,1fr)_380px] gap-[var(--section-gap)] items-start border-t border-line pt-[var(--section-gap)]">
+    <section class="flex flex-col gap-4 min-w-0" aria-labelledby="ch-contacts-title">
+        <div class="flex items-center justify-between">
+            <h2 id="ch-contacts-title" class="font-display text-[18px] leading-[24px] font-bold">Contacts on this Channel <span class="text-muted font-normal tabular-nums">({{ total_contacts }})</span></h2>
+            {% if total_contacts > 0 %}
+            <span class="text-[13px] text-muted">Showing latest {{ account_contacts|length }}</span>
+            {% endif %}
+        </div>
+        <div class="card overflow-hidden">
+            {% if account_contacts %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="border-b border-line">
+                        <tr class="table-head">
+                            <th>Contact</th>
+                            <th class="hidden sm:table-cell">Identifier</th>
+                            <th>Messages</th>
+                            <th class="text-right">Last Active</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-line text-[13.5px]">
+                        {% for c in account_contacts %}
+                        {% url 'dashboard-contact' c.pk as contact_url %}
+                        <tr class="group cursor-pointer hover:bg-subtle/60 transition-colors" onclick="window.location.href='{{ contact_url }}'">
+                            <td class="px-5 py-3">
+                                <a href="{{ contact_url }}" class="font-medium hover:text-accent flex items-center gap-2.5">
+                                    <span class="w-7 h-7 rounded-full bg-subtle border border-line flex items-center justify-center text-[12px] font-semibold shrink-0">
+                                        {{ c.name|default:c.username|default:"?"|slice:":1"|upper }}
+                                    </span>
+                                    <span class="truncate">{{ c.name|default:c.username|default:c.platform_user_id }}</span>
+                                </a>
+                            </td>
+                            <td class="px-5 py-3 hidden sm:table-cell text-muted font-mono text-[12.5px]">
+                                {{ c.phone|default:c.platform_user_id }}
+                            </td>
+                            <td class="px-5 py-3 tabular-nums font-medium text-muted">
+                                {{ c.msg_count }}
+                            </td>
+                            <td class="px-5 py-3 text-right text-muted tabular-nums text-[12.5px]">
+                                {{ c.last_message_at|timesince|default:"Never" }} ago
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            {% include "components/_empty_state.html" with icon="fa-address-book" title="No contacts yet" subtitle="When contacts message this channel, they will appear here automatically." %}
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="flex flex-col gap-4 min-w-0" aria-labelledby="ch-messages-title">
+        <h2 id="ch-messages-title" class="font-display text-[18px] leading-[24px] font-bold">Recent messages</h2>
+        <div class="card overflow-hidden">
+            {% if account_messages %}
+            <ul class="divide-y divide-line max-h-[560px] overflow-y-auto">
+                {% for msg in account_messages %}
+                <li class="p-4 flex flex-col gap-1.5 hover:bg-subtle/50 transition-colors">
+                    <div class="flex items-center justify-between text-[13px]">
+                        <span class="font-semibold flex items-center gap-2">
+                            <span class="pill {% if msg.direction == 'incoming' %}bg-ok/10 text-ok{% else %}bg-accent/10 text-accent{% endif %}">
+                                {% if msg.direction == 'incoming' %}In{% else %}Out{% endif %}
+                            </span>
+                            <a href="{% url 'dashboard-contact' msg.contact.pk %}" class="hover:underline truncate max-w-[140px]">
+                                {{ msg.contact.name|default:msg.contact.username|default:msg.contact.platform_user_id }}
+                            </a>
+                        </span>
+                        <time class="text-muted tabular-nums text-[12px]" datetime="{{ msg.created_at|date:'c' }}">
+                            {{ msg.created_at|date:"d M, H:i" }}
+                        </time>
+                    </div>
+                    <p class="text-[13.5px] text-ink leading-snug break-words line-clamp-2" title="{{ msg.message_text }}">
+                        {{ msg.message_text|default:"(Media / Attachment)" }}
+                    </p>
+                    {% if msg.status and msg.status != 'delivered' and msg.status != 'read' %}
+                    <span class="text-[12px] {% if msg.status == 'failed' %}text-bad{% else %}text-muted{% endif %}">
+                        Status: {{ msg.status|title }}
+                    </span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            {% include "components/_empty_state.html" with icon="fa-comments" title="No messages yet" subtitle="Messages to and from this account will show up here live." %}
+            {% endif %}
+        </div>
+    </section>
+</div>
+{% endblock %}

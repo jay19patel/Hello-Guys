@@ -1,0 +1,43 @@
+{% extends "crm/base.html" %}
+{% block title %}Meetings · CRM{% endblock %}
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Meetings</h1>
+        <p class="text-muted">Saved in the CRM and in Google Calendar (with a Meet link) when Google is connected.</p>
+    </div>
+    {% if can_edit %}<a href="{% url 'crm:meeting-create' %}" class="btn btn-primary"><i class="fa-solid fa-calendar-plus"></i> Schedule</a>{% endif %}
+</header>
+
+<nav class="flex gap-1 bg-subtle border border-line rounded-xl p-1 w-fit" aria-label="When">
+    <a href="?" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if not show_past %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Upcoming</a>
+    <a href="?when=past" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if show_past %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Past</a>
+</nav>
+
+<div class="card overflow-hidden">
+    {% if page_obj %}
+    <ul class="divide-y divide-line">
+        {% for m in page_obj %}
+        <li class="px-5 cell flex flex-wrap items-center justify-between gap-3 hover:bg-subtle/60 transition-colors">
+            <a href="{% url 'crm:meeting' m.pk %}" class="min-w-0 group">
+                <p class="font-semibold text-ink group-hover:text-accent transition-colors truncate">{{ m.title }}</p>
+                <p class="text-[13px] text-muted">{{ m.start_at|date:"D d M Y, H:i" }}–{{ m.end_at|date:"H:i" }} · {{ m.customer }}</p>
+            </a>
+            <span class="flex items-center gap-2">
+                {% if m.status != 'scheduled' %}<span class="pill bg-subtle border border-line">{{ m.get_status_display }}</span>{% endif %}
+                {% if m.sync_error %}<span class="pill bg-warn/10 text-warn" title="{{ m.sync_error }}">Not in Calendar</span>{% endif %}
+                {% if m.meet_url and m.status == 'scheduled' %}<a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-solid fa-video text-accent"></i> Join</a>{% endif %}
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    {% if show_past %}
+        {% include "components/_empty_state.html" with icon="fa-calendar-days" title="No past meetings" subtitle="Completed or past meetings will appear here." %}
+    {% else %}
+        {% include "components/_empty_state.html" with icon="fa-calendar-plus" title="Nothing scheduled" subtitle="Schedule a meeting with a customer to sync with Google Calendar." %}
+    {% endif %}
+    {% endif %}
+</div>
+{% include "crm/_pagination.html" %}
+{% endblock %}
