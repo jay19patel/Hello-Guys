@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.db import models
 
@@ -33,6 +34,18 @@ class Reminder(models.Model):
 
     def __str__(self) -> str:
         return self.message
+
+    def clean(self) -> None:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        from croniter import croniter
+
+        if self.recurrence and not croniter.is_valid(self.recurrence):
+            raise ValidationError({"recurrence": "Not a valid cron expression, e.g. '0 10 * * 1' (Mondays 10:00)."})
+        try:
+            ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValidationError({"timezone": "Not a valid timezone, e.g. Asia/Kolkata."}) from None
 
 
 class Notification(models.Model):

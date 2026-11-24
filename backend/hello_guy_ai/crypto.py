@@ -10,16 +10,19 @@ import logging
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 logger = logging.getLogger(__name__)
 
-# Public development key: only used when FIELD_ENCRYPTION_KEY is unset (never in production, see checks.py).
+# Public development key: only used with DEBUG on and FIELD_ENCRYPTION_KEY unset.
 _DEV_KEY = b"uV9w8Q3s9K1l4Z7m2N5p8T1y6X4b7V9w8Q3s9K1l4Z4="
 
 
 def _fernet() -> Fernet:
     raw = (getattr(settings, "FIELD_ENCRYPTION_KEY", "") or "").strip().encode()
     if not raw:
+        if not settings.DEBUG:  # a key that is public in the source must never protect real secrets
+            raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is required when DEBUG is off.")
         return Fernet(_DEV_KEY)
     try:
         return Fernet(raw)

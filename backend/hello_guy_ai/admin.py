@@ -163,7 +163,7 @@ class DocumentAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         obj.uploaded_by = obj.uploaded_by or request.user
         super().save_model(request, obj, form, change)
-        if "file" in form.changed_data:
+        if {"file", "knowledge_base"} & set(form.changed_data):  # vectors carry the KB id: re-index on a move
             transaction.on_commit(lambda: chat.enqueue_ingest(obj.pk))
 
     @admin.action(description="Re-ingest selected documents")

@@ -3,7 +3,6 @@ import traceback
 from decimal import Decimal
 from django.utils import timezone
 from meta_connector.models import WebhookLog, PlatformAccount, Contact, Message
-from meta_connector.services.message_service import MessageService
 from meta_connector.services.profile_service import ProfileService
 from meta_connector.services.auto_dm_service import AutoDMService
 from meta_connector.signals import message_received
@@ -11,8 +10,9 @@ from meta_connector.signals import message_received
 logger = logging.getLogger(__name__)
 
 
-def _received(message: Message) -> None:
-    message_received.send(sender=Message, message=message)
+def _received(message: Message | None) -> None:
+    if message is not None:
+        message_received.send(sender=Message, message=message)
 
 
 def process_webhook_payload(webhook_log_id: int):
@@ -49,6 +49,27 @@ def process_webhook_payload(webhook_log_id: int):
         webhook_log.save(update_fields=['error_message'])
 
 
+def _resolve_account(platforms: tuple, id_field: str, account_id: str) -> PlatformAccount | None:
+    """The active account this event belongs to, by its Meta id.
+
+    First-time setup: an account saved without the id adopts it from its first event. Anything else is
+    skipped (logged): events are never filed under some other account, and accounts are never auto-created.
+    """
+    if not account_id:
+        return None
+    active = PlatformAccount.objects.filter(platform__in=platforms, is_active=True)
+    account = active.filter(**{id_field: account_id}).first()
+    if account is None:
+        unclaimed = list(active.filter(**{id_field: ''})[:2])
+        if len(unclaimed) == 1:  # exactly one candidate: unambiguous
+            account = unclaimed[0]
+            setattr(account, id_field, account_id)
+            account.save(update_fields=[id_field])
+    if account is None:
+        logger.warning("Webhook for unknown %s %s skipped: add it in Dashboard > Settings", id_field, account_id)
+    return account
+
+
 def _process_whatsapp_webhook(payload: dict, webhook_log: WebhookLog):
     """
     Parses WhatsApp Cloud API webhook structure:
@@ -65,18 +86,9 @@ def _process_whatsapp_webhook(payload: dict, webhook_log: WebhookLog):
             metadata = value.get('metadata', {})
             phone_number_id = str(metadata.get('phone_number_id', '')).strip()
 
-            # Locate or create PlatformAccount
-            account = PlatformAccount.objects.filter(
-                platform=PlatformAccount.PLATFORM_WHATSAPP,
-                phone_number_id=phone_number_id,
-                is_active=True
-            ).first()
-
-            if not account:
-                account = MessageService.get_or_create_default_account(PlatformAccount.PLATFORM_WHATSAPP)
-                if not account.phone_number_id and phone_number_id:
-                    account.phone_number_id = phone_number_id
-                    account.save(update_fields=['phone_number_id'])
+            account = _resolve_account((PlatformAccount.PLATFORM_WHATSAPP,), 'phone_number_id', phone_number_id)
+            if account is None:
+                continue
 
             # 1. Handle Status updates (sent, delivered, read, failed)
             statuses = value.get('statuses', [])
@@ -195,7 +207,7 @@ def _process_whatsapp_webhook(payload: dict, webhook_log: WebhookLog):
                 else:
                     msg_type = Message.TYPE_UNKNOWN
 
-                _received(Message.objects.create(
+                _received(Message.create_once(
                     platform_account=account,
                     contact=contact,
                     message_id=message_id,
@@ -227,7 +239,7 @@ def _save_instagram_echo(account: PlatformAccount, item: dict) -> None:
         platform_account=account, platform_user_id=recipient, defaults={'username': recipient})
     attachment = (msg.get('attachments') or [{}])[0]
     msg_type = Message.TYPE_TEXT if msg.get('text') or not msg.get('attachments') else IG_ATTACHMENT_TYPES.get(attachment.get('type'), Message.TYPE_UNKNOWN)
-    Message.objects.create(
+    Message.create_once(
         platform_account=account,
         contact=contact,
         message_id=mid,
@@ -252,17 +264,14 @@ def _process_instagram_webhook(payload: dict, webhook_log: WebhookLog):
     for entry in entries:
         entry_id = str(entry.get('id', '')).strip()
 
-        account = PlatformAccount.objects.filter(
-            platform=PlatformAccount.PLATFORM_INSTAGRAM,
-            instagram_id=entry_id,
-            is_active=True
-        ).first()
-
-        if not account:
-            account = MessageService.get_or_create_default_account(PlatformAccount.PLATFORM_INSTAGRAM)
-            if not account.instagram_id and entry_id:
-                account.instagram_id = entry_id
-                account.save(update_fields=['instagram_id'])
+        # Instagram and Messenger ("page") share this payload shape; the entry id is the IG account / Page id.
+        platforms = (
+            (PlatformAccount.PLATFORM_FACEBOOK, PlatformAccount.PLATFORM_INSTAGRAM)
+            if payload.get('object') == 'page' else (PlatformAccount.PLATFORM_INSTAGRAM,)
+        )
+        account = _resolve_account(platforms, 'instagram_id', entry_id)
+        if account is None:
+            continue
 
         # Comments on Reels/Posts arrive as entry.changes (needs the 'comments' webhook field).
         for change in entry.get('changes', []):
@@ -290,7 +299,7 @@ def _process_instagram_webhook(payload: dict, webhook_log: WebhookLog):
                             defaults={'username': sender_id}
                         )
                         contact.update_last_message_time()
-                        Message.objects.create(
+                        Message.create_once(
                             platform_account=account,
                             contact=contact,
                             message_id=mid,
@@ -347,7 +356,7 @@ def _process_instagram_webhook(payload: dict, webhook_log: WebhookLog):
                 else:
                     msg_type = Message.TYPE_UNKNOWN
 
-            _received(Message.objects.create(
+            _received(Message.create_once(
                 platform_account=account,
                 contact=contact,
                 message_id=mid,

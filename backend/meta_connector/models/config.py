@@ -1,6 +1,7 @@
 import secrets
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from meta_connector.utils import decrypt_token, encrypt_token
 
 
 def _new_verify_token():
@@ -18,8 +19,8 @@ class MetaConfig(models.Model):
         default=_new_verify_token,
         help_text="Verify Token entered in Meta App Dashboard > Webhooks"
     )
-    app_secret = models.CharField(
-        max_length=255,
+    # Fernet-encrypted (meta_connector.utils), like access tokens; read/write through the `app_secret` property.
+    app_secret_encrypted = models.TextField(
         blank=True,
         default='',
         help_text="Meta App Secret (App Settings > Basic) used for HMAC SHA-256 signature verification"
@@ -49,8 +50,16 @@ class MetaConfig(models.Model):
 
     @classmethod
     def get_solo(cls):
-        """Returns the single config row, creating it with defaults on first use."""
-        return cls.objects.first() or cls.objects.create()
+        """Returns the single config row, creating it with defaults on first use (race-safe: fixed pk)."""
+        return cls.objects.order_by('pk').first() or cls.objects.get_or_create(pk=1)[0]
+
+    @property
+    def app_secret(self) -> str:
+        return decrypt_token(self.app_secret_encrypted)
+
+    @app_secret.setter
+    def app_secret(self, raw: str) -> None:
+        self.app_secret_encrypted = encrypt_token(raw or '')
 
     @property
     def graph_base_url(self) -> str:

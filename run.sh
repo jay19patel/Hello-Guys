@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Start everything for local dev: Redis check, migrations, Django server, AI worker, trigger scheduler.
+# Start everything for local dev: Redis check, migrations, Django server, AI worker, trigger scheduler,
+# Google Calendar/Drive pull (crm_google_sync).
 # Usage: ./run.sh            (PORT=8085 ./run.sh for another port)
 # Ctrl+C stops all of them.
 set -euo pipefail
@@ -52,7 +53,9 @@ W=$!
 S=$!
 "$PY" manage.py runserver "$PORT" 2>&1 | sed -l 's/^/[web] /' &
 R=$!
+"$PY" manage.py crm_google_sync 2>&1 | sed -l 's/^/[google] /' &
+G=$!
 
 echo "✓ Open http://127.0.0.1:$PORT/admin/  (Ctrl+C to stop)"
-while kill -0 $W 2>/dev/null && kill -0 $S 2>/dev/null && kill -0 $R 2>/dev/null; do sleep 2; done
+while kill -0 $W 2>/dev/null && kill -0 $S 2>/dev/null && kill -0 $R 2>/dev/null && kill -0 $G 2>/dev/null; do sleep 2; done
 echo "✗ A process exited, stopping the rest."

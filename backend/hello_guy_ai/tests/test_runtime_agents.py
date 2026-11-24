@@ -5,7 +5,7 @@ import pytest
 from hello_guy_ai.assistants import AIAssistant
 from hello_guy_ai.exceptions import AssistantMisconfigured, AssistantNotFound, NotAllowed
 from hello_guy_ai.models import LLMModel
-from hello_guy_ai.services.agents import list_agents, resolve_agent
+from hello_guy_ai.services.agents import resolve_agent
 from hello_guy_ai.core.runtime import (
     TOOL_REGISTRY,
     ToolContext,

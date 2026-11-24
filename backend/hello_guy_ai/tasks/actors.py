@@ -97,9 +97,11 @@ def ingest_document(document_id: int) -> None:
     except Exception as exc:
         Document.objects.filter(pk=doc.pk).update(status=Document.Status.FAILED, error=str(exc)[:2000])
         raise  # transient (Ollama/Milvus down): let Dramatiq retry
-    Document.objects.filter(pk=doc.pk).update(
+    updated = Document.objects.filter(pk=doc.pk).update(
         status=Document.Status.READY, chunk_count=count, updated_at=timezone.now()
     )
+    if not updated:  # deleted while it was being embedded: its delete job may have run before this insert
+        RagService().delete(doc.pk)
 
 
 @dramatiq.actor(queue_name=INGEST_QUEUE, max_retries=5, min_backoff=5000)

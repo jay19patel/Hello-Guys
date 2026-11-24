@@ -1,12 +1,29 @@
 import logging
 import uuid
 from typing import Optional, Tuple
-from django.utils import timezone
 from meta_connector.models import PlatformAccount, Contact, Message
 from .whatsapp_service import WhatsAppService
 from .instagram_service import InstagramService
 
 logger = logging.getLogger(__name__)
+
+
+class SendError(Exception):
+    """Meta could not deliver the message; the text is Meta's reason."""
+
+
+def send_message(contact: Contact, text: str, sent_by=None) -> Message:
+    """Send `text` to a contact on its own channel (WhatsApp / Instagram / Messenger) and business account.
+
+        from meta_connector.services import send_message
+        send_message(contact, "Hi! Your quote is ready.", sent_by=request.user)
+    """
+    account = contact.platform_account
+    message, ok, error = MessageService.send_message(account.platform, contact.platform_user_id, text,
+                                                     account_id=account.pk, sent_by=sent_by)
+    if not ok:
+        raise SendError(error)
+    return message
 
 
 class MessageService:
@@ -51,14 +68,14 @@ class MessageService:
         :return: (Message instance, success: bool, error_message: str)
         """
         platform = platform.lower().strip()
-        if platform not in [PlatformAccount.PLATFORM_WHATSAPP, PlatformAccount.PLATFORM_INSTAGRAM]:
+        if platform not in [p for p, _ in PlatformAccount.PLATFORM_CHOICES]:
             raise ValueError(f"Unsupported platform: {platform}")
 
         # Resolve PlatformAccount
         if account_id:
-            platform_account = PlatformAccount.objects.filter(id=account_id, is_active=True).first()
+            platform_account = PlatformAccount.objects.filter(id=account_id, platform=platform, is_active=True).first()
             if not platform_account:
-                return None, False, f"PlatformAccount #{account_id} not found or inactive."
+                return None, False, f"No active {platform} account #{account_id}."
         else:
             platform_account = cls.get_or_create_default_account(platform)
 
@@ -86,7 +103,7 @@ class MessageService:
                 meta_id = response_data['messages'][0].get('id')
             message_id = meta_id or f"wamid_out_{uuid.uuid4().hex}"
 
-        else:  # Instagram
+        else:  # Instagram and Messenger share the Send API (POST /me/messages with the account's token)
             success, response_data, error_message = InstagramService.send_instagram_message(
                 recipient_id=to,
                 text=text,

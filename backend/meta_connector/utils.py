@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,9 @@ def get_fernet_instance() -> Fernet:
     key_bytes = raw_key.strip().encode('utf-8') if raw_key else b''
 
     if not key_bytes:
-        # Development fallback: warning logged
+        if not settings.DEBUG:  # never encrypt real tokens with a key that is public in this repo
+            raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is required when DEBUG is off.")
+        logger.warning("FIELD_ENCRYPTION_KEY is not set: using the public development key (DEBUG only).")
         return Fernet(_DEV_FERNET_KEY)
 
     try:
@@ -71,8 +74,7 @@ def verify_meta_signature(payload_bytes: bytes, signature_header: Optional[str],
     Header format: 'sha256=<hmac_hex_digest>'
     """
     if not app_secret:
-        # If no secret is configured, bypass check (e.g., initial local dev)
-        return True
+        return False  # nothing to verify against; the view decides whether unsigned events are allowed
 
     if not signature_header:
         logger.warning("Webhook request missing X-Hub-Signature-256 header while APP_SECRET is configured.")

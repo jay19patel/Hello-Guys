@@ -5,10 +5,15 @@ Dashboard roles, stored as Django groups:
   Admin  - everything: Settings, accounts, tokens, team, deleting, Django Admin.
 Superusers are always Admin. A user with no role cannot open the dashboard.
 """
-from functools import wraps
-from django.contrib.auth.views import redirect_to_login
+import logging
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.mixins import AccessMixin
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from rest_framework.permissions import BasePermission
+
+logger = logging.getLogger(__name__)
 
 ADMIN, AGENT, VIEWER = 'Admin', 'Agent', 'Viewer'
 ROLES = (ADMIN, AGENT, VIEWER)
@@ -31,18 +36,18 @@ def has_role(user, minimum: str) -> bool:
     return role is not None and LEVEL[role] >= LEVEL[minimum]
 
 
-def role_required(minimum: str):
-    """View decorator: login first, then at least `minimum` role, else 403."""
-    def decorator(view):
-        @wraps(view)
-        def wrapper(request, *args, **kwargs):
-            if not request.user.is_authenticated:
-                return redirect_to_login(request.get_full_path())
-            if not has_role(request.user, minimum):
-                raise PermissionDenied(f"This needs the {minimum} role.")
-            return view(request, *args, **kwargs)
-        return wrapper
-    return decorator
+class RoleRequiredMixin(AccessMixin):
+    """Class-based views: `role` to open the page, `edit_role` to POST. Anonymous users go to the login page."""
+    role = VIEWER
+    edit_role = AGENT
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        needed = self.role if request.method in ('GET', 'HEAD', 'OPTIONS') else self.edit_role
+        if not has_role(request.user, needed):
+            raise PermissionDenied(f"This needs the {needed} role.")
+        return super().dispatch(request, *args, **kwargs)
 
 
 class HasRole(BasePermission):
@@ -60,3 +65,20 @@ def set_role(user, role: str) -> None:
     user.is_staff = user.is_superuser = (role == ADMIN)
     user.save(update_fields=['is_staff', 'is_superuser'])
     user.__dict__.pop('_dashboard_role', None)
+
+
+def team():
+    """Users who answer customers: superusers and the Admin/Agent roles."""
+    return get_user_model().objects.filter(is_active=True).filter(
+        Q(is_superuser=True) | Q(groups__name__in=[ADMIN, AGENT])).distinct()
+
+
+def notify_team(title: str, body: str = "", url: str = "") -> None:
+    """In-app notification (email too when hello_guy_ai NOTIFY_EMAIL is on) for every team member."""
+    from hello_guy_ai.services.reminders import notify
+
+    for user in team():
+        try:
+            notify(user, title, body, url=url)
+        except Exception:  # an alert must never break the save that triggered it
+            logger.exception("Could not notify %s", user)

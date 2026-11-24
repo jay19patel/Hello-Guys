@@ -1,0 +1,30 @@
+{% extends "crm/base.html" %}
+{% block title %}Meetings{% endblock %}
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-3">
+    <div><h1 class="text-2xl font-semibold">Meetings</h1><p class="text-muted">Saved in the CRM and in Google Calendar (with a Meet link) when Google is connected.</p></div>
+    {% if can_edit %}<a href="{% url 'crm:meeting-create' %}" class="btn btn-primary"><i class="fa-solid fa-calendar-plus"></i> Schedule</a>{% endif %}
+</header>
+<nav class="flex gap-1 bg-subtle rounded-lg p-1 w-fit" aria-label="When">
+    <a href="?" class="h-8 px-3 rounded-md text-[13px] font-medium flex items-center {% if not show_past %}bg-surface shadow-sm{% else %}text-muted{% endif %}">Upcoming</a>
+    <a href="?when=past" class="h-8 px-3 rounded-md text-[13px] font-medium flex items-center {% if show_past %}bg-surface shadow-sm{% else %}text-muted{% endif %}">Past</a>
+</nav>
+<ul class="card divide-y divide-line">
+    {% for m in page_obj %}
+    <li class="px-5 cell flex flex-wrap items-center justify-between gap-3">
+        <a href="{% url 'crm:meeting' m.pk %}" class="min-w-0 hover:text-accent">
+            <p class="font-medium truncate">{{ m.title }}</p>
+            <p class="text-[13px] text-muted">{{ m.start_at|date:"D d M Y, H:i" }}–{{ m.end_at|date:"H:i" }} · {{ m.customer }}</p>
+        </a>
+        <span class="flex items-center gap-2">
+            {% if m.status != 'scheduled' %}<span class="pill bg-subtle">{{ m.get_status_display }}</span>{% endif %}
+            {% if m.sync_error %}<span class="pill bg-warn/10 text-warn" title="{{ m.sync_error }}">Not in Calendar</span>{% endif %}
+            {% if m.meet_url and m.status == 'scheduled' %}<a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-solid fa-video"></i> Join</a>{% endif %}
+        </span>
+    </li>
+    {% empty %}
+    <li class="px-5 py-10 text-center text-muted">{% if show_past %}No past meetings.{% else %}Nothing scheduled.{% endif %}</li>
+    {% endfor %}
+</ul>
+{% include "crm/_pagination.html" %}
+{% endblock %}

@@ -18,8 +18,7 @@ if not env_file.exists():
 if env_file.exists():
     environ.Env.read_env(env_file)
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('SECRET_KEY', default='django-insecure-meta-connector-production-key-change-me!')
+# SECRET_KEY: local.py has a dev-only default; production.py requires the env var.
 
 # Application definition
 INSTALLED_APPS = [
@@ -41,9 +40,9 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
 
     # Local apps
-    'core.apps.CoreConfig',
     'meta_connector.apps.MetaConnectorConfig',
     'cms.apps.CmsConfig',
+    'crm.apps.CrmConfig',
 ]
 
 MIDDLEWARE = [
@@ -63,16 +62,12 @@ LOGOUT_REDIRECT_URL = 'dashboard-login'
 
 # Full origins allowed to POST forms, e.g. https://example.com (comma-separated in .env)
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
     'https://njtechstudio.in',
     'https://www.njtechstudio.in',
 ])
 
 # CORS configuration for Next.js frontend
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
     'https://njtechstudio.in',
     'https://www.njtechstudio.in',
 ])
@@ -145,7 +140,19 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
+    # Public writes and the token endpoint opt in per view with throttle_scope (shared cache in production).
+    'DEFAULT_THROTTLE_RATES': {
+        'inquiry': env('THROTTLE_INQUIRY', default='5/hour'),
+        'engagement': env('THROTTLE_ENGAGEMENT', default='30/hour'),
+        'auth': env('THROTTLE_AUTH', default='10/minute'),
+    },
 }
+
+# Client IP for rate limits = REMOTE_ADDR, or the X-Forwarded-For entry added by this many trusted proxies.
+# 0 trusts no header (direct traffic, local dev); production sits behind nginx (1).
+NUM_PROXIES = env.int('NUM_PROXIES', default=0)
+REST_FRAMEWORK['NUM_PROXIES'] = NINJA_NUM_PROXIES = NUM_PROXIES
+NINJA_PAGINATION_MAX_LIMIT = 100
 
 # Database - Simple SQLite
 DATABASES = {
@@ -157,6 +164,8 @@ DATABASES = {
 FIELD_ENCRYPTION_KEY = env('FIELD_ENCRYPTION_KEY', default='')
 # Answer Meta's webhook at once and process it in a background thread (failed/stuck ones can be retried from the dashboard).
 META_WEBHOOK_ASYNC = env.bool('META_WEBHOOK_ASYNC', default=True)
+# Reject webhook POSTs while no App Secret is configured (production always; local can test unsigned payloads).
+META_REQUIRE_SIGNATURE = env.bool('META_REQUIRE_SIGNATURE', default=False)
 
 # Logging Configuration
 LOGGING = {
@@ -185,7 +194,7 @@ LOGGING = {
     'loggers': {
         'meta_connector': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': env('DJANGO_LOG_LEVEL', default='INFO'),
             'propagate': False,
         },
         # LiteLLM logs every request at INFO; keep warnings and errors only.
@@ -209,6 +218,9 @@ HELLO_GUY_AI = {
         "cms.solution",
         "cms.techskill",
         "cms.youtubevideo",
+        "crm.opportunity",
+        "crm.customer",
+        "crm.meeting",
     ],
     "REDIS_URL": env('REDIS_URL', default='redis://localhost:6379/0'),
     "LLM_FALLBACK_MODELS": env.list('LLM_FALLBACK_MODELS', default=[]),

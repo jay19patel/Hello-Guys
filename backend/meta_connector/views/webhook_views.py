@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 from django.http import HttpResponse, HttpResponseForbidden, HttpResponseBadRequest
@@ -31,7 +32,7 @@ def meta_webhook_view(request):
 
         if hub_mode == 'subscribe' and hub_verify_token:
             expected_token = config.verify_token
-            token_matches = (hub_verify_token == expected_token)
+            token_matches = bool(expected_token) and hmac.compare_digest(hub_verify_token, expected_token)
 
             if not token_matches:
                 token_matches = PlatformAccount.objects.filter(
@@ -43,15 +44,15 @@ def meta_webhook_view(request):
                 logger.info("Meta webhook verification challenge succeeded.")
                 return HttpResponse(hub_challenge, content_type="text/plain", status=200)
 
-        logger.warning(
-            "Meta webhook verification failed: hub_mode=%s, hub_verify_token=%s",
-            hub_mode,
-            hub_verify_token
-        )
+        logger.warning("Meta webhook verification failed: hub_mode=%s", hub_mode)  # never log the submitted token
         return HttpResponseForbidden("Verification token mismatch", content_type="text/plain")
 
     # --- 2. POST: Process Incoming Webhook Event ---
     app_secret = config.app_secret
+    if not app_secret and settings.META_REQUIRE_SIGNATURE:
+        # Without the App Secret nobody can tell Meta's events from forged ones (which would trigger real replies).
+        logger.error("Rejected webhook POST: no App Secret configured (Dashboard > Settings).")
+        return HttpResponse("Webhook not configured", content_type="text/plain", status=503)
     if app_secret:
         signature = request.headers.get('X-Hub-Signature-256')
         if not verify_meta_signature(request.body, signature, app_secret):
@@ -64,6 +65,8 @@ def meta_webhook_view(request):
     except (ValueError, UnicodeDecodeError) as exc:
         logger.error("Failed to parse JSON body from webhook: %s", exc)
         return HttpResponseBadRequest("Invalid JSON body", content_type="text/plain")
+    if not isinstance(payload, dict):
+        return HttpResponseBadRequest("Expected a JSON object", content_type="text/plain")
 
     meta_obj = payload.get('object', '')
     if 'whatsapp' in meta_obj:

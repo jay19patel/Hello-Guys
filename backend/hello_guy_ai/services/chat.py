@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 from django.db import IntegrityError, transaction
+from django.dispatch import Signal
 from django.db.models import F, QuerySet, Sum
 from django.urls import reverse
 from django.utils import timezone
@@ -114,17 +115,86 @@ def public_user() -> Any:
     return user
 
 
+WEB_PREFIX = "web:"  # external_id of website-visitor threads; DM threads of the same bot use other prefixes
+
+
 def is_public_run(run: Run) -> bool:
     """True for runs of the anonymous website chat (their SSE stream needs no login)."""
     try:
-        return run.thread.assistant_id == ai_settings.PUBLIC_AGENT and run.thread.created_by_id == public_user().pk
+        return public_threads().filter(pk=run.thread_id).exists()
     except AssistantNotFound:  # public chat disabled
         return False
 
 
 def public_threads() -> QuerySet[Thread]:
-    """Only threads of the public agent owned by the website user: a visitor can never reach others."""
-    return Thread.objects.filter(created_by=public_user(), assistant_id=ai_settings.PUBLIC_AGENT)
+    """Website-visitor threads only: never internal chats, never WhatsApp/Instagram threads of the same bot."""
+    return Thread.objects.filter(
+        created_by=public_user(), assistant_id=ai_settings.PUBLIC_AGENT, external_id__startswith=WEB_PREFIX
+    )
+
+
+# ---- live chat: a team member takes over from the AI ---------------------------------------
+
+# Sent so a host app can alert its team (the library knows no "team"). kwargs: thread, reason / message.
+human_requested = Signal()
+live_message_received = Signal()
+STAFF_NAME_PREFIX = "staff:"
+
+
+def message_event(message: Message) -> dict:
+    return {"id": message.pk, "role": message.role, "content": message.content, "name": message.name,
+            "created_at": message.created_at.isoformat()}
+
+
+def _set_mode(thread: Thread, **fields: Any) -> Thread:
+    Thread.objects.filter(pk=thread.pk).update(**fields, updated_at=timezone.now())
+    thread.refresh_from_db()
+    agent = thread.handled_by.get_full_name() or thread.handled_by.get_username() if thread.handled_by else ""
+    events.publish_thread_event(thread.pk, "mode", {"human": thread.human_mode, "agent": agent,
+                                                    "waiting": thread.needs_human})
+    return thread
+
+
+def take_over(thread: Thread, user: Any) -> Thread:
+    """A team member answers from now on; the AI stays silent. A running AI answer is stopped."""
+    run = active_run(thread)
+    if run is not None:
+        stop_run(user, run)
+    return _set_mode(thread, human_mode=True, needs_human=False, handled_by=user)
+
+
+def hand_back(thread: Thread) -> Thread:
+    """The AI answers again."""
+    return _set_mode(thread, human_mode=False, needs_human=False, handled_by=None)
+
+
+def request_human(thread: Thread, reason: str = "") -> Thread:
+    """The AI (handoff tool) or the visitor asked for a person: flag the thread and tell the host app."""
+    thread = _set_mode(thread, needs_human=True)
+    transaction.on_commit(lambda: human_requested.send(sender=Thread, thread=thread, reason=reason[:500]))
+    return thread
+
+
+def post_staff_reply(thread: Thread, user: Any, content: str) -> Message:
+    """A team member's answer, stored as an assistant turn (so the AI keeps the context when handed back)."""
+    content = _clean_text(content, MAX_MESSAGE_CHARS, "Message")
+    if not thread.human_mode:
+        thread = take_over(thread, user)
+    name = f"{STAFF_NAME_PREFIX}{user.get_full_name() or user.get_username()}"[:128]
+    message = Message.objects.create(thread=thread, role=Message.Role.ASSISTANT, content=content, name=name)
+    Thread.objects.filter(pk=thread.pk).update(updated_at=timezone.now())
+    events.publish_thread_event(thread.pk, "message", message_event(message))
+    return message
+
+
+def post_live_message(thread: Thread, content: str) -> Message:
+    """The visitor's message while a team member handles the chat: stored and pushed live, no AI run."""
+    content = _clean_text(content, MAX_MESSAGE_CHARS, "Message")
+    message = Message.objects.create(thread=thread, role=Message.Role.USER, content=content)
+    Thread.objects.filter(pk=thread.pk).update(updated_at=timezone.now())
+    events.publish_thread_event(thread.pk, "message", message_event(message))
+    transaction.on_commit(lambda: live_message_received.send(sender=Thread, thread=thread, message=message))
+    return message
 
 
 # ---- turns -------------------------------------------------------------------------
@@ -137,6 +207,8 @@ def post_message(
 
     enqueue=False: the caller executes the run itself (already inside a worker, e.g. Meta DM replies)."""
     content = _clean_text(content, MAX_MESSAGE_CHARS, "Message")
+    if thread.human_mode:  # callers route these through post_live_message
+        raise ThreadBusy("A team member is handling this chat.")
     check_can_run(user, thread.assistant_id)
     check_daily_quota(user)
     fail_stale_runs(thread)
@@ -178,6 +250,28 @@ def ask(user: Any, agent_id: str, prompt: str, *, auto_approve: bool = False) ->
     AgentRunner(run).execute()
     run.refresh_from_db()
     return run
+
+
+def reply(external_id: str, text: str, name: str = "") -> str:
+    """Answer `text` as the website assistant in the conversation `external_id` and return the answer
+    ("" when it could not answer). One thread per external_id, so it remembers the conversation.
+    Runs now, in this process: call it from a worker, not a web request.
+
+        from hello_guy_ai import reply
+        answer = reply(f"whatsapp:{account.pk}:{contact.platform_user_id}", "Do you build apps?", "Ravi")
+    """
+    from hello_guy_ai.core.engine import AgentRunner
+
+    user = public_user()
+    thread = external_thread(user, ai_settings.PUBLIC_AGENT, external_id, name)
+    _, run = post_message(user, thread, text, enqueue=False)
+    AgentRunner(run).execute()
+    run.refresh_from_db()
+    if run.status != Run.Status.SUCCEEDED:
+        logger.warning("No reply in %s: run %s %s %s", external_id, run.pk, run.status, run.error)
+        return ""
+    return (Message.objects.filter(run=run, role=Message.Role.ASSISTANT).exclude(content="")
+            .order_by("-id").values_list("content", flat=True).first() or "")
 
 
 def resume_run(user: Any, run: Run, answers: dict[str, str]) -> Run:

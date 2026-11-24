@@ -26,7 +26,10 @@ DATABASES = {
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # Rate limits read the client IP from X-Forwarded-For, set by this many proxies (nginx = 1).
 # Unset, a visitor could send a fake header on every request and never be throttled.
-NINJA_NUM_PROXIES = env.int('NUM_PROXIES', default=1)
+NUM_PROXIES = env.int('NUM_PROXIES', default=1)
+REST_FRAMEWORK['NUM_PROXIES'] = NINJA_NUM_PROXIES = NUM_PROXIES
+REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = ['rest_framework.renderers.JSONRenderer']
+META_REQUIRE_SIGNATURE = True
 SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True

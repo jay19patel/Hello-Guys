@@ -117,12 +117,12 @@ class ContactPageTests(TestCase):
 
     def test_reply_sends_through_message_service(self):
         from unittest.mock import patch
-        with patch('meta_connector.views.contact_views.MessageService.send_message', return_value=(None, True, '')) as send:
+        with patch('meta_connector.services.message_service.MessageService.send_message', return_value=(None, True, '')) as send:
             resp = self.client.post(self.url, {'text': '  Thanks!  '}, follow=True)
-        send.assert_called_once_with(platform='instagram', to='555', text='Thanks!', account_id=self.account.pk, sent_by=self.user)
+        send.assert_called_once_with('instagram', '555', 'Thanks!', account_id=self.account.pk, sent_by=self.user)
         self.assertContains(resp, 'Message sent.')
 
-        with patch('meta_connector.views.contact_views.MessageService.send_message', return_value=(None, False, 'Outside window')):
+        with patch('meta_connector.services.message_service.MessageService.send_message', return_value=(None, False, 'Outside window')):
             self.assertContains(self.client.post(self.url, {'text': 'x'}, follow=True), 'Meta said: Outside window')
         self.assertContains(self.client.post(self.url, {'text': '  '}, follow=True), 'Type a message first.')
 

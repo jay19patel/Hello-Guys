@@ -1,4 +1,4 @@
-"""Run events over Redis Streams.
+"""Run (and live-chat thread) events over Redis Streams.
 
 Worker  --XADD-->  hello_guy_ai:run:<id>  --XREAD-->  SSE view --> browser
 
@@ -27,6 +27,18 @@ def stream_key(run_id: Any) -> str:
     return f"hello_guy_ai:run:{run_id}"
 
 
+def thread_stream_key(thread_id: Any) -> str:
+    """Live-chat events of one thread (staff replies, take over / hand back), read by the visitor's widget."""
+    return f"hello_guy_ai:thread:{thread_id}"
+
+
+THREAD_STREAM_TTL_SECONDS = 7 * 24 * 3600
+
+
+def publish_thread_event(thread_id: Any, event: str, data: dict | None = None) -> None:
+    RunEventPublisher(None, key=thread_stream_key(thread_id), ttl=THREAD_STREAM_TTL_SECONDS).publish(event, data)
+
+
 def stop_key(run_id: Any) -> str:
     return f"hello_guy_ai:run:{run_id}:stop"
 
@@ -53,15 +65,16 @@ def get_redis() -> redis.Redis:
 class RunEventPublisher:
     """Used by the worker to emit events for one run."""
 
-    def __init__(self, run_id: Any, client: redis.Redis | None = None) -> None:
-        self.key = stream_key(run_id)
+    def __init__(self, run_id: Any, client: redis.Redis | None = None, *, key: str = "", ttl: int = 0) -> None:
+        self.key = key or stream_key(run_id)
+        self.ttl = ttl or ai_settings.STREAM_TTL_SECONDS
         self.client = client or get_redis()
 
     def publish(self, event: str, data: dict | None = None) -> None:
         pipe = self.client.pipeline(transaction=False)
-        pipe.xadd(self.key, {"event": event, "data": json.dumps(data or {})}, maxlen=20000, approximate=True)
+        pipe.xadd(self.key, {"event": event, "data": json.dumps(data or {}, default=str)}, maxlen=20000, approximate=True)
         # TTL on every write: a crashed worker still never leaks the key.
-        pipe.expire(self.key, ai_settings.STREAM_TTL_SECONDS)
+        pipe.expire(self.key, self.ttl)
         pipe.execute()
 
 
@@ -69,23 +82,27 @@ def _entries(response: list) -> list[tuple[str, str, str]]:
     return [(entry_id, f["event"], f["data"]) for entry_id, f in response[0][1]] if response else []
 
 
-def iter_run_events_sync(run_id: Any, last_id: str, client: redis.Redis) -> Iterator[tuple[str, str, str]]:
+def iter_run_events_sync(
+    run_id: Any, last_id: str, client: redis.Redis, *, key: str = "", terminal: set[str] = TERMINAL_EVENTS
+) -> Iterator[tuple[str, str, str]]:
     """Blocking twin of iter_run_events for WSGI servers (runserver, gunicorn sync workers)."""
+    key = key or stream_key(run_id)
     deadline = time.monotonic() + ai_settings.SSE_MAX_SECONDS
     while time.monotonic() < deadline:
-        entries = _entries(client.xread({stream_key(run_id): last_id}, block=XREAD_BLOCK_MS, count=200))
+        entries = _entries(client.xread({key: last_id}, block=XREAD_BLOCK_MS, count=200))
         if not entries:
             yield "", "ping", "{}"
         for entry_id, event, data in entries:
             last_id = entry_id
             yield entry_id, event, data
-            if event in TERMINAL_EVENTS:
+            if event in terminal:
                 return
     yield "", "error", json.dumps({"message": "stream timeout"})
 
 
 async def iter_run_events(
-    run_id: Any, last_id: str = "0-0", client: aioredis.Redis | None = None
+    run_id: Any, last_id: str = "0-0", client: aioredis.Redis | None = None, *, key: str = "",
+    terminal: set[str] = TERMINAL_EVENTS,
 ) -> AsyncIterator[tuple[str, str, str]]:
     """Yield (entry_id, event, json_data) until a terminal event or SSE_MAX_SECONDS.
 
@@ -95,16 +112,17 @@ async def iter_run_events(
     client = client or aioredis.Redis.from_url(
         ai_settings.REDIS_URL, decode_responses=True, socket_timeout=XREAD_SOCKET_TIMEOUT
     )
+    key = key or stream_key(run_id)
     deadline = time.monotonic() + ai_settings.SSE_MAX_SECONDS
     try:
         while time.monotonic() < deadline:
-            entries = _entries(await client.xread({stream_key(run_id): last_id}, block=XREAD_BLOCK_MS, count=200))
+            entries = _entries(await client.xread({key: last_id}, block=XREAD_BLOCK_MS, count=200))
             if not entries:
                 yield "", "ping", "{}"
             for entry_id, event, data in entries:
                 last_id = entry_id
                 yield entry_id, event, data
-                if event in TERMINAL_EVENTS:
+                if event in terminal:
                     return
         yield "", "error", json.dumps({"message": "stream timeout"})
     finally:

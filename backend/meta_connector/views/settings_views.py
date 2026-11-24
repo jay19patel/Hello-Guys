@@ -1,70 +1,95 @@
 from django.contrib import messages
-from meta_connector.roles import ADMIN, ROLES, get_role, role_required, set_role
+from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.contrib.auth.models import User
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_POST
-from meta_connector.services.maintenance import retry_webhooks
+from django.views import View
+
 from meta_connector.forms import MetaConfigForm, PlatformAccountForm, TeamMemberForm
 from meta_connector.models import MetaConfig, PlatformAccount
+from meta_connector.roles import ADMIN, ROLES, RoleRequiredMixin, get_role, set_role
+from meta_connector.services.maintenance import retry_webhooks
 from meta_connector.services.token_service import TokenService
 
 
-@role_required(ADMIN)
-@require_POST
-def webhook_actions_view(request):
+class WebhookActionsView(RoleRequiredMixin, View):
     """Banner buttons: retry failed/stuck webhooks, or dismiss the bad-signature warning."""
-    if request.POST.get('action') == 'retry':
-        fixed, failing = retry_webhooks()
-        level = messages.success if not failing else messages.warning
-        level(request, f"Re-processed {fixed} webhook(s)." + (f" {failing} still failing; open Django Admin → Webhook logs to see why." if failing else ''))
-    elif request.POST.get('action') == 'dismiss_signature':
-        MetaConfig.objects.filter(pk=MetaConfig.get_solo().pk).update(signature_failures=0, last_signature_failure_at=None)
-        messages.success(request, "Signature warning cleared.")
-    back = request.POST.get('next', '')
-    return redirect(back if url_has_allowed_host_and_scheme(back, {request.get_host()}) else 'dashboard')
+    role = edit_role = ADMIN
+    http_method_names = ['post']
+
+    def post(self, request):
+        if request.POST.get('action') == 'retry':
+            fixed, failing = retry_webhooks()
+            level = messages.success if not failing else messages.warning
+            level(request, f"Re-processed {fixed} webhook(s)." + (f" {failing} still failing; open Django Admin → Webhook logs to see why." if failing else ''))
+        elif request.POST.get('action') == 'dismiss_signature':
+            MetaConfig.objects.filter(pk=MetaConfig.get_solo().pk).update(signature_failures=0, last_signature_failure_at=None)
+            messages.success(request, "Signature warning cleared.")
+        back = request.POST.get('next', '')
+        return redirect(back if url_has_allowed_host_and_scheme(back, {request.get_host()}) else 'dashboard')
 
 
-@role_required(ADMIN)
-def settings_view(request):
-    """Dashboard > Settings: Meta app config + platform accounts, all stored in the DB."""
-    config = MetaConfig.get_solo()
-    edit_id = request.GET.get('edit') or request.POST.get('account_id')
-    edit_account = get_object_or_404(PlatformAccount, pk=edit_id) if edit_id else None
+class SettingsView(RoleRequiredMixin, View):
+    """Dashboard > Settings: Meta app config, platform accounts and the team, all stored in the DB."""
+    role = edit_role = ADMIN
 
-    config_form = MetaConfigForm(instance=config)
-    account_form = PlatformAccountForm(instance=edit_account)
-    team_form = TeamMemberForm()
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        edit_id = request.GET.get('edit') or request.POST.get('account_id')
+        self.edit_account = get_object_or_404(PlatformAccount, pk=edit_id) if edit_id else None
 
-    if request.method == 'POST':
-        action = request.POST.get('action')
+    def get(self, request, config_form=None, account_form=None, team_form=None):
+        config = MetaConfig.get_solo()
+        TokenService.refresh_stale()
+        return render(request, 'dashboard/settings.html', {
+            'token_alerts': TokenService.alerts(),
+            'team': [(u, get_role(u)) for u in User.objects.order_by('-is_active', 'username').prefetch_related('groups')],
+            'team_form': team_form or TeamMemberForm(),
+            'roles': ROLES,
+            'config': config,
+            'config_form': config_form or MetaConfigForm(instance=config),
+            'account_form': account_form or PlatformAccountForm(instance=self.edit_account),
+            'edit_account': self.edit_account,
+            'accounts': PlatformAccount.objects.all(),
+            'webhook_url': request.build_absolute_uri(reverse('meta_connector:meta-webhook')),
+        })
+
+    def post(self, request):
+        action, account = request.POST.get('action'), self.edit_account
         if action == 'config':
-            config_form = MetaConfigForm(request.POST, instance=config)
-            if config_form.is_valid():
-                config_form.save()
-                messages.success(request, "Meta app settings saved.")
-                return redirect('dashboard-settings')
+            form = MetaConfigForm(request.POST, instance=MetaConfig.get_solo())
+            if not form.is_valid():
+                return self.get(request, config_form=form)
+            form.save()
+            messages.success(request, "Meta app settings saved.")
         elif action == 'account':
-            account_form = PlatformAccountForm(request.POST, instance=edit_account)
-            if account_form.is_valid():
-                account = account_form.save()
-                messages.success(request, f"Account '{account.display_name}' saved. {account_form.token_note}".strip())
-                return redirect('dashboard-settings')
-        elif action == 'check_token' and edit_account:
-            TokenService.refresh(edit_account)
-            health = edit_account.token_health
-            level = messages.success if health == 'ok' else messages.warning
-            level(request, f"Token for '{edit_account.display_name}' checked: {health.upper()}. {edit_account.token_error}".strip())
-            return redirect('dashboard-settings')
+            form = PlatformAccountForm(request.POST, instance=account)
+            if not form.is_valid():
+                return self.get(request, account_form=form)
+            saved = form.save()
+            messages.success(request, f"Account '{saved.display_name}' saved. {form.token_note}".strip())
+        elif action == 'check_token' and account:
+            TokenService.refresh(account)
+            level = messages.success if account.token_health == 'ok' else messages.warning
+            level(request, f"Token for '{account.display_name}' checked: {account.token_health.upper()}. {account.token_error}".strip())
+        elif action == 'delete' and account:
+            if account.messages.exists() or account.contacts.exists():
+                # Keep message history: deactivate instead of cascading deletes.
+                account.is_active = False
+                account.save(update_fields=['is_active'])
+                messages.warning(request, f"'{account.display_name}' has history, so it was deactivated instead of deleted.")
+            else:
+                account.delete()
+                messages.success(request, "Account deleted.")
         elif action == 'add_member':
-            team_form = TeamMemberForm(request.POST)
-            if team_form.is_valid():
-                d = team_form.cleaned_data
-                user = User.objects.create_user(d['username'], password=d['password'], first_name=d['first_name'])
-                set_role(user, d['role'])
-                messages.success(request, f"Added {user.username} as {d['role']}.")
-                return redirect(reverse('dashboard-settings') + '#team')
+            form = TeamMemberForm(request.POST)
+            if not form.is_valid():
+                return self.get(request, team_form=form)
+            d = form.cleaned_data
+            user = User.objects.create_user(d['username'], password=d['password'], first_name=d['first_name'])
+            set_role(user, d['role'])
+            messages.success(request, f"Added {user.username} as {d['role']}.")
+            return redirect(reverse('dashboard-settings') + '#team')
         elif action in ('set_role', 'toggle_active'):
             member = get_object_or_404(User, pk=request.POST.get('user_id'))
             if member == request.user:
@@ -77,27 +102,4 @@ def settings_view(request):
                 member.save(update_fields=['is_active'])
                 messages.success(request, f"{member.username} can {'now' if member.is_active else 'no longer'} sign in.")
             return redirect(reverse('dashboard-settings') + '#team')
-        elif action == 'delete' and edit_account:
-            if edit_account.messages.exists() or edit_account.contacts.exists():
-                # Keep message history: deactivate instead of cascading deletes.
-                edit_account.is_active = False
-                edit_account.save(update_fields=['is_active'])
-                messages.warning(request, f"'{edit_account.display_name}' has history, so it was deactivated instead of deleted.")
-            else:
-                edit_account.delete()
-                messages.success(request, "Account deleted.")
-            return redirect('dashboard-settings')
-
-    TokenService.refresh_stale()
-    return render(request, 'dashboard/settings.html', {
-        'token_alerts': TokenService.alerts(),
-        'team': [(u, get_role(u)) for u in User.objects.order_by('-is_active', 'username').prefetch_related('groups')],
-        'team_form': team_form,
-        'roles': ROLES,
-        'config': config,
-        'config_form': config_form,
-        'account_form': account_form,
-        'edit_account': edit_account,
-        'accounts': PlatformAccount.objects.all(),
-        'webhook_url': request.build_absolute_uri(reverse('meta_connector:meta-webhook')),
-    })
+        return redirect('dashboard-settings')

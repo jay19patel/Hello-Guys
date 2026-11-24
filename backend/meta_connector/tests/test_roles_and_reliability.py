@@ -12,7 +12,7 @@ from meta_connector.roles import ADMIN, AGENT, VIEWER, get_role, set_role
 from meta_connector.services.maintenance import cleanup_webhook_logs, problem_webhooks, retry_webhooks
 from meta_connector.services.message_service import MessageService
 
-SEND = 'meta_connector.views.contact_views.MessageService.send_message'
+SEND = 'meta_connector.services.message_service.MessageService.send_message'
 
 
 def make_user(name, role):

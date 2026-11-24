@@ -1,6 +1,6 @@
 """Public website chat API: no login required, for frontend chat widgets."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from ninja import Router
 from ninja.pagination import paginate
@@ -32,9 +32,13 @@ def public_agent(request):
 
 @router.post("/threads", response={201: PublicThreadOut, 404: ErrorOut}, throttle=[AnonRateThrottle("10/m")])
 def public_create_thread(request):
-    """One thread per visitor IP (same as WhatsApp per number, Instagram per account): a returning visitor continues."""
-    ip = AnonRateThrottle("10/m").get_ident(request) or "unknown"  # honours NINJA_NUM_PROXIES (X-Forwarded-For)
-    thread = chat.external_thread(chat.public_user(), ai_settings.PUBLIC_AGENT, f"web:{ip}", f"website: {ip}")
+    """A new private thread. Its random id is the visitor's key: keep it (localStorage) to continue later.
+
+    Never keyed by IP: visitors behind one NAT/office/VPN would share, and read, one conversation.
+    """
+    thread = chat.external_thread(
+        chat.public_user(), ai_settings.PUBLIC_AGENT, f"{chat.WEB_PREFIX}{uuid4().hex}", "Website visitor"
+    )
     return Status(201, {"thread_id": thread.pk})
 
 
@@ -51,5 +55,17 @@ def public_messages(request, thread_id: UUID):
 )
 def public_send(request, thread_id: UUID, payload: PublicMessageIn):
     thread = chat.public_threads().get(pk=thread_id)
+    if thread.human_mode:  # a team member is chatting: their replies arrive on /events
+        message = chat.post_live_message(thread, payload.content)
+        return Status(202, {"message_id": message.pk, "mode": "human"})
     message, run = chat.post_message(thread.created_by, thread, payload.content)
     return Status(202, {"run_id": run.pk, "message_id": message.pk, "stream_url": chat.stream_url(run)})
+
+
+@router.post("/threads/{thread_id}/handoff", response={202: dict, 404: ErrorOut}, throttle=[AnonRateThrottle("5/m")])
+def public_handoff(request, thread_id: UUID):
+    """The visitor asks to talk to a person ("Talk to the team" button)."""
+    thread = chat.public_threads().get(pk=thread_id)
+    if not (thread.human_mode or thread.needs_human):
+        chat.request_human(thread, "Visitor asked for a person")
+    return Status(202, {"status": "team notified"})

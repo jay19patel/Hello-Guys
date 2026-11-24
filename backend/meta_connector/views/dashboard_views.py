@@ -1,5 +1,4 @@
-from meta_connector.roles import VIEWER, role_required
-from django.utils.decorators import method_decorator
+from meta_connector.roles import RoleRequiredMixin
 from django.views.generic import TemplateView, View
 from django.db.models import Count, Max
 from django.http import JsonResponse
@@ -8,8 +7,7 @@ from meta_connector.services.token_service import TokenService
 from .insights_views import insights_context, parse_days
 
 
-@method_decorator(role_required(VIEWER), name='dispatch')
-class DashboardIndexView(TemplateView):
+class DashboardIndexView(RoleRequiredMixin, TemplateView):
     """
     Renders the unified dashboard HTML UI overview.
     Accessible at: /dashboard/
@@ -29,8 +27,7 @@ class DashboardIndexView(TemplateView):
         return context
 
 
-@method_decorator(role_required(VIEWER), name='dispatch')
-class DashboardOverviewAPIView(View):
+class DashboardOverviewAPIView(RoleRequiredMixin, View):
     """
     JSON REST metrics endpoint.
     Accessible at: /api/meta/dashboard/api/overview/

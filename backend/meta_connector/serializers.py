@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from meta_connector.models import PlatformAccount, Contact, Message, WebhookLog
+from meta_connector.models import PlatformAccount, Contact, Message
 
 
 class PlatformAccountSerializer(serializers.ModelSerializer):

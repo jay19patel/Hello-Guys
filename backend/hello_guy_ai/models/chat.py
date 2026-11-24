@@ -23,6 +23,12 @@ class Thread(models.Model):
     external_id = models.CharField(
         max_length=255, blank=True, help_text="Caller's own key for this conversation, e.g. 'meta:contact:4' (one thread each)"
     )
+    # Live chat: a team member took over (the AI stays silent) / the AI or visitor asked for a person.
+    human_mode = models.BooleanField(default=False)
+    needs_human = models.BooleanField(default=False, db_index=True)
+    handled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

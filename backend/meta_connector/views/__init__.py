@@ -1,19 +1,19 @@
-from .webhook_views import meta_webhook_view
-from .dashboard_views import DashboardIndexView, DashboardOverviewAPIView
-from .settings_views import settings_view, webhook_actions_view
-from .account_views import account_detail_view
-from .contact_views import contact_detail_view
+from .account_views import AccountDetailView
 from .api_views import ContactListAPIView, MessageListAPIView, SendMessageAPIView
+from .contact_views import ContactDetailView
+from .dashboard_views import DashboardIndexView, DashboardOverviewAPIView
+from .settings_views import SettingsView, WebhookActionsView
+from .webhook_views import meta_webhook_view
 
 __all__ = [
-    'meta_webhook_view',
+    'AccountDetailView',
+    'ContactDetailView',
+    'ContactListAPIView',
     'DashboardIndexView',
     'DashboardOverviewAPIView',
-    'ContactListAPIView',
     'MessageListAPIView',
     'SendMessageAPIView',
-    'settings_view',
-    'webhook_actions_view',
-    'account_detail_view',
-    'contact_detail_view',
+    'SettingsView',
+    'WebhookActionsView',
+    'meta_webhook_view',
 ]

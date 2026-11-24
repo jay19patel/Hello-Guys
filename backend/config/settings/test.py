@@ -15,3 +15,6 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # fast use
 _broker = StubBroker()
 _broker.emit_after("process_boot")
 dramatiq.set_broker(_broker)
+
+# Tests run with DEBUG off, where an encryption key is required. Test-only key, never used elsewhere.
+FIELD_ENCRYPTION_KEY = "3Jk2lJ0yW1pVtq8m3Q2h4P0cX6s9n5R7b1d8f2g4h6k="

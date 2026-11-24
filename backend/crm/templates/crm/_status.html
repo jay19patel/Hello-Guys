@@ -1,0 +1,2 @@
+{# Opportunity status pill: needs `opp` #}
+<span class="pill {% if opp.status == 'won' %}bg-ok/10 text-ok{% elif opp.status == 'lost' %}bg-bad/10 text-bad{% elif opp.status == 'new' %}bg-accent/10 text-accent{% else %}bg-warn/10 text-warn{% endif %}">{{ opp.get_status_display }}</span>

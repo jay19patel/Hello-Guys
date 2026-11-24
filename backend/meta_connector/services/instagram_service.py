@@ -145,4 +145,3 @@ class InstagramService:
 
 
 # Standalone function shortcut matching requirements
-send_instagram_message = InstagramService.send_instagram_message

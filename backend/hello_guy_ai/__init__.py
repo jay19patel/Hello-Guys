@@ -6,6 +6,7 @@ Redis Streams (token streaming over SSE), Milvus (RAG vector store).
 Everything a host app needs is importable from here:
 
     from hello_guy_ai import AIAssistant, KnowledgeSource, ToolError, current_context, tool
+    from hello_guy_ai import reply   # answer a customer message as the website assistant: reply(conversation_id, text)
 """
 
 from importlib import import_module
@@ -17,6 +18,7 @@ _PUBLIC = {
     "ToolError": "hello_guy_ai.core.runtime",
     "current_context": "hello_guy_ai.core.runtime",
     "tool": "hello_guy_ai.core.runtime",
+    "reply": "hello_guy_ai.services.chat",
 }
 
 __all__ = list(_PUBLIC)

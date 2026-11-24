@@ -1,0 +1,90 @@
+{% extends "crm/base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="text-2xl font-semibold">CRM overview</h1>
+        <p class="text-muted">Customers, what they want, meetings and chats that need you.</p>
+    </div>
+    {% if can_edit %}
+    <div class="flex gap-2">
+        <a href="{% url 'crm:customer-create' %}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Customer</a>
+        <a href="{% url 'crm:opportunity-create' %}" class="btn btn-ghost"><i class="fa-solid fa-plus"></i> Opportunity</a>
+        <a href="{% url 'crm:meeting-create' %}" class="btn btn-ghost"><i class="fa-solid fa-calendar-plus"></i> Meeting</a>
+    </div>
+    {% endif %}
+</header>
+
+<section class="grid grid-cols-2 lg:grid-cols-4 gap-4" aria-label="Key numbers">
+    <a href="{% url 'crm:opportunities' %}" class="card p-5 lift"><p class="caps">Open opportunities</p><p class="text-3xl font-semibold mt-1">{{ stats.open }}</p></a>
+    <a href="{% url 'crm:opportunities' %}?status=all" class="card p-5 lift"><p class="caps">New this week</p><p class="text-3xl font-semibold mt-1">{{ stats.new_this_week }}</p></a>
+    <a href="{% url 'crm:opportunities' %}?status=won" class="card p-5 lift"><p class="caps">Won (30 days)</p><p class="text-3xl font-semibold mt-1 text-ok">{{ stats.won_this_month }}</p></a>
+    <a href="{% url 'crm:customers' %}" class="card p-5 lift"><p class="caps">Customers</p><p class="text-3xl font-semibold mt-1">{{ stats.customers }}</p></a>
+</section>
+
+{% if waiting_chats %}
+<section class="card p-5 border-bad/40">
+    <h2 class="font-semibold flex items-center gap-2"><i class="fa-solid fa-bell text-bad"></i> Chats waiting for a person</h2>
+    <ul class="mt-3 divide-y divide-line">
+        {% for t in waiting_chats %}
+        <li><a href="{% url 'crm:inbox-thread' t.pk %}" class="flex justify-between gap-3 py-2 hover:text-accent"><span class="truncate">{{ t.name|default:"Visitor" }}</span><span class="text-muted text-[13px] shrink-0">{{ t.updated_at|timesince }} ago</span></a></li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+<div class="grid lg:grid-cols-2 gap-6">
+    <section class="card p-5">
+        <h2 class="font-semibold">Pipeline</h2>
+        <ul class="mt-4 flex flex-col gap-3">
+            {% for label, count, value in pipeline %}
+            <li>
+                <a href="{% url 'crm:opportunities' %}?status={{ value }}" class="block group">
+                    <div class="flex justify-between text-[14px]"><span class="group-hover:text-accent">{{ label }}</span><span class="font-semibold">{{ count }}</span></div>
+                    <div class="h-2 mt-1 rounded-full bg-subtle overflow-hidden"><div class="h-full bg-accent max-w-full" style="width: {% widthratio count stats.open|add:stats.won_this_month|add:1 100 %}%"></div></div>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <section class="card p-5">
+        <div class="flex justify-between items-center"><h2 class="font-semibold">Upcoming meetings</h2><a href="{% url 'crm:meetings' %}" class="text-[13px] text-accent">All</a></div>
+        <ul class="mt-3 divide-y divide-line">
+            {% for m in meetings %}
+            <li class="py-3 flex items-center justify-between gap-3">
+                <a href="{% url 'crm:meeting' m.pk %}" class="min-w-0">
+                    <p class="font-medium truncate">{{ m.title }}</p>
+                    <p class="text-[13px] text-muted">{{ m.start_at|date:"D d M, H:i" }} · {{ m.customer }}</p>
+                </a>
+                {% if m.meet_url %}<a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-solid fa-video"></i> Join</a>{% endif %}
+            </li>
+            {% empty %}<li class="py-3 text-muted text-[14px]">Nothing scheduled.</li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <section class="card p-5">
+        <div class="flex justify-between items-center"><h2 class="font-semibold">Recent opportunities</h2><a href="{% url 'crm:opportunities' %}?status=all" class="text-[13px] text-accent">All</a></div>
+        <ul class="mt-3 divide-y divide-line">
+            {% for opp in recent %}
+            <li><a href="{% url 'crm:opportunity' opp.pk %}" class="py-2 flex items-center justify-between gap-3 hover:text-accent">
+                <span class="min-w-0"><span class="block truncate font-medium">{{ opp.title }}</span><span class="block text-[13px] text-muted">{{ opp.customer.name }} · {{ opp.get_source_display }} · {{ opp.created_at|timesince }} ago</span></span>
+                {% include "crm/_status.html" %}
+            </a></li>
+            {% empty %}<li class="py-3 text-muted text-[14px]">Nothing yet.</li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <section class="card p-5">
+        <h2 class="font-semibold">Follow-ups due</h2>
+        <ul class="mt-3 divide-y divide-line">
+            {% for opp in follow_ups %}
+            <li><a href="{% url 'crm:opportunity' opp.pk %}" class="py-2 flex justify-between gap-3 hover:text-accent"><span class="truncate">{{ opp.customer.name }} — {{ opp.title }}</span><span class="text-[13px] text-muted shrink-0">{{ opp.next_follow_up|date:"d M, H:i" }}</span></a></li>
+            {% empty %}<li class="py-3 text-muted text-[14px]">Nothing due.</li>
+            {% endfor %}
+        </ul>
+    </section>
+</div>
+{% endblock %}

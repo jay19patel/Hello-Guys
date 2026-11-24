@@ -1,0 +1,10 @@
+{# needs `page_obj`; keeps the current filters #}
+{% if page_obj.has_other_pages %}
+<nav class="flex items-center justify-between gap-3 text-[14px]" aria-label="Pages">
+    <span class="text-muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} · {{ page_obj.paginator.count }} total</span>
+    <span class="flex gap-2">
+        {% if page_obj.has_previous %}<a class="btn btn-ghost btn-sm" href="?{% for k, v in request.GET.items %}{% if k != 'page' %}{{ k|urlencode }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-ghost btn-sm" href="?{% for k, v in request.GET.items %}{% if k != 'page' %}{{ k|urlencode }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+    </span>
+</nav>
+{% endif %}

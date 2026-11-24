@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils.translation import gettext_lazy as _
 from .account import PlatformAccount
 from .contact import Contact
@@ -114,6 +114,16 @@ class Message(models.Model):
             models.Index(fields=['direction', 'status']),
             models.Index(fields=['message_type']),
         ]
+
+    @classmethod
+    def create_once(cls, **fields) -> "Message | None":
+        """Create the message, or None when Meta delivered it twice (concurrently). A duplicate never aborts the
+        rest of a webhook payload: the savepoint rolls back only this row."""
+        try:
+            with transaction.atomic():
+                return cls.objects.create(**fields)
+        except IntegrityError:
+            return None
 
     def __str__(self):
         text_snippet = (self.message_text[:30] + '...') if len(self.message_text) > 30 else (self.message_text or f"[{self.message_type}]")

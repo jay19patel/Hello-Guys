@@ -35,7 +35,7 @@ class AutoDMService:
             contact.save(update_fields=['username'])
         contact.update_last_message_time()
 
-        Message.objects.create(
+        saved = Message.create_once(
             platform_account=account,
             contact=contact,
             message_id=comment_id,
@@ -46,6 +46,8 @@ class AutoDMService:
             raw_payload=value,
             status=Message.STATUS_DELIVERED,
         )
+        if saved is None:
+            return  # the same comment delivered twice at once: the other delivery sends the DM
         cls._auto_dm(account, contact, comment_id, media_id, text)
 
     @classmethod

@@ -27,20 +27,27 @@ def test_chunker_respects_size_and_overlap():
         TextChunker(100, 100)
 
 
+@pytest.mark.django_db
 def test_ingest_search_scoped_by_knowledge_base(service, tmp_path):
+    kb1 = KnowledgeBase.objects.create(slug="kb1", name="kb1")
+    kb2 = KnowledgeBase.objects.create(slug="kb2", name="kb2")
+    doc = Document.objects.create(knowledge_base=kb1, title="FAQ", content="x", status=Document.Status.READY)
     path = tmp_path / "faq.md"
     path.write_text("Refund policy: 30 days.\n\nShipping takes 5 days.")
-    assert service.ingest(doc_id=7, kb_id=1, title="FAQ", path=str(path)) == 1
+    assert service.ingest(doc_id=doc.pk, kb_id=kb1.pk, title="FAQ", path=str(path)) == 1
 
-    [chunk] = service.search([1], path.read_text().strip(), top_k=3, min_score=0.5)
-    assert (chunk.doc_id, chunk.title) == (7, "FAQ")
-    assert service.search([2], "Refund", top_k=3, min_score=-1) == []  # other KB isolated
+    [chunk] = service.search([kb1.pk], path.read_text().strip(), top_k=3, min_score=0.5)
+    assert (chunk.doc_id, chunk.title) == (doc.pk, "FAQ")
+    assert service.search([kb2.pk], "Refund", top_k=3, min_score=-1) == []  # other KB isolated
     assert service.search([], "Refund", top_k=3, min_score=-1) == []  # empty scope = nothing, never "all"
 
-    service.ingest(doc_id=7, kb_id=1, title="FAQ", path=str(path))  # retry = no duplicates
-    assert len(service.search([1, 2], "x", top_k=10, min_score=-1)) == 1
-    service.delete(7)
-    assert service.search([1], "x", top_k=10, min_score=-1) == []
+    service.ingest(doc_id=doc.pk, kb_id=kb1.pk, title="FAQ", path=str(path))  # retry = no duplicates
+    assert len(service.search([kb1.pk, kb2.pk], "x", top_k=10, min_score=-1)) == 1
+
+    Document.objects.filter(pk=doc.pk).update(knowledge_base=kb2)  # moved: old vectors must not answer for kb1
+    assert service.search([kb1.pk], "x", top_k=10, min_score=-1) == []
+    service.delete(doc.pk)
+    assert service.search([kb1.pk, kb2.pk], "x", top_k=10, min_score=-1) == []
 
 
 def test_rejects_unsupported_file(service, tmp_path):

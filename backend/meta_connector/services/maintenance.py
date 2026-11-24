@@ -1,6 +1,7 @@
 import logging
 import threading
 from datetime import timedelta
+from django.apps import apps
 from django.db import connection
 from django.db.models import F, Q
 from django.utils import timezone
@@ -27,15 +28,24 @@ def cleanup_webhook_logs(config: MetaConfig = None, force: bool = False) -> int:
     return done + failed
 
 
-# ---------- Webhook processing queue (background thread + retry) ----------
-# shortcut: a daemon thread per webhook, not a durable queue (Celery/RQ). If the server stops mid-way the log stays
-# unprocessed and shows up as "stuck" for retry. Upgrade to a real queue when traffic or uptime needs grow.
+# ---------- Webhook processing queue ----------
+# With hello_guy_ai installed, logs go to its durable Dramatiq queue (meta_connector.tasks). Without it, or if
+# the broker is down, a daemon thread processes them: work in flight is then lost on restart and shows up as
+# "stuck" for retry.
 STUCK_AFTER = timedelta(minutes=2)
 SIGNATURE_ALERT_WINDOW = timedelta(hours=24)
 
 
 def process_in_background(webhook_log_id: int) -> None:
     from meta_connector.services.webhook_processor import process_webhook_payload
+
+    if apps.is_installed('hello_guy_ai'):
+        from meta_connector.tasks import process_webhook
+        try:
+            process_webhook.send(webhook_log_id)
+            return
+        except Exception:  # broker down: don't lose the event, process it here instead
+            logger.exception("Could not queue WebhookLog #%s; processing it in a thread", webhook_log_id)
 
     def run():
         try:

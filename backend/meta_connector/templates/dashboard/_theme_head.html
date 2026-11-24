@@ -1,0 +1,88 @@
+{# Shared theme: display prefs, Tailwind, fonts, icons, CSS tokens and base components. Used by dashboard and CRM. #}
+    <script>
+        // Apply saved display prefs before paint (no flash). Storage can be blocked; defaults still work.
+        (function () {
+            let p = {};
+            try { p = JSON.parse(localStorage.getItem('mc-display') || '{}'); } catch (e) {}
+            const dark = p.theme === 'dark' || (p.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.classList.toggle('dark', dark);
+            document.documentElement.dataset.density = p.density || 'comfortable';
+        })();
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        const v = n => `rgb(var(--${n}) / <alpha-value>)`;
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: {
+                fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+                colors: {
+                    bg: v('bg'), surface: v('surface'), subtle: v('subtle'), line: v('line'),
+                    ink: v('ink'), muted: v('muted'), accent: v('accent'), 'on-accent': v('on-accent'),
+                    ok: v('ok'), warn: v('warn'), bad: v('bad'), wa: v('wa'), ig: v('ig'),
+                },
+            } },
+        };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: 247 247 248; --surface: 255 255 255; --subtle: 243 244 246; --line: 229 231 235;
+            --ink: 17 24 39; --muted: 95 103 117; --accent: 79 70 229; --on-accent: 255 255 255;
+            --ok: 4 120 87; --warn: 180 83 9; --bad: 200 30 30; --wa: 21 128 61; --ig: 219 39 119;
+            --cell-y: 14px; --section-gap: 40px;
+        }
+        :root.dark {
+            --bg: 12 13 16; --surface: 22 23 27; --subtle: 32 34 40; --line: 44 46 54;
+            --ink: 236 237 240; --muted: 160 166 178; --accent: 140 150 250; --on-accent: 15 15 30;
+            --ok: 52 211 153; --warn: 251 191 36; --bad: 248 113 113; --wa: 74 222 128; --ig: 244 114 182;
+            color-scheme: dark;
+        }
+        :root[data-density="compact"] { --cell-y: 8px; --section-gap: 24px; }
+        body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 20px; }
+        .cell { padding-top: var(--cell-y); padding-bottom: var(--cell-y); }
+        .stack { display: flex; flex-direction: column; gap: var(--section-gap); }
+
+        /* Form controls rendered by Django widgets (see _fields.html) */
+        .field input[type=text], .field input[type=password], .field input[type=email], .field input[type=url],
+        .field select, .field textarea {
+            width: 100%; background: rgb(var(--surface)); color: rgb(var(--ink));
+            border: 1px solid rgb(var(--line)); border-radius: 8px; padding: 8px 12px; font-size: 14px; line-height: 20px;
+        }
+        .field textarea { min-height: 84px; resize: vertical; }
+        .field input:focus, .field select:focus, .field textarea:focus {
+            outline: none; border-color: rgb(var(--accent)); box-shadow: 0 0 0 3px rgb(var(--accent) / 0.18);
+        }
+        .field input[type=checkbox] { width: 16px; height: 16px; accent-color: rgb(var(--accent)); }
+
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px;
+               border-radius: 8px; font-size: 14px; font-weight: 600; white-space: nowrap; transition: background-color .15s, color .15s; }
+        .btn-primary { background: rgb(var(--accent)); color: rgb(var(--on-accent)); }
+        .btn-primary:hover { background: rgb(var(--accent) / 0.9); }
+        .btn-ghost { color: rgb(var(--ink)); background: transparent; border: 1px solid rgb(var(--line)); }
+        .btn-ghost:hover { background: rgb(var(--subtle)); }
+        .btn-sm { height: 30px; padding: 0 10px; font-size: 13px; }
+        .btn:focus-visible, a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; }
+
+        .pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 999px;
+                font-size: 12px; font-weight: 600; white-space: nowrap; }
+        .caps { font-size: 11px; line-height: 16px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; color: rgb(var(--muted)); }
+        .table-head > th { padding: 12px 20px; font-size: 11px; line-height: 16px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; color: rgb(var(--muted)); }
+        details > summary { list-style: none; cursor: pointer; }
+
+        /* Motion: new live items slide in; page sections rise in once. Off for reduced-motion users. */
+        @keyframes enter { from { opacity: 0; transform: translateY(6px); background-color: rgb(var(--accent) / 0.10); } to { opacity: 1; transform: none; } }
+        @keyframes flash { from { background-color: rgb(var(--accent) / 0.12); } to { background-color: transparent; } }
+        @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .enter { animation: enter .45s cubic-bezier(.2,.7,.2,1) both, flash 2.4s ease-out .45s; }
+        .stack > * { animation: rise .4s cubic-bezier(.2,.7,.2,1) both; }
+        .stack > *:nth-child(2) { animation-delay: .04s; } .stack > *:nth-child(3) { animation-delay: .08s; }
+        .stack > *:nth-child(4) { animation-delay: .12s; } .stack > *:nth-child(n+5) { animation-delay: .16s; }
+        .lift { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+        .lift:hover { transform: translateY(-2px); box-shadow: 0 6px 20px -8px rgb(0 0 0 / 0.25); }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] .chev { transform: rotate(180deg); }
+    </style>

@@ -1,12 +1,9 @@
 import hashlib
 import hmac
 import json
-from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from django.utils import timezone
-from meta_connector.models import MetaConfig, PlatformAccount, Contact, Message, WebhookLog
-from meta_connector.services.webhook_processor import process_webhook_payload
+from meta_connector.models import MetaConfig, PlatformAccount, Contact, Message
 
 
 @override_settings(META_WEBHOOK_ASYNC=False)  # process inline so assertions see the result

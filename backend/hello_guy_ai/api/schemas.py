@@ -85,9 +85,10 @@ class MessageOut(Schema):
 
 
 class RunAccepted(Schema):
-    run_id: UUID
+    run_id: UUID | None = None  # None while a team member handles the chat (no AI run)
     message_id: int | None = None
-    stream_url: str
+    stream_url: str | None = None
+    mode: str = "ai"  # "ai" | "human"
 
 
 class ResumeIn(Schema):

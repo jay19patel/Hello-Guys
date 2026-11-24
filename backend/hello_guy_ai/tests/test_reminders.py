@@ -182,3 +182,16 @@ def test_scheduled_panel_pause_resume_delete(api_client, user, django_user_model
     assert api_client.delete(f"/api/ai/reminders/{weekly.pk}").status_code == 204
     assert not Reminder.objects.filter(pk=weekly.pk).exists() and Reminder.objects.filter(pk=other.pk).exists()
     assert once.pk  # history of fired reminders is kept until pruned
+
+
+def test_invalid_schedule_is_paused_and_never_blocks_other_reminders(user):
+    from django.core.exceptions import ValidationError
+
+    past = timezone.now() - timedelta(minutes=1)
+    bad = Reminder.objects.create(user=user, message="bad", due_at=past, recurrence="not a cron", timezone="UTC")
+    good = Reminder.objects.create(user=user, message="good", due_at=past, timezone="UTC")
+    assert reminders.fire_due_reminders() == 1
+    bad.refresh_from_db(), good.refresh_from_db()
+    assert bad.status == Reminder.Status.PAUSED and good.status == Reminder.Status.DONE
+    with pytest.raises(ValidationError):
+        bad.full_clean()  # the admin form refuses it in the first place

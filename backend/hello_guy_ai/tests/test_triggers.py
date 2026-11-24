@@ -136,7 +136,8 @@ def test_fire_runs_agent_as_run_as_with_condition(user, monkeypatch):
 
     assert run.status == "succeeded" and run.source == Source.TRIGGER and run.trigger == trigger
     assert run.thread.created_by == user and run.thread.source == Source.TRIGGER and run.thread.name == "⚡ New lead"
-    assert run.thread.messages.first().content == "Lead Acme (5000.0) was created."
+    first = run.thread.messages.first().content
+    assert first == triggers.UNTRUSTED_RECORD_NOTE + "Lead Acme (5000.0) was created."  # record data marked untrusted
     big.refresh_from_db()
     assert big.status == "contacted"  # auto_approve: unattended write went through
     assert Run.objects.filter(source=Source.TRIGGER).count() == 1  # the update did NOT re-fire (recursion guard)

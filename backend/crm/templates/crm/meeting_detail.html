@@ -1,0 +1,62 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ meeting.title }}{% endblock %}
+{% block content %}
+<header class="flex flex-wrap items-start justify-between gap-3">
+    <div class="flex items-start gap-3">
+        <a href="{% url 'crm:meetings' %}" class="btn btn-ghost btn-sm mt-1" aria-label="Back to meetings"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <h1 class="text-2xl font-semibold">{{ meeting.title }}</h1>
+            <p class="text-muted text-[13px] mt-1">{{ meeting.start_at|date:"l d M Y, H:i" }}–{{ meeting.end_at|date:"H:i" }} ({{ meeting.timezone }}) · <span class="pill bg-subtle">{{ meeting.get_status_display }}</span></p>
+        </div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        {% if meeting.meet_url and meeting.status == 'scheduled' %}<a href="{{ meeting.meet_url }}" target="_blank" rel="noopener" class="btn btn-primary"><i class="fa-solid fa-video"></i> Join Google Meet</a>{% endif %}
+        {% if meeting.google_event_url %}<a href="{{ meeting.google_event_url }}" target="_blank" rel="noopener" class="btn btn-ghost"><i class="fa-regular fa-calendar"></i> Google Calendar</a>{% endif %}
+    </div>
+</header>
+
+{% if meeting.sync_error %}
+<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3 border border-warn/30 bg-warn/10 text-[14px]" role="status">
+    <span><i class="fa-solid fa-triangle-exclamation text-warn"></i> Not synced to Google Calendar: {{ meeting.sync_error }}</span>
+    {% if can_edit %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync"><button class="btn btn-ghost btn-sm"><i class="fa-solid fa-rotate"></i> Retry</button></form>{% endif %}
+</div>
+{% endif %}
+
+<div class="grid lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 flex flex-col gap-6">
+        <section class="card p-5 text-[14px] flex flex-col gap-2">
+            <p><span class="text-muted">With:</span>
+                <a href="{% url 'crm:customer' meeting.customer.pk %}" class="text-accent">{{ meeting.customer }}</a>
+                {% if meeting.opportunity %}· <a href="{% url 'crm:opportunity' meeting.opportunity.pk %}" class="text-accent">{{ meeting.opportunity.title }}</a>{% endif %}
+            </p>
+            <p><span class="text-muted">Where:</span> {{ meeting.location|default:"Google Meet" }}</p>
+            {% if meeting.attendees %}<p><span class="text-muted">Guests:</span> {% for email, r in meeting.guests %}{{ email }}{% if r == "accepted" %} <span class="text-ok">(accepted)</span>{% elif r == "declined" %} <span class="text-bad">(declined)</span>{% elif r == "tentative" %} <span class="text-warn">(maybe)</span>{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+            <p><span class="text-muted">Organizer:</span> {% include "crm/_user.html" with u=meeting.organizer empty="—" %}</p>
+            {% if meeting.description %}<p class="mt-2 whitespace-pre-line">{{ meeting.description }}</p>{% endif %}
+            {% if meeting.outcome %}<div class="mt-2"><h2 class="caps">Outcome</h2><p class="mt-1 whitespace-pre-line">{{ meeting.outcome }}</p></div>{% endif %}
+        </section>
+
+        {% if can_edit and meeting.status == 'scheduled' %}
+        <section class="card p-5">
+            <h2 class="font-semibold">Edit</h2>
+            <form method="post" class="mt-4 flex flex-col gap-4">{% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                <div class="grid sm:grid-cols-2 gap-4">{% include "dashboard/_fields.html" %}</div>
+                <div><button class="btn btn-primary">Save and update invite</button></div>
+            </form>
+        </section>
+        {% endif %}
+    </div>
+
+    {% if can_edit and meeting.status == 'scheduled' %}
+    <aside class="card p-5 h-fit">
+        <h2 class="font-semibold">After the meeting</h2>
+        <form method="post" class="mt-3 flex flex-col gap-3">{% csrf_token %}
+            <div class="field"><label for="{{ outcome_form.outcome.id_for_label }}" class="text-[13px] font-semibold">Notes / outcome</label>{{ outcome_form.outcome }}</div>
+            <button name="action" value="done" class="btn btn-primary"><i class="fa-solid fa-check"></i> Mark done</button>
+            <button name="action" value="cancel" class="btn btn-ghost text-bad" onclick="return confirm('Cancel the meeting? Google emails the guests.')"><i class="fa-solid fa-ban"></i> Cancel meeting</button>
+        </form>
+    </aside>
+    {% endif %}
+</div>
+{% endblock %}

@@ -6,7 +6,8 @@ from meta_connector.models import PlatformAccount, Contact, Message, WebhookLog,
 
 @admin.register(MetaConfig)
 class MetaConfigAdmin(admin.ModelAdmin):
-    list_display = ('app_name', 'graph_api_version', 'verify_token', 'updated_at')
+    list_display = ('app_name', 'graph_api_version', 'updated_at')
+    exclude = ('app_secret_encrypted', 'verify_token')  # secrets: change them in Dashboard > Settings
     readonly_fields = ('created_at', 'updated_at')
 
     def has_add_permission(self, request):

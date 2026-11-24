@@ -37,10 +37,11 @@ async def run_stream(request: HttpRequest, run_id: UUID) -> HttpResponse:
     run = await Run.objects.select_related("thread").filter(pk=run_id).afirst()
     if run is None:
         raise Http404
-    if user.is_authenticated:
-        if not (user.is_superuser or run.thread.created_by_id == user.pk):
+    owner = user.is_authenticated and (user.is_superuser or run.thread.created_by_id == user.pk)
+    # A website visitor's run is readable by its thread id holder, logged in (e.g. staff testing the widget) or not.
+    if not owner and not await sync_to_async(chat.is_public_run)(run):
+        if user.is_authenticated:
             raise Http404
-    elif not await sync_to_async(chat.is_public_run)(run):
         return HttpResponse(status=401)
 
     last_id = _valid_id(request.headers.get("Last-Event-ID")) or _valid_id(request.GET.get("after")) or "0-0"
@@ -80,6 +81,50 @@ def _sse_sync(run: Run, last_id: str) -> Iterator[str]:
             yield _frame(entry_id, event, data)
     except RedisError:
         logger.exception("SSE stream failed for run %s", run.pk)
+        yield LOST_FRAME
+    finally:
+        client.close()
+
+
+async def thread_stream(request: HttpRequest, thread_id: UUID) -> HttpResponse:
+    """Live-chat events of a website visitor's thread: staff replies ("message") and take over / hand back ("mode").
+
+    The thread id is the visitor's key (same rule as the public messages endpoint). Reconnect: Last-Event-ID.
+    """
+    exists = await sync_to_async(lambda: chat.public_threads().filter(pk=thread_id).exists())()
+    if not exists:
+        raise Http404
+    key = events.thread_stream_key(thread_id)
+    last_id = _valid_id(request.headers.get("Last-Event-ID")) or _valid_id(request.GET.get("after")) or "$"
+    if isinstance(request, ASGIRequest):
+        stream = _thread_sse(key, last_id)
+    else:
+        stream = _thread_sse_sync(key, last_id)
+    response = StreamingHttpResponse(stream, content_type="text/event-stream")
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+async def _thread_sse(key: str, last_id: str) -> AsyncIterator[str]:
+    client = aioredis.Redis.from_url(ai_settings.REDIS_URL, decode_responses=True, socket_timeout=events.XREAD_SOCKET_TIMEOUT)
+    try:
+        async for entry_id, event, data in events.iter_run_events(None, last_id, client=client, key=key, terminal=set()):
+            yield _frame(entry_id, event, data)
+    except RedisError:
+        logger.exception("Thread SSE failed for %s", key)
+        yield LOST_FRAME
+    finally:
+        await client.aclose()
+
+
+def _thread_sse_sync(key: str, last_id: str) -> Iterator[str]:
+    client = redis.Redis.from_url(ai_settings.REDIS_URL, decode_responses=True, socket_timeout=events.XREAD_SOCKET_TIMEOUT)
+    try:
+        for entry_id, event, data in events.iter_run_events_sync(None, last_id, client, key=key, terminal=set()):
+            yield _frame(entry_id, event, data)
+    except RedisError:
+        logger.exception("Thread SSE failed for %s", key)
         yield LOST_FRAME
     finally:
         client.close()

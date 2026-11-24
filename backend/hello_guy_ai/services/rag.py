@@ -81,8 +81,16 @@ class RagService:
     def search(self, kb_ids: list[int], query: str, top_k: int, min_score: float) -> list[Chunk]:
         if not kb_ids:  # fail closed: an empty scope never means "search everything"
             return []
+        from hello_guy_ai.models import Document
+
         [vector] = embed_texts([query])
-        return [c for c in self.store.search(kb_ids, vector, top_k) if c.score >= min_score]
+        chunks = [c for c in self.store.search(kb_ids, vector, top_k) if c.score >= min_score]
+        # Vectors are a copy: only trust hits whose document still exists, is ready and is in scope NOW
+        # (a deleted, unpublished or moved document may leave vectors behind until the next reindex).
+        live = set(Document.objects.filter(
+            pk__in={c.doc_id for c in chunks}, knowledge_base_id__in=kb_ids, status=Document.Status.READY
+        ).values_list("pk", flat=True))
+        return [c for c in chunks if c.doc_id in live]
 
 
 class VectorStore:

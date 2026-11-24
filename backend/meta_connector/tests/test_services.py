@@ -7,7 +7,6 @@ from rest_framework import status
 from meta_connector.models import PlatformAccount, Contact, Message
 from meta_connector.services.message_service import MessageService
 from meta_connector.services.whatsapp_service import WhatsAppService
-from meta_connector.services.instagram_service import InstagramService
 
 User = get_user_model()
 

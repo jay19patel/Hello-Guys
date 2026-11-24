@@ -159,7 +159,13 @@ def fire_due_reminders(now: datetime | None = None) -> int:
         if not reminder.user.is_active:
             Reminder.objects.filter(pk=reminder.pk).update(status=Reminder.Status.CANCELLED)
             continue
-        next_due = next_occurrence(reminder.recurrence, zone(reminder.timezone), now) if reminder.recurrence else None
+        try:
+            next_due = next_occurrence(reminder.recurrence, zone(reminder.timezone), now) if reminder.recurrence else None
+        except Exception:  # bad cron/timezone (e.g. edited in admin): park this one, keep the scheduler running
+            logger.exception("Reminder %s has an invalid schedule; paused", reminder.pk)
+            Reminder.objects.filter(pk=reminder.pk).update(status=Reminder.Status.PAUSED)
+            notify(reminder.user, "Reminder paused", f"{reminder.message}\n\nIts schedule is invalid: fix it to resume.")
+            continue
         with transaction.atomic():
             claimed = Reminder.objects.filter(
                 pk=reminder.pk, status=Reminder.Status.SCHEDULED, due_at=reminder.due_at

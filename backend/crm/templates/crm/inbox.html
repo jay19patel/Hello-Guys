@@ -1,0 +1,31 @@
+{% extends "crm/base.html" %}
+{% block title %}Live chat{% endblock %}
+{% block content %}
+<header>
+    <h1 class="text-2xl font-semibold">Live chat</h1>
+    <p class="text-muted">Website and WhatsApp / Instagram chats. The AI answers first; take over any chat to reply yourself.</p>
+</header>
+<nav class="flex gap-1 bg-subtle rounded-lg p-1 w-fit" aria-label="Show">
+    <a href="?show=waiting" class="h-8 px-3 rounded-md text-[13px] font-medium flex items-center {% if show == 'waiting' %}bg-surface shadow-sm{% else %}text-muted{% endif %}">Waiting</a>
+    <a href="?show=live" class="h-8 px-3 rounded-md text-[13px] font-medium flex items-center {% if show == 'live' %}bg-surface shadow-sm{% else %}text-muted{% endif %}">With the team</a>
+    <a href="?show=mine" class="h-8 px-3 rounded-md text-[13px] font-medium flex items-center {% if show == 'mine' %}bg-surface shadow-sm{% else %}text-muted{% endif %}">Mine</a>
+    <a href="?show=all" class="h-8 px-3 rounded-md text-[13px] font-medium flex items-center {% if show == 'all' %}bg-surface shadow-sm{% else %}text-muted{% endif %}">All</a>
+</nav>
+<ul class="card divide-y divide-line">
+    {% for t in page_obj %}
+    <li><a href="{% url 'crm:inbox-thread' t.pk %}" class="px-5 cell flex items-center gap-4 hover:bg-subtle">
+        <i class="w-5 text-center {% if t.channel == 'whatsapp' %}fa-brands fa-whatsapp text-wa{% elif t.channel == 'instagram' %}fa-brands fa-instagram text-ig{% elif t.channel == 'facebook' %}fa-brands fa-facebook-messenger{% else %}fa-solid fa-globe text-muted{% endif %}" aria-hidden="true"></i>
+        <span class="min-w-0 flex-1">
+            <span class="block font-medium truncate">{{ t.name|default:"Visitor" }}</span>
+            <span class="block text-[13px] text-muted truncate">{{ t.last.content|truncatechars:90|default:"" }}</span>
+        </span>
+        {% if t.needs_human %}<span class="pill bg-bad/10 text-bad">Waiting</span>{% endif %}
+        {% if t.human_mode %}<span class="pill bg-ok/10 text-ok">Live · {% include "crm/_user.html" with u=t.handled_by empty="team" %}</span>{% endif %}
+        <span class="text-[12px] text-muted shrink-0">{{ t.updated_at|timesince }} ago</span>
+    </a></li>
+    {% empty %}
+    <li class="px-5 py-10 text-center text-muted">{% if show == 'waiting' %}No chat is waiting for a person.{% else %}No chats here.{% endif %}</li>
+    {% endfor %}
+</ul>
+{% include "crm/_pagination.html" %}
+{% endblock %}

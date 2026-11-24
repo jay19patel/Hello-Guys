@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import Optional, Tuple
+from typing import Optional
 import requests
 from meta_connector.models import Contact, PlatformAccount, MetaConfig
 

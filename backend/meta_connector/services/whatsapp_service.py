@@ -121,4 +121,3 @@ class WhatsAppService:
 
 
 # Standalone function shortcut matching requirements
-send_whatsapp_message = WhatsAppService.send_whatsapp_message

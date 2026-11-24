@@ -3,6 +3,11 @@ from .base import *
 # Simple Local Development Settings
 DEBUG = True
 ALLOWED_HOSTS = ['*']
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-local-development-only')
+
+# Next.js dev server
+CSRF_TRUSTED_ORIGINS += ['http://localhost:3000', 'http://127.0.0.1:3000']
+CORS_ALLOWED_ORIGINS += ['http://localhost:3000', 'http://127.0.0.1:3000']
 
 # ngrok tunnels for testing Meta webhooks / the dashboard over HTTPS
 CSRF_TRUSTED_ORIGINS += ['https://*.ngrok-free.dev', 'https://*.ngrok-free.app', 'https://*.ngrok.io']

@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from meta_connector.roles import ADMIN, AGENT, VIEWER, has_role, role_required
+from django.views import View
+from meta_connector.roles import ADMIN, RoleRequiredMixin, has_role
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -15,9 +16,17 @@ def _prefix(media_id: str) -> str:
     return f"m{media_id or 'default'}"
 
 
-@role_required(VIEWER)
-def account_detail_view(request, pk):
-    """Account page: channel profile, KPI number cards, recent contacts, messages, and (for Instagram) Reels/Auto-DM."""
+class AccountDetailView(RoleRequiredMixin, View):
+    """Account page: channel profile, KPI number cards, recent contacts, messages, and (for Instagram) Reels/Auto-DM.
+    Agents save auto-DM messages; removing a rule is Admin only."""
+
+    def get(self, request, pk):
+        return account_page(request, pk)
+
+    post = get
+
+
+def account_page(request, pk):
     account = get_object_or_404(PlatformAccount, pk=pk)
     TokenService.refresh_stale()
 
@@ -57,8 +66,7 @@ def account_detail_view(request, pk):
         page_url = reverse('dashboard-account', args=[pk]) + (f"?after={after}" if after else '')
 
         if request.method == 'POST':
-            # Agents set auto-DM messages; removing a rule is a delete, so Admin only.
-            if not has_role(request.user, ADMIN if request.POST.get('action') == 'remove' else AGENT):
+            if request.POST.get('action') == 'remove' and not has_role(request.user, ADMIN):
                 raise PermissionDenied("Your role can't make this change.")
             media_id = request.POST.get('media_id', '').strip()
             rule = AutoDMRule.objects.filter(platform_account=account, media_id=media_id).first()
