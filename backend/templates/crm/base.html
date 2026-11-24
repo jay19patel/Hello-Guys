@@ -1,24 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{% block page_title %}CRM{% endblock %} · CRM{% endblock %}
 
-{% block mobile_brand %}
-<a href="{% url 'crm:overview' %}" class="flex items-center gap-2 font-display font-bold text-[15px] text-ink">
-    <i class="fa-solid fa-address-book text-accent"></i> CRM
-</a>
-{% endblock %}
-
 {% block sidebar_brand %}
 <a href="{% url 'crm:overview' %}" class="flex items-center gap-2.5">
     <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-solid fa-address-book"></i></span>
     <span class="font-display font-bold text-[15px] text-ink">CRM</span>
 </a>
-<a href="{% url 'hub-portal' %}" class="btn btn-ghost btn-sm px-2 text-xs text-muted hover:text-ink" title="Module Hub"><i class="fa-solid fa-shapes"></i></a>
 {% endblock %}
 
 {% block nav_aria_label %}CRM{% endblock %}
 
 {% block sidebar_nav %}
 {% with url_name=request.resolver_match.url_name %}
+<div class="caps px-3 pt-1 pb-1">CRM</div>
 <a href="{% url 'crm:overview' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'overview' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-chart-simple w-4 text-center shrink-0"></i> Overview
 </a>
@@ -26,29 +20,34 @@
     <i class="fa-solid fa-user-tie w-4 text-center shrink-0"></i> Customers
 </a>
 <a href="{% url 'crm:opportunities' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'opportunities' or url_name == 'opportunity' or url_name == 'opportunity-create' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
-    <i class="fa-solid fa-filter w-4 text-center shrink-0"></i> Opportunities
+    <i class="fa-solid fa-columns w-4 text-center shrink-0"></i> Opportunities
+</a>
+<a href="{% url 'crm:follow-ups' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'follow-ups' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-regular fa-clock w-4 text-center shrink-0"></i> Follow-ups
+    {% if followups_due %}<span class="ml-auto pill bg-bad/10 text-bad">{{ followups_due }}</span>{% endif %}
 </a>
 <a href="{% url 'crm:meetings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'meetings' or url_name == 'meeting' or url_name == 'meeting-create' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-calendar-days w-4 text-center shrink-0"></i> Meetings
+</a>
+
+<div class="caps px-3 pt-4 pb-1">Messaging</div>
+<a href="{% url 'dashboard-approvals' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-wand-magic-sparkles w-4 text-center shrink-0"></i> AI Approvals
+    {% if approvals_pending %}<span class="ml-auto pill bg-warn/15 text-warn">{{ approvals_pending }}</span>{% endif %}
 </a>
 <a href="{% url 'crm:inbox' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'inbox' or url_name == 'inbox-thread' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> Live chat
     {% if inbox_waiting %}<span class="ml-auto pill bg-bad/10 text-bad" title="Chats waiting for a person">{{ inbox_waiting }}</span>{% endif %}
 </a>
-{% if is_admin %}
-<a href="{% url 'crm:settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'settings' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
-    <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> Settings
-</a>
-{% endif %}
-
-<div class="caps px-3 pt-5 pb-1">Elsewhere</div>
-<a href="{% url 'hub-portal' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-shapes w-4 text-center shrink-0"></i> Module hub
-</a>
 <a href="{% url 'dashboard' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
     <i class="fa-brands fa-meta w-4 text-center shrink-0"></i> Meta inbox
 </a>
+
 {% if is_admin %}
+<div class="caps px-3 pt-4 pb-1">System</div>
+<a href="{% url 'crm:settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'settings' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> CRM Settings
+</a>
 <a href="/admin/crm/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
     <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django admin
 </a>

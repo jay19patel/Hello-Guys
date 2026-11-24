@@ -92,6 +92,7 @@ class Opportunity(TimeStamped):
     reference = models.CharField(max_length=40, default=new_reference, unique=True, help_text="Shown to the visitor")
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="opportunities")
     service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True, blank=True, related_name="opportunities")
+    services = models.ManyToManyField(Service, blank=True, related_name="multi_opportunities")
     title = models.CharField(max_length=255)
     details = models.TextField(blank=True, max_length=5000, help_text="What they asked for, budget, timeline…")
     source = models.CharField(max_length=20, choices=Source.choices, default=Source.MANUAL, db_index=True)
@@ -116,6 +117,13 @@ class Opportunity(TimeStamped):
     @property
     def is_open(self) -> bool:
         return self.status in self.OPEN
+
+    @property
+    def service_list(self) -> list[Service]:
+        items = list(self.services.all())
+        if not items and self.service_id:
+            return [self.service]
+        return items
 
 
 class Activity(models.Model):
@@ -275,3 +283,46 @@ class GoogleAccount(models.Model):
     @property
     def is_connected(self) -> bool:
         return bool(self.refresh_token_encrypted)
+
+
+class FollowUp(TimeStamped):
+    """Scheduled follow-up task for a customer/opportunity (created by team or AI scheduler)."""
+
+    class Channel(models.TextChoices):
+        WHATSAPP = "whatsapp", "WhatsApp"
+        INSTAGRAM = "instagram", "Instagram"
+        CALL = "call", "Phone call"
+        EMAIL = "email", "Email"
+        MEETING = "meeting", "Meeting"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DONE = "done", "Done"
+        CANCELLED = "cancelled", "Cancelled"
+
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="follow_ups")
+    opportunity = models.ForeignKey(
+        Opportunity, on_delete=models.CASCADE, null=True, blank=True, related_name="follow_ups"
+    )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="crm_follow_ups"
+    )
+    due_at = models.DateTimeField(db_index=True)
+    channel = models.CharField(max_length=20, choices=Channel.choices, default=Channel.WHATSAPP)
+    note = models.CharField(max_length=500, blank=True, default="")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_follow_ups"
+    )
+
+    class Meta:
+        ordering = ("due_at",)
+        indexes = [models.Index(fields=["status", "due_at"], name="crm_followup_status_due")]
+
+    def __str__(self) -> str:
+        return f"Follow-up {self.customer.name} ({self.due_at:%d %b %H:%M})"
+
+    @property
+    def is_overdue(self) -> bool:
+        return self.status == self.Status.PENDING and self.due_at < timezone.now()

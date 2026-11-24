@@ -7,8 +7,9 @@
 from django.db import transaction
 from django.db.models import Q
 from django.urls import reverse
+from django.utils import timezone
 
-from crm.models import Activity, Customer, Opportunity, Source
+from crm.models import Activity, Customer, FollowUp, Opportunity, Source
 from meta_connector.models import Contact
 from meta_connector.roles import notify_team
 
@@ -32,25 +33,57 @@ def contact_for_thread(thread) -> Contact | None:
     ).first()
 
 
-def match_customer(*, email: str = "", phone: str = "", contact=None) -> Customer | None:
-    """The existing customer with this email, phone or inbox contact."""
+def _phone_variants(phone: str) -> list[str]:
+    cleaned = phone.strip()
+    if not cleaned:
+        return []
+    digits = "".join(ch for ch in cleaned if ch.isdigit())
+    variants = [cleaned]
+    if digits:
+        variants.append(digits)
+        variants.append(f"+{digits}")
+        if len(digits) >= 10:
+            variants.append(digits[-10:])
+    return list(dict.fromkeys(variants))
+
+
+def match_customer(*, email: str = "", phone: str = "", instagram_username: str = "", contact=None) -> Customer | None:
+    """The existing customer with this email, phone, Instagram handle or inbox contact."""
     query = Q()
     if email.strip():
         query |= Q(email__iexact=email.strip())
-    if phone.strip():
-        query |= Q(phone=phone.strip())
+    for p in _phone_variants(phone):
+        query |= Q(phone__iendswith=p) if len(p) == 10 and p.isdigit() else Q(phone=p)
+    ig = instagram_username.strip().lstrip("@")
+    if ig:
+        query |= Q(instagram_username__iexact=ig)
     if contact is not None:
         query |= Q(contacts=contact)
+        if getattr(contact, "email", ""):
+            query |= Q(email__iexact=contact.email.strip())
+        if getattr(contact, "phone", ""):
+            for p in _phone_variants(contact.phone):
+                query |= Q(phone__iendswith=p) if len(p) == 10 and p.isdigit() else Q(phone=p)
+        if getattr(contact, "username", ""):
+            query |= Q(instagram_username__iexact=contact.username.strip().lstrip("@"))
     return Customer.objects.filter(query).distinct().first() if query else None
 
 
 @transaction.atomic
-def get_or_create_customer(*, name: str, email: str = "", phone: str = "", company: str = "", contact=None,
-                           source: str = Source.MANUAL, created_by=None) -> Customer:
-    """One person = one customer across channels: reuse the customer with the same email, phone or inbox
-    contact (filling in details they lacked), else create one. Links the inbox contact for messaging."""
-    details = {"email": email.strip(), "phone": phone.strip()[:50], "company": company.strip()[:150]}
-    customer = match_customer(email=email, phone=phone, contact=contact)
+def get_or_create_customer(*, name: str, email: str = "", phone: str = "", instagram_username: str = "",
+                           company: str = "", contact=None, source: str = Source.MANUAL, created_by=None) -> Customer:
+    """One person = one customer across channels: reuse the customer with the same email, phone, Instagram handle
+    or inbox contact (filling in details they lacked), else create one. Links the inbox contact for messaging."""
+    ig = (instagram_username or (getattr(contact, "username", "") if contact else "")).strip().lstrip("@")[:100]
+    resolved_email = (email or (getattr(contact, "email", "") if contact else "")).strip()
+    resolved_phone = (phone or (getattr(contact, "phone", "") if contact else "")).strip()[:50]
+    details = {
+        "email": resolved_email,
+        "phone": resolved_phone,
+        "instagram_username": ig,
+        "company": company.strip()[:150],
+    }
+    customer = match_customer(email=resolved_email, phone=resolved_phone, instagram_username=ig, contact=contact)
     if customer is None:
         customer = Customer.objects.create(name=name.strip()[:150] or "Unknown", source=source, **details)
         Activity.objects.create(customer=customer, kind=Activity.Kind.SYSTEM, created_by=created_by,
@@ -104,3 +137,49 @@ def add_note(*, user, body: str, customer: Customer, opportunity: Opportunity | 
              kind: str = Activity.Kind.NOTE) -> Activity:
     return Activity.objects.create(customer=customer, opportunity=opportunity, kind=kind, body=body.strip()[:5000],
                                    created_by=user)
+
+
+@transaction.atomic
+def schedule_follow_up(*, customer: Customer, due_at, note: str = "", opportunity: Opportunity | None = None,
+                       channel: str = FollowUp.Channel.WHATSAPP, assigned_to=None, created_by=None) -> FollowUp:
+    """Schedule a follow-up reminder and keep Opportunity.next_follow_up synced."""
+    follow_up = FollowUp.objects.create(
+        customer=customer,
+        opportunity=opportunity,
+        assigned_to=assigned_to or (opportunity.assigned_to if opportunity else customer.owner),
+        due_at=due_at,
+        channel=channel,
+        note=note.strip()[:500],
+        created_by=created_by,
+    )
+    if opportunity is not None and (opportunity.next_follow_up is None or due_at < opportunity.next_follow_up):
+        opportunity.next_follow_up = due_at
+        opportunity.save(update_fields=["next_follow_up", "updated_at"])
+    Activity.objects.create(
+        customer=customer,
+        opportunity=opportunity,
+        kind=Activity.Kind.SYSTEM,
+        created_by=created_by,
+        body=f"Follow-up scheduled for {timezone.localtime(due_at):%d %b %Y, %H:%M}" + (f": {note}" if note else ""),
+    )
+    return follow_up
+
+
+@transaction.atomic
+def complete_follow_up(follow_up: FollowUp, user=None) -> FollowUp:
+    """Mark a follow-up as done and update the linked opportunity's next_follow_up."""
+    follow_up.status = FollowUp.Status.DONE
+    follow_up.completed_at = timezone.now()
+    follow_up.save(update_fields=["status", "completed_at", "updated_at"])
+    if follow_up.opportunity is not None:
+        next_pending = follow_up.opportunity.follow_ups.filter(status=FollowUp.Status.PENDING).order_by("due_at").first()
+        follow_up.opportunity.next_follow_up = next_pending.due_at if next_pending else None
+        follow_up.opportunity.save(update_fields=["next_follow_up", "updated_at"])
+    Activity.objects.create(
+        customer=follow_up.customer,
+        opportunity=follow_up.opportunity,
+        kind=Activity.Kind.SYSTEM,
+        created_by=user,
+        body=f"Completed follow-up ({follow_up.get_channel_display()}): {follow_up.note or 'No note'}",
+    )
+    return follow_up

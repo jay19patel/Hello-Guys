@@ -1,16 +1,56 @@
-{# Timeline: needs `activities` #}
-<ol class="flex flex-col gap-3">
-    {% for a in activities %}
-    <li class="flex gap-3">
-        <span class="w-7 h-7 rounded-full bg-subtle border border-line flex items-center justify-center shrink-0 text-[12px] text-muted">
-            <i class="fa-solid {% if a.kind == 'call' %}fa-phone{% elif a.kind == 'email' %}fa-envelope{% elif a.kind == 'meeting' %}fa-calendar{% elif a.kind == 'status' %}fa-arrow-right-arrow-left{% elif a.kind == 'message' %}fa-comment{% elif a.kind == 'system' %}fa-gear{% else %}fa-note-sticky{% endif %}"></i>
-        </span>
-        <div class="min-w-0 flex-1">
-            <p class="text-[13.5px] whitespace-pre-line break-words text-ink">{{ a.body }}</p>
-            <p class="text-[12px] text-muted mt-0.5">{{ a.get_kind_display }} · {% include "crm/_user.html" with u=a.created_by empty="System" %} · <time datetime="{{ a.created_at|date:'c' }}" title="{{ a.created_at }}">{{ a.created_at|timesince }} ago</time></p>
-        </div>
-    </li>
-    {% empty %}
-    <li class="text-[13.5px] text-muted py-2">No activity yet.</li>
-    {% endfor %}
-</ol>
+{# Modern vertical timeline with Alpine.js type filter: needs `activities` #}
+<div x-data="{ filter: 'all' }" class="flex flex-col gap-4">
+    {% if activities %}
+    <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter activity">
+        <button type="button" @click="filter = 'all'" :class="filter === 'all' ? 'bg-accent text-on-accent border-accent' : 'bg-subtle text-muted border-line hover:text-ink'" class="h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors">All</button>
+        <button type="button" @click="filter = 'note'" :class="filter === 'note' ? 'bg-accent text-on-accent border-accent' : 'bg-subtle text-muted border-line hover:text-ink'" class="h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors">Notes</button>
+        <button type="button" @click="filter = 'call'" :class="filter === 'call' ? 'bg-accent text-on-accent border-accent' : 'bg-subtle text-muted border-line hover:text-ink'" class="h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors">Calls</button>
+        <button type="button" @click="filter = 'email'" :class="filter === 'email' ? 'bg-accent text-on-accent border-accent' : 'bg-subtle text-muted border-line hover:text-ink'" class="h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors">Emails</button>
+        <button type="button" @click="filter = 'status'" :class="filter === 'status' ? 'bg-accent text-on-accent border-accent' : 'bg-subtle text-muted border-line hover:text-ink'" class="h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors">Status</button>
+        <button type="button" @click="filter = 'system'" :class="filter === 'system' ? 'bg-accent text-on-accent border-accent' : 'bg-subtle text-muted border-line hover:text-ink'" class="h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors">System</button>
+    </div>
+
+    <ol class="relative ml-3.5 border-l-2 border-line flex flex-col gap-4 pl-6 py-1">
+        {% for a in activities %}
+        <li x-show="filter === 'all' || filter === '{{ a.kind }}'" x-transition.opacity class="relative group">
+            <span class="absolute -left-[35px] top-1 w-6 h-6 rounded-full border-2 border-surface flex items-center justify-center text-[10px] shadow-soft
+                {% if a.kind == 'call' %}bg-blue-500/15 text-blue-600 dark:text-blue-400
+                {% elif a.kind == 'email' %}bg-indigo-500/15 text-indigo-600 dark:text-indigo-400
+                {% elif a.kind == 'meeting' %}bg-violet-500/15 text-violet-600 dark:text-violet-400
+                {% elif a.kind == 'status' %}bg-amber-500/15 text-amber-600 dark:text-amber-400
+                {% elif a.kind == 'message' %}bg-emerald-500/15 text-emerald-600 dark:text-emerald-400
+                {% elif a.kind == 'system' %}bg-subtle text-muted
+                {% else %}bg-accent/15 text-accent{% endif %}">
+                <i class="fa-solid {% if a.kind == 'call' %}fa-phone{% elif a.kind == 'email' %}fa-envelope{% elif a.kind == 'meeting' %}fa-calendar{% elif a.kind == 'status' %}fa-arrow-right-arrow-left{% elif a.kind == 'message' %}fa-comment{% elif a.kind == 'system' %}fa-gear{% else %}fa-note-sticky{% endif %}"></i>
+            </span>
+
+            <div class="rounded-xl border border-line bg-subtle/35 hover:bg-subtle/60 transition-colors px-4 py-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-[11.5px] font-semibold uppercase tracking-wider
+                            {% if a.kind == 'call' %}text-blue-600 dark:text-blue-400
+                            {% elif a.kind == 'email' %}text-indigo-600 dark:text-indigo-400
+                            {% elif a.kind == 'meeting' %}text-violet-600 dark:text-violet-400
+                            {% elif a.kind == 'status' %}text-amber-600 dark:text-amber-400
+                            {% elif a.kind == 'message' %}text-emerald-600 dark:text-emerald-400
+                            {% elif a.kind == 'system' %}text-muted
+                            {% else %}text-accent{% endif %}">
+                            {{ a.get_kind_display }}
+                        </span>
+                        <span class="text-[12px] text-muted">· {% include "crm/_user.html" with u=a.created_by empty="System" %}</span>
+                    </div>
+                    <time class="text-[11.5px] text-muted tabular-nums" datetime="{{ a.created_at|date:'c' }}" title="{{ a.created_at|date:'d M Y, H:i' }}">
+                        {{ a.created_at|timesince }} ago
+                    </time>
+                </div>
+                <p class="text-[13.5px] leading-relaxed whitespace-pre-line break-words text-ink">{{ a.body }}</p>
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <div class="rounded-xl border border-dashed border-line py-8 text-center text-[13.5px] text-muted">
+        No activity logged yet. Add a note, call, or email above.
+    </div>
+    {% endif %}
+</div>

@@ -79,31 +79,73 @@ def update_opportunity_status(reference: str, status: STATUSES, note: str = "") 
 
 
 @tool
-def create_opportunity(name: str, email: str, message: str, phone: str = "", service: str = "") -> dict:
-    """Save the visitor's project inquiry so the team can follow up. `service`: the service they want, if clear.
-    Only call it after the visitor has given their name, a valid email and what they need,
-    and has confirmed the details. Returns the reference to share with the visitor."""
+def create_opportunity(name: str, message: str, email: str = "", phone: str = "", service: str = "") -> dict:
+    """Save the visitor's project inquiry as a Customer + Opportunity so the team can follow up.
+    `service`: the service they want, if clear. On WhatsApp/Instagram, `email` is optional if `phone` or
+    the chat contact is already known. Returns the reference to share with the visitor."""
     from hello_guy_ai.models import Message, Thread
 
     _require("add", Opportunity)
     ctx = current_context()
     done = Message.objects.filter(run_id=ctx.run_id, name="create_opportunity").exclude(content__startswith="Error:")
-    if ctx.run_id and done.exists():  # a failed attempt (bad email) may be retried; a saved one may not
+    if ctx.run_id and done.exists():
         raise ToolError("The inquiry was already saved in this reply. Do not save it again.")
-    name, email, message = name.strip(), email.strip(), message.strip()
+    name, email, phone, message = name.strip(), email.strip(), phone.strip(), message.strip()
     if len(name) < 2:
         raise ToolError("Ask the visitor for their name.")
-    try:
-        validate_email(email)
-    except Exception:
-        raise ToolError("That email address looks invalid. Ask the visitor to check it.") from None
+    thread = Thread.objects.filter(pk=ctx.thread_id).first() if ctx.thread_id else None
+    contact = services.contact_for_thread(thread) if thread else None
+    if email:
+        try:
+            validate_email(email)
+        except Exception:
+            raise ToolError("That email address looks invalid. Ask the visitor to check it.") from None
+    elif not phone and contact is None:
+        raise ToolError("Ask the visitor for an email address or phone number so we can follow up.")
     if len(message) < 5:
         raise ToolError("Ask the visitor to describe what they need.")
-    thread = Thread.objects.filter(pk=ctx.thread_id).first() if ctx.thread_id else None
     matched = Service.objects.filter(is_active=True, name__icontains=service.strip()).first() if service.strip() else None
-    opp = services.create_opportunity(name=name, email=email, phone=phone, title=message.split("\n")[0][:120],
-                                      details=message, service=matched, thread=thread)
-    return {"reference": opp.reference, "status": "received"}
+    opp = services.create_opportunity(
+        name=name,
+        email=email,
+        phone=phone or (contact.phone if contact else ""),
+        title=message.split("\n")[0][:120],
+        details=message,
+        service=matched,
+        thread=thread,
+        contact=contact,
+    )
+    return {"reference": opp.reference, "customer_id": opp.customer_id, "status": "received"}
+
+
+@tool
+def schedule_follow_up(hours_from_now: int = 24, note: str = "", opportunity_reference: str = "",
+                       channel: Literal["whatsapp", "instagram", "call", "email", "meeting"] = "whatsapp") -> dict:
+    """Schedule a follow-up reminder when the user asks to reconnect later (e.g. 'call me tomorrow' -> 24,
+    'next week' -> 168). Links to the current chat's customer or the given opportunity_reference."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from hello_guy_ai.models import Thread
+
+    _require("add", Opportunity)
+    ctx = current_context()
+    hours = max(1, min(int(hours_from_now), 24 * 90))
+    due_at = timezone.now() + timedelta(hours=hours)
+    opp = Opportunity.objects.select_related("customer").filter(reference=opportunity_reference.strip()).first() if opportunity_reference.strip() else None
+    customer = opp.customer if opp else None
+    if customer is None and ctx.thread_id:
+        thread = Thread.objects.filter(pk=ctx.thread_id).first()
+        contact = services.contact_for_thread(thread) if thread else None
+        if contact is not None:
+            customer = services.get_or_create_customer(
+                name=contact.name or contact.username or contact.phone or "Lead",
+                contact=contact,
+                source=services.THREAD_SOURCES.get(contact.platform, "manual"),
+            )
+    if customer is None:
+        raise ToolError("Could not identify the customer. Save their inquiry first with create_opportunity.")
+    fu = services.schedule_follow_up(customer=customer, opportunity=opp, due_at=due_at, channel=channel, note=note)
+    return {"follow_up_id": fu.pk, "due_at": fu.due_at.isoformat(), "customer": customer.name}
 
 
 @tool

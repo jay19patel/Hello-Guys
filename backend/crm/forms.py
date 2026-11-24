@@ -19,17 +19,38 @@ class TeamChoiceField(forms.ModelChoiceField):
 
 class OpportunityForm(forms.ModelForm):
     assigned_to = TeamChoiceField(queryset=get_user_model().objects.none(), required=False)
+    services = forms.ModelMultipleChoiceField(
+        queryset=Service.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Services",
+        help_text="Select one or more services this customer is interested in.",
+    )
 
     class Meta:
         model = Opportunity
-        fields = ["customer", "service", "title", "details", "status", "assigned_to", "next_follow_up"]
+        fields = ["customer", "services", "title", "details", "status", "assigned_to", "next_follow_up"]
         widgets = {"next_follow_up": DATETIME, "details": forms.Textarea(attrs={"rows": 4})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["assigned_to"].queryset = team()
-        self.fields["service"].queryset = Service.objects.filter(is_active=True)
+        self.fields["services"].queryset = Service.objects.filter(is_active=True)
         self.fields["next_follow_up"].input_formats = ["%Y-%m-%dT%H:%M"]
+        if self.instance.pk and not self.is_bound:
+            selected = list(self.instance.services.values_list("pk", flat=True))
+            if not selected and self.instance.service_id:
+                selected = [self.instance.service_id]
+            self.initial["services"] = selected
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        selected = list(self.cleaned_data.get("services") or [])
+        instance.service = selected[0] if selected else None
+        if commit:
+            instance.save()
+            instance.services.set(selected)
+        return instance
 
 
 class CustomerForm(forms.ModelForm):

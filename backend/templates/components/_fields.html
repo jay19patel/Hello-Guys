@@ -6,7 +6,7 @@
 {% endif %}
 
 {% for field in form %}
-{% if field.field.widget.input_type == 'checkbox' %}
+{% if field.field.widget.input_type == 'checkbox' and not field.field.widget.allow_multiple_selected %}
 <label for="{{ field.id_for_label }}" class="field sm:col-span-2 flex items-center gap-3 p-3 rounded-xl border border-line bg-subtle/40 hover:bg-subtle/70 cursor-pointer select-none transition-colors {% if field.errors %}border-bad/50{% endif %}">
     {{ field }}
     <span class="flex flex-col">
@@ -17,6 +17,27 @@
     <span class="ml-auto text-[12.5px] text-bad flex items-center gap-1"><i class="fa-solid fa-circle-exclamation"></i> {{ error }}</span>
     {% endfor %}
 </label>
+{% elif field.field.widget.allow_multiple_selected %}
+<div class="field sm:col-span-2 flex flex-col gap-2 {% if field.errors %}field-error{% endif %}">
+    <span class="text-[13px] font-semibold text-ink flex items-center gap-1">
+        {{ field.label }}
+        {% if field.field.required %}<span class="text-bad" aria-hidden="true">*</span>{% endif %}
+    </span>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {% for choice in field %}
+        <label class="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-line bg-subtle/40 hover:bg-subtle cursor-pointer select-none transition-colors text-[13px] font-medium text-ink">
+            {{ choice.tag }}
+            <span class="truncate">{{ choice.choice_label }}</span>
+        </label>
+        {% endfor %}
+    </div>
+    {% if field.help_text %}
+    <p class="text-[12.5px] leading-[18px] text-muted">{{ field.help_text }}</p>
+    {% endif %}
+    {% for error in field.errors %}
+    <p class="text-[12.5px] text-bad flex items-center gap-1.5"><i class="fa-solid fa-circle-exclamation shrink-0"></i> {{ error }}</p>
+    {% endfor %}
+</div>
 {% else %}
 <div class="field flex flex-col gap-1.5 {% if field.field.widget.attrs.rows %}sm:col-span-2{% endif %} {% if field.errors %}field-error{% endif %}">
     <label for="{{ field.id_for_label }}" class="text-[13px] font-semibold text-ink flex items-center gap-1">

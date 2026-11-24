@@ -1,16 +1,27 @@
 {% extends "crm/base.html" %}
-{% block title %}Opportunities · CRM{% endblock %}
+{% block title %}Pipeline · CRM{% endblock %}
 {% block content %}
 <header class="flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Opportunities</h1>
-        <p class="text-muted">What each customer is interested in, from first message to won.</p>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Opportunities Pipeline</h1>
+        <p class="text-muted">Track every service interest from first Instagram/WhatsApp message to Won.</p>
     </div>
-    {% if can_edit %}<a href="{% url 'crm:opportunity-create' %}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> New opportunity</a>{% endif %}
+    <div class="flex items-center gap-2.5">
+        <div class="flex gap-1 bg-subtle border border-line rounded-xl p-1 text-[13px] font-medium">
+            <a href="?view=board&amp;status={{ status }}&amp;q={{ q|urlencode }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if view_mode == 'board' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
+                <i class="fa-solid fa-columns text-[12px]"></i> Board
+            </a>
+            <a href="?view=table&amp;status={{ status }}&amp;q={{ q|urlencode }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if view_mode != 'board' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
+                <i class="fa-solid fa-table-list text-[12px]"></i> Table
+            </a>
+        </div>
+        {% if can_edit %}<a href="{% url 'crm:opportunity-create' %}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> New opportunity</a>{% endif %}
+    </div>
 </header>
 
 <form method="get" class="flex flex-wrap items-end gap-3" role="search">
     <input type="hidden" name="status" value="{{ status }}">
+    <input type="hidden" name="view" value="{{ view_mode }}">
     <div class="field flex-1 min-w-[200px]"><label for="q" class="sr-only">Search</label><input type="text" id="q" name="q" value="{{ q }}" placeholder="Title, customer, email, phone or reference"></div>
     <div class="field"><label for="service" class="sr-only">Service</label>
         <select id="service" name="service"><option value="">All services</option>{% for s in services %}<option value="{{ s.pk }}" {% if service == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
@@ -19,13 +30,64 @@
     <button class="btn btn-ghost"><i class="fa-solid fa-magnifying-glass"></i> Filter</button>
 </form>
 
+{% if view_mode == 'board' %}
+<div class="overflow-x-auto pb-2 -mx-1 px-1">
+    <div class="grid grid-flow-col auto-cols-[minmax(260px,1fr)] gap-4" id="kanbanBoard" data-csrf="{{ csrf_token }}">
+        {% for col in kanban_columns %}
+        <section class="bg-subtle/60 border border-line rounded-2xl p-3 flex flex-col gap-3 min-h-[360px] transition-colors" data-drop-col="{{ col.value }}">
+            <div class="flex items-center justify-between px-1">
+                <h2 class="font-display font-semibold text-[13.5px] text-ink">{{ col.label }}</h2>
+                <span class="pill bg-surface border border-line text-muted tabular-nums" data-col-count>{{ col.items|length }}</span>
+            </div>
+            <div class="flex flex-col gap-2.5 flex-1" data-col-list>
+                {% for opp in col.items %}
+                <article class="card p-3.5 flex flex-col gap-2 lift {% if can_edit %}cursor-grab active:cursor-grabbing{% endif %}"
+                         {% if can_edit %}draggable="true"{% endif %}
+                         data-opp-id="{{ opp.pk }}"
+                         data-status="{{ opp.status }}"
+                         data-stage-url="{% url 'crm:opportunity-stage' opp.pk %}">
+                    <div class="flex items-start justify-between gap-2">
+                        <a href="{% url 'crm:opportunity' opp.pk %}" class="font-semibold text-[13.5px] text-ink hover:text-accent leading-snug">{{ opp.title }}</a>
+                        {% if can_edit %}<i class="fa-solid fa-grip-vertical text-muted/50 text-xs mt-0.5 shrink-0" aria-hidden="true"></i>{% endif %}
+                    </div>
+                    <div class="text-[12.5px] text-muted flex flex-col gap-0.5">
+                        <a href="{% url 'crm:customer' opp.customer_id %}" class="font-medium text-ink/80 hover:text-accent truncate">{{ opp.customer.name }}</a>
+                        {% if opp.service_list %}
+                        <div class="flex flex-wrap gap-1 mt-1">
+                            {% for svc in opp.service_list %}<span class="pill bg-accent/10 text-accent">{{ svc }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pt-2 border-t border-line/70 text-[11.5px] text-muted">
+                        <span>{{ opp.get_source_display }}</span>
+                        {% if can_edit %}
+                        <form method="post" action="{% url 'crm:opportunity-stage' opp.pk %}" class="inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <select name="status" onchange="this.form.submit()" class="bg-subtle border border-line rounded-md px-1.5 py-0.5 text-[11.5px] text-ink cursor-pointer" aria-label="Move stage">
+                                {% for val, lbl in statuses %}
+                                <option value="{{ val }}" {% if opp.status == val %}selected{% endif %}>{{ lbl }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+                <div class="rounded-xl border border-dashed border-line py-8 text-center text-[12.5px] text-muted {% if col.items %}hidden{% endif %}" data-empty-col>No deals</div>
+            </div>
+        </section>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
 <nav class="flex flex-wrap gap-1 bg-subtle border border-line rounded-xl p-1 w-fit" aria-label="Status">
     {% with base_q=q|urlencode %}
-    <a href="?status=open&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == 'open' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Open</a>
+    <a href="?view=table&amp;status=open&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == 'open' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Open</a>
     {% for value, label in statuses %}
-    <a href="?status={{ value }}&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == value %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">{{ label }}</a>
+    <a href="?view=table&amp;status={{ value }}&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == value %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">{{ label }}</a>
     {% endfor %}
-    <a href="?status=all&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
+    <a href="?view=table&amp;status=all&amp;q={{ base_q }}&amp;service={{ service }}" class="h-8 px-3 rounded-lg text-[13px] font-medium flex items-center transition-colors {% if status == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
     {% endwith %}
 </nav>
 
@@ -39,7 +101,7 @@
                 <tr class="hover:bg-subtle/60 transition-colors">
                     <td class="cell px-5"><a href="{% url 'crm:opportunity' opp.pk %}" class="font-semibold text-ink hover:text-accent transition-colors">{{ opp.title }}</a><div class="text-[12px] text-muted">{{ opp.reference }} · {{ opp.get_source_display }}</div></td>
                     <td class="cell px-5 text-[13px]"><a href="{% url 'crm:customer' opp.customer_id %}" class="hover:text-accent font-medium">{{ opp.customer.name }}</a>{% if opp.customer.company %}<div class="text-muted">{{ opp.customer.company }}</div>{% endif %}</td>
-                    <td class="cell px-5 text-[13px]">{{ opp.service|default:"—" }}</td>
+                    <td class="cell px-5 text-[13px]"><div class="flex flex-wrap gap-1">{% for svc in opp.service_list %}<span class="pill bg-accent/10 text-accent">{{ svc }}</span>{% empty %}<span class="text-muted">—</span>{% endfor %}</div></td>
                     <td class="cell px-5">{% include "crm/_status.html" %}</td>
                     <td class="cell px-5 text-[13px]">{% include "crm/_user.html" with u=opp.assigned_to empty="—" %}</td>
                     <td class="cell px-5 text-[13px] text-muted whitespace-nowrap">{{ opp.created_at|timesince }} ago</td>
@@ -53,4 +115,93 @@
     {% endif %}
 </div>
 {% include "crm/_pagination.html" %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if view_mode == 'board' and can_edit %}
+<script>
+(function () {
+    const board = document.getElementById('kanbanBoard');
+    if (!board) return;
+    let dragged = null, originList = null;
+
+    function refreshCol(col) {
+        const list = col.querySelector('[data-col-list]');
+        const count = list.querySelectorAll('[data-opp-id]').length;
+        col.querySelector('[data-col-count]').textContent = count;
+        col.querySelector('[data-empty-col]')?.classList.toggle('hidden', count > 0);
+    }
+
+    board.addEventListener('dragstart', e => {
+        const card = e.target.closest('[data-opp-id]');
+        if (!card) return;
+        dragged = card;
+        originList = card.parentElement;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', card.dataset.oppId);
+        requestAnimationFrame(() => card.classList.add('opacity-50'));
+    });
+
+    board.addEventListener('dragend', () => {
+        if (dragged) dragged.classList.remove('opacity-50');
+        board.querySelectorAll('[data-drop-col]').forEach(c => c.classList.remove('ring-2', 'ring-accent/50', 'bg-accent/5'));
+        dragged = null;
+        originList = null;
+    });
+
+    board.querySelectorAll('[data-drop-col]').forEach(col => {
+        col.addEventListener('dragover', e => {
+            if (!dragged) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            col.classList.add('ring-2', 'ring-accent/50', 'bg-accent/5');
+        });
+        col.addEventListener('dragleave', e => {
+            if (!col.contains(e.relatedTarget)) {
+                col.classList.remove('ring-2', 'ring-accent/50', 'bg-accent/5');
+            }
+        });
+        col.addEventListener('drop', async e => {
+            e.preventDefault();
+            col.classList.remove('ring-2', 'ring-accent/50', 'bg-accent/5');
+            if (!dragged) return;
+            const card = dragged;
+            const prevList = originList;
+            const prevCol = prevList.closest('[data-drop-col]');
+            const nextStatus = col.dataset.dropCol;
+            if (card.dataset.status === nextStatus) return;
+
+            const targetList = col.querySelector('[data-col-list]');
+            const emptyPlaceholder = targetList.querySelector('[data-empty-col]');
+            targetList.insertBefore(card, emptyPlaceholder);
+            const oldStatus = card.dataset.status;
+            card.dataset.status = nextStatus;
+            const sel = card.querySelector('select[name="status"]');
+            if (sel) sel.value = nextStatus;
+            refreshCol(prevCol);
+            refreshCol(col);
+
+            const body = new FormData();
+            body.append('status', nextStatus);
+            body.append('csrfmiddlewaretoken', board.dataset.csrf);
+            try {
+                const res = await fetch(card.dataset.stageUrl, {
+                    method: 'POST',
+                    body,
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!res.ok) throw new Error('Save failed');
+            } catch (err) {
+                prevList.insertBefore(card, prevList.querySelector('[data-empty-col]'));
+                card.dataset.status = oldStatus;
+                if (sel) sel.value = oldStatus;
+                refreshCol(col);
+                refreshCol(prevCol);
+            }
+        });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

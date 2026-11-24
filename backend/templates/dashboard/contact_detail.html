@@ -113,6 +113,27 @@
         </div>
 
         <!-- Composer -->
+        {% if pending_approvals %}
+        <div class="border-t border-warn/30 bg-warn/10 px-4 py-3 flex flex-col gap-2.5 shrink-0">
+            {% for pa in pending_approvals %}
+            <form method="post" action="{% url 'dashboard-approval-action' pa.pk %}" class="flex flex-col gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-[12.5px] font-semibold text-warn flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Draft awaiting approval</span>
+                    <span class="text-[11.5px] text-muted">{{ pa.created_at|naturaltime }}</span>
+                </div>
+                <div class="field">
+                    <textarea name="reply_text" rows="2" class="!py-1.5 !text-[13px]" required>{{ pa.draft_text }}</textarea>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="submit" name="action" value="reject" class="btn btn-ghost btn-sm text-bad">Reject</button>
+                    <button type="submit" name="action" value="approve" class="btn btn-primary btn-sm"><i class="fa-solid fa-paper-plane"></i> Approve &amp; Send</button>
+                </div>
+            </form>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% if can_reply %}
         {% with closed=window_closed %}
         {% if closed %}
@@ -137,6 +158,38 @@
 
     <!-- Details -->
     <aside class="flex flex-col gap-[var(--section-gap)]">
+        <section class="card p-4 flex flex-col gap-3" aria-labelledby="crm-link-title">
+            <div class="flex items-center justify-between gap-2">
+                <h2 id="crm-link-title" class="caps">CRM Customer</h2>
+                {% if crm_customer %}<span class="pill bg-ok/10 text-ok">Linked</span>{% else %}<span class="pill bg-subtle text-muted">Not linked</span>{% endif %}
+            </div>
+            {% if crm_customer %}
+                <a href="{% url 'crm:customer' crm_customer.pk %}" class="font-display font-semibold text-[15px] text-accent hover:underline">{{ crm_customer.name }}</a>
+                {% if crm_customer.company %}<p class="text-[12.5px] text-muted -mt-2">{{ crm_customer.company }}</p>{% endif %}
+                <div class="flex flex-wrap gap-2 pt-1">
+                    <a href="{% url 'crm:customer' crm_customer.pk %}" class="btn btn-ghost btn-sm">Open Customer 360</a>
+                    {% if can_reply %}<a href="{% url 'crm:opportunity-create' %}?customer={{ crm_customer.pk }}" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Opportunity</a>{% endif %}
+                </div>
+            {% elif can_reply %}
+                <form method="post" class="flex flex-col gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create_customer">
+                    <button type="submit" class="btn btn-primary btn-sm w-full"><i class="fa-solid fa-user-plus"></i> Save as CRM Customer</button>
+                </form>
+                {% if all_customers %}
+                <form method="post" class="field flex gap-1.5 pt-2 border-t border-line">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="link_customer">
+                    <select name="customer_id" class="!py-1 !text-[12.5px]" required>
+                        <option value="">Link to existing…</option>
+                        {% for c in all_customers %}<option value="{{ c.pk }}">{{ c.name }}{% if c.phone %} ({{ c.phone }}){% endif %}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-ghost btn-sm shrink-0">Link</button>
+                </form>
+                {% endif %}
+            {% endif %}
+        </section>
+
         <section class="flex flex-col gap-3" aria-labelledby="details-title">
             <h2 id="details-title" class="font-display font-semibold text-[15px]">Details</h2>
             <dl class="card divide-y divide-line text-[13.5px]">

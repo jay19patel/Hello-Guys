@@ -23,7 +23,7 @@ from hello_guy_ai.exceptions import AssistantNotFound, ThreadBusy
 from hello_guy_ai.models import Thread
 from hello_guy_ai.services.chat import public_user
 from hello_guy_ai.tasks.actors import CHAT_QUEUE, RUN_LIMIT_MS  # importing it also installs the Redis broker
-from meta_connector.models import Contact, Message, PlatformAccount
+from meta_connector.models import Contact, Message, PendingAIReply, PlatformAccount
 from meta_connector.roles import notify_team
 from meta_connector.services import SendError, send_message
 from meta_connector.signals import message_received
@@ -110,8 +110,19 @@ def reply_with_ai(message_id: int) -> None:
     if not answer:
         notify_team(f"AI could not answer {label}", f"Their message: {msg.message_text[:300]}", url)
         return
+    formatted = for_platform(answer, account.platform)
+    if account.ai_require_approval:
+        PendingAIReply.objects.create(
+            platform_account=account,
+            contact=contact,
+            trigger_message=msg,
+            draft_text=formatted,
+            reason="Account requires human approval before sending",
+        )
+        notify_team(f"AI reply awaiting approval: {label}", formatted[:300], reverse('dashboard-approvals'))
+        return
     try:  # sent_by=bot: shows as "AI assistant" in the dashboard
-        send_message(contact, for_platform(answer, account.platform), sent_by=bot)
+        send_message(contact, formatted, sent_by=bot)
     except SendError as exc:
         logger.warning("AI reply to %s contact #%s failed: %s", account.platform, contact.pk, exc)
         notify_team(f"AI reply to {label} was not delivered", str(exc)[:300], url)

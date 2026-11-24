@@ -1,4 +1,4 @@
-from meta_connector.models import PlatformAccount
+from meta_connector.models import PendingAIReply, PlatformAccount
 from meta_connector.roles import ADMIN, AGENT, get_role, has_role
 from meta_connector.services.maintenance import webhook_health
 
@@ -40,12 +40,24 @@ def dashboard_nav(request):
         for p, accs in sorted(grouped.items(), key=lambda item: sort_key(item[0]))
     ]
 
+    approvals_pending = PendingAIReply.objects.filter(status=PendingAIReply.STATUS_PENDING).count() if user and user.is_authenticated else 0
+    followups_due = 0
+    if user and user.is_authenticated:
+        try:
+            from django.utils import timezone
+            from crm.models import FollowUp
+            followups_due = FollowUp.objects.filter(status=FollowUp.Status.PENDING, due_at__lte=timezone.now()).count()
+        except Exception:
+            followups_due = 0
+
     return {
         # Failed-webhook / bad-signature banner: admins only, since only they can fix or retry.
         'webhook_health': webhook_health() if admin else None,
         'nav_account_groups': nav_account_groups,
         'nav_whatsapp_accounts': [a for a in active_accounts if a.platform == PlatformAccount.PLATFORM_WHATSAPP],
         'nav_instagram_accounts': [a for a in active_accounts if a.platform == PlatformAccount.PLATFORM_INSTAGRAM],
+        'approvals_pending': approvals_pending,
+        'followups_due': followups_due,
         # Templates use these only to hide controls; every view checks the role again on the server.
         'dashboard_role': get_role(user) if user else None,
         'can_reply': bool(user) and has_role(user, AGENT),

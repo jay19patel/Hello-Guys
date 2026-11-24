@@ -20,6 +20,31 @@ class ContactDetailView(RoleRequiredMixin, DetailView):
 
     def post(self, request, pk):
         contact = self.get_object()
+        action = request.POST.get('action')
+        if action == 'create_customer':
+            from crm import services as crm_services
+            customer = crm_services.get_or_create_customer(
+                name=contact.name or contact.username or contact.phone or f"Lead {contact.pk}",
+                email=contact.email,
+                phone=contact.phone,
+                instagram_username=contact.username,
+                contact=contact,
+                source=crm_services.THREAD_SOURCES.get(contact.platform, 'manual'),
+                created_by=request.user,
+            )
+            messages.success(request, f"Linked to CRM customer: {customer.name}")
+            return redirect('crm:customer', pk=customer.pk)
+        if action == 'link_customer':
+            from crm.models import Customer
+            customer_id = request.POST.get('customer_id')
+            customer = Customer.objects.filter(pk=customer_id).first()
+            if customer:
+                customer.contacts.add(contact)
+                messages.success(request, f"Linked {contact} to {customer.name}.")
+            else:
+                messages.error(request, "Customer not found.")
+            return redirect('dashboard-contact', pk=pk)
+
         text = request.POST.get('text', '').strip()
         if not text:
             messages.error(request, "Type a message first.")
@@ -46,6 +71,8 @@ class ContactDetailView(RoleRequiredMixin, DetailView):
         last_dm = (contact.messages.filter(direction=Message.DIRECTION_INCOMING)
                    .exclude(message_type=Message.TYPE_COMMENT).order_by('-created_at').first())
         window_closes = last_dm.created_at + REPLY_WINDOW if last_dm else None
+        crm_customer = contact.crm_customers.first()
+        from crm.models import Customer
         return super().get_context_data(
             is_wa=account.platform == account.PLATFORM_WHATSAPP,
             display=contact.name or contact.username or contact.phone or contact.platform_user_id,
@@ -57,6 +84,9 @@ class ContactDetailView(RoleRequiredMixin, DetailView):
             window_closes=window_closes,
             has_dm=bool(last_dm),
             auto_dm_logs=contact.auto_dm_logs.order_by('-created_at')[:10],
+            pending_approvals=contact.pending_ai_replies.filter(status='pending').order_by('-created_at'),
+            crm_customer=crm_customer,
+            all_customers=Customer.objects.order_by('name')[:100] if not crm_customer else [],
             instagram_handle=contact.username if contact.username and contact.username != contact.platform_user_id else '',
             **kwargs,
         )

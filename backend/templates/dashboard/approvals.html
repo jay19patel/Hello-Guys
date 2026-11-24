@@ -1,0 +1,92 @@
+{% extends "dashboard/base.html" %}
+{% load humanize %}
+{% block title %}AI Approvals · Hello Guys{% endblock %}
+
+{% block content %}
+<header class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight flex items-center gap-2.5">
+            AI Approval Queue
+            {% if pending_count %}<span class="pill bg-warn/15 text-warn border border-warn/30">{{ pending_count }} pending</span>{% endif %}
+        </h1>
+        <p class="text-muted mt-0.5">Review, edit, and approve AI-drafted replies before they are sent to Instagram or WhatsApp.</p>
+    </div>
+
+    <nav class="flex gap-1 bg-subtle border border-line rounded-xl p-1 text-[13px] font-medium self-start sm:self-auto" aria-label="Filter approvals">
+        <a href="?status=pending" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'pending' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Pending</a>
+        <a href="?status=approved" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'approved' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Approved</a>
+        <a href="?status=rejected" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'rejected' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Rejected</a>
+        <a href="?status=all" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
+    </nav>
+</header>
+
+{% if approvals %}
+<div class="grid gap-4">
+    {% for item in approvals %}
+    <article class="card p-5 flex flex-col gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+                <span class="w-10 h-10 rounded-full bg-subtle border border-line flex items-center justify-center font-semibold text-[13px] shrink-0">
+                    {{ item.contact.get_avatar_initials }}
+                </span>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <a href="{% url 'dashboard-contact' item.contact.pk %}" class="font-display font-semibold text-[15px] hover:text-accent truncate">
+                            {{ item.contact.name|default:item.contact.username|default:item.contact.phone|default:item.contact.platform_user_id }}
+                        </a>
+                        <span class="pill bg-subtle border border-line">
+                            <i class="{{ item.platform_account.platform_icon }} {{ item.platform_account.platform_color_class }}"></i>
+                            {{ item.platform_account.display_name }}
+                        </span>
+                    </div>
+                    <p class="text-[12.5px] text-muted">{{ item.created_at|naturaltime }} · {{ item.reason }}</p>
+                </div>
+            </div>
+            <span class="pill {% if item.status == 'pending' %}bg-warn/15 text-warn border border-warn/30{% elif item.status == 'approved' %}bg-ok/10 text-ok border border-ok/20{% elif item.status == 'rejected' %}bg-subtle text-muted{% else %}bg-bad/10 text-bad{% endif %}">
+                {{ item.get_status_display }}
+            </span>
+        </div>
+
+        {% if item.trigger_message %}
+        <div class="rounded-xl bg-subtle/60 border border-line px-4 py-3 text-[13.5px]">
+            <span class="caps block mb-1">Customer message</span>
+            <p class="text-ink whitespace-pre-line">{{ item.trigger_message.message_text|default:"(Media / non-text)" }}</p>
+        </div>
+        {% endif %}
+
+        {% if item.status == 'pending' %}
+        <form method="post" action="{% url 'dashboard-approval-action' item.pk %}" class="flex flex-col gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <div class="field flex flex-col gap-1.5">
+                <label for="draft-{{ item.pk }}" class="caps">AI Drafted Reply (editable)</label>
+                <textarea id="draft-{{ item.pk }}" name="reply_text" rows="3" required>{{ item.draft_text }}</textarea>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <a href="{% url 'dashboard-contact' item.contact.pk %}" class="text-[13px] font-medium text-accent hover:underline">Open full conversation →</a>
+                <div class="flex items-center gap-2">
+                    <button type="submit" name="action" value="reject" class="btn btn-ghost btn-sm text-bad hover:bg-bad/10">
+                        <i class="fa-solid fa-xmark"></i> Reject
+                    </button>
+                    <button type="submit" name="action" value="approve" class="btn btn-primary btn-sm">
+                        <i class="fa-solid fa-paper-plane"></i> Approve &amp; Send
+                    </button>
+                </div>
+            </div>
+        </form>
+        {% else %}
+        <div class="rounded-xl bg-accent/5 border border-accent/20 px-4 py-3 text-[13.5px]">
+            <span class="caps block mb-1">Reply text</span>
+            <p class="text-ink whitespace-pre-line">{{ item.edited_text|default:item.draft_text }}</p>
+            {% if item.error %}<p class="text-bad text-[12.5px] mt-1.5">{{ item.error }}</p>{% endif %}
+        </div>
+        {% endif %}
+    </article>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    {% include "components/_empty_state.html" with icon="fa-wand-magic-sparkles" title="No AI replies waiting" subtitle="When an account has 'AI require approval' enabled, drafted replies will appear here for your review." %}
+</div>
+{% endif %}
+{% endblock %}

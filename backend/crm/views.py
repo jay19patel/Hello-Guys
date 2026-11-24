@@ -20,11 +20,13 @@ from crm.forms import (
     CustomerForm, DriveFileForm, GoogleCredentialsForm, MeetingForm, MeetingOutcomeForm, MessageForm, NoteForm,
     OpportunityForm, ReplyForm, ShareForm, UploadForm,
 )
-from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, Opportunity, Service, Source
+from django.contrib.auth import get_user_model
+from crm.models import Activity, Customer, FollowUp, GoogleAccount, GoogleFile, Meeting, Opportunity, Service, Source
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.exceptions import AssistantNotFound
 from hello_guy_ai.models import Message as AIMessage, Thread
 from hello_guy_ai.services import chat
+from meta_connector.models import Contact, Message as MetaMessage
 from meta_connector.roles import ADMIN, AGENT, RoleRequiredMixin, get_role, has_role
 from meta_connector.services import SendError, send_message
 
@@ -72,23 +74,153 @@ class ActionsMixin:
 class OverviewView(CRMView, TemplateView):
     template_name = "crm/overview.html"
 
+    @staticmethod
+    def _delta(curr: int, prev: int) -> int | None:
+        if prev == 0:
+            return None if curr == 0 else 100
+        return round(((curr - prev) / prev) * 100)
+
     def get_context_data(self, **kwargs):
-        now, opportunities = timezone.now(), Opportunity.objects.select_related("customer")
+        now = timezone.now()
+        try:
+            days = int(self.request.GET.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        if days not in (7, 30, 90):
+            days = 30
+        since = now - timedelta(days=days)
+        prev_since = since - timedelta(days=days)
+
+        opportunities = Opportunity.objects.select_related("customer", "service", "assigned_to")
         by_status = dict(opportunities.values_list("status").annotate(n=Count("id")))
+
+        # Activity KPIs
+        calls_now = Activity.objects.filter(kind=Activity.Kind.CALL, created_at__gte=since).count()
+        calls_prev = Activity.objects.filter(kind=Activity.Kind.CALL, created_at__gte=prev_since, created_at__lt=since).count()
+        meetings_now = Meeting.objects.filter(start_at__gte=since).count()
+        meetings_prev = Meeting.objects.filter(start_at__gte=prev_since, start_at__lt=since).count()
+        meetings_upcoming = Meeting.objects.filter(status=Meeting.Status.SCHEDULED, start_at__gte=now).count()
+        fu_pending = FollowUp.objects.filter(status=FollowUp.Status.PENDING).count()
+        fu_overdue = FollowUp.objects.filter(status=FollowUp.Status.PENDING, due_at__lt=now).count()
+        fu_upcoming = fu_pending - fu_overdue
+        notes_now = Activity.objects.filter(kind=Activity.Kind.NOTE, created_at__gte=since).count()
+        notes_prev = Activity.objects.filter(kind=Activity.Kind.NOTE, created_at__gte=prev_since, created_at__lt=since).count()
+
+        # Pipeline KPIs
+        contacts_now = Contact.objects.filter(first_seen__gte=since).count()
+        contacts_prev = Contact.objects.filter(first_seen__gte=prev_since, first_seen__lt=since).count()
+        cust_now = Customer.objects.filter(created_at__gte=since).count()
+        cust_prev = Customer.objects.filter(created_at__gte=prev_since, created_at__lt=since).count()
+        opps_now = opportunities.filter(created_at__gte=since).count()
+        opps_prev = opportunities.filter(created_at__gte=prev_since, created_at__lt=since).count()
+        won_now = opportunities.filter(status=Opportunity.Status.WON, updated_at__gte=since).count()
+        lost_now = opportunities.filter(status=Opportunity.Status.LOST, updated_at__gte=since).count()
+        win_rate = round((won_now / (won_now + lost_now)) * 100) if (won_now + lost_now) > 0 else None
+
+        # Daily Trend (last min(days, 14) days)
+        span = min(days, 14)
+        day_dates = [(now - timedelta(days=i)).date() for i in range(span - 1, -1, -1)]
+        cust_by_day = {d: 0 for d in day_dates}
+        opp_by_day = {d: 0 for d in day_dates}
+        act_by_day = {d: 0 for d in day_dates}
+        trend_start = now - timedelta(days=span - 1)
+        for dt in Customer.objects.filter(created_at__date__gte=trend_start.date()).values_list("created_at", flat=True):
+            d = timezone.localtime(dt).date()
+            if d in cust_by_day:
+                cust_by_day[d] += 1
+        for dt in Opportunity.objects.filter(created_at__date__gte=trend_start.date()).values_list("created_at", flat=True):
+            d = timezone.localtime(dt).date()
+            if d in opp_by_day:
+                opp_by_day[d] += 1
+        for dt in Activity.objects.filter(created_at__date__gte=trend_start.date()).values_list("created_at", flat=True):
+            d = timezone.localtime(dt).date()
+            if d in act_by_day:
+                act_by_day[d] += 1
+
+        daily_trend = {
+            "labels": [d.strftime("%d %b") for d in day_dates],
+            "customers": [cust_by_day[d] for d in day_dates],
+            "opportunities": [opp_by_day[d] for d in day_dates],
+            "activities": [act_by_day[d] for d in day_dates],
+        }
+
+        # Conversion Funnel
+        total_contacts = Contact.objects.count()
+        total_customers = Customer.objects.count()
+        total_opps = opportunities.count()
+        qualified_opps = opportunities.filter(status__in=[
+            Opportunity.Status.QUALIFIED, Opportunity.Status.PROPOSAL, Opportunity.Status.WON
+        ]).count()
+        won_opps = by_status.get(Opportunity.Status.WON, 0)
+        funnel_max = max(total_contacts, total_customers, total_opps, 1)
+        funnel = [
+            {"label": "Inbox Contacts (IG / WA)", "count": total_contacts, "pct": round(total_contacts / funnel_max * 100), "color": "bg-blue-500"},
+            {"label": "CRM Customers", "count": total_customers, "pct": round(total_customers / funnel_max * 100), "color": "bg-indigo-500"},
+            {"label": "Opportunities", "count": total_opps, "pct": round(total_opps / funnel_max * 100), "color": "bg-violet-500"},
+            {"label": "Qualified / Proposal", "count": qualified_opps, "pct": round(qualified_opps / funnel_max * 100), "color": "bg-amber-500"},
+            {"label": "Won Deals", "count": won_opps, "pct": round(won_opps / funnel_max * 100), "color": "bg-emerald-500"},
+        ]
+
+        # Source Attribution
+        source_rows = []
+        for src_val, src_lbl in Source.choices:
+            c_cnt = Customer.objects.filter(source=src_val).count()
+            o_cnt = opportunities.filter(source=src_val).count()
+            w_cnt = opportunities.filter(source=src_val, status=Opportunity.Status.WON).count()
+            if c_cnt or o_cnt:
+                source_rows.append({"label": src_lbl, "customers": c_cnt, "opportunities": o_cnt, "won": w_cnt})
+
+        # Team Leaderboard
+        User = get_user_model()
+        team_board = []
+        for u in User.objects.filter(is_active=True)[:8]:
+            acts = Activity.objects.filter(created_by=u, created_at__gte=since).count()
+            fu_done = FollowUp.objects.filter(assigned_to=u, status=FollowUp.Status.DONE).count()
+            opps_u = opportunities.filter(assigned_to=u).count()
+            won_u = opportunities.filter(assigned_to=u, status=Opportunity.Status.WON).count()
+            if acts or fu_done or opps_u or u == self.request.user:
+                team_board.append({
+                    "name": u.get_full_name() or u.username,
+                    "is_you": u == self.request.user,
+                    "activities": acts,
+                    "followups_done": fu_done,
+                    "opportunities": opps_u,
+                    "won": won_u,
+                })
+
         return super().get_context_data(
+            days=days,
+            ranges=[7, 30, 90],
             stats={
                 "open": opportunities.filter(status__in=Opportunity.OPEN).count(),
                 "new_this_week": opportunities.filter(created_at__gte=now - timedelta(days=7)).count(),
                 "won_this_month": opportunities.filter(status=Opportunity.Status.WON,
                                                        updated_at__gte=now - timedelta(days=30)).count(),
-                "customers": Customer.objects.count(),
+                "customers": total_customers,
             },
+            activity_kpis=[
+                {"label": "Calls", "value": calls_now, "delta": self._delta(calls_now, calls_prev), "dot": "bg-blue-500", "sub": "logged in period"},
+                {"label": "Meetings", "value": meetings_now, "delta": self._delta(meetings_now, meetings_prev), "dot": "bg-violet-500", "sub": f"{meetings_upcoming} upcoming"},
+                {"label": "Follow-ups", "value": fu_pending, "delta": None, "dot": "bg-amber-500", "sub": f"{fu_overdue} overdue · {fu_upcoming} upcoming", "overdue": fu_overdue},
+                {"label": "Notes", "value": notes_now, "delta": self._delta(notes_now, notes_prev), "dot": "bg-emerald-500", "sub": "added in period"},
+            ],
+            pipeline_kpis=[
+                {"label": "Contacts (IG/WA)", "value": contacts_now, "delta": self._delta(contacts_now, contacts_prev), "dot": "bg-blue-500"},
+                {"label": "New Customers", "value": cust_now, "delta": self._delta(cust_now, cust_prev), "dot": "bg-indigo-500"},
+                {"label": "Opportunities", "value": opps_now, "delta": self._delta(opps_now, opps_prev), "dot": "bg-violet-500"},
+                {"label": "Win Rate", "value": f"{win_rate}%" if win_rate is not None else "—", "delta": None, "dot": "bg-emerald-500", "sub": f"{won_now} won · {lost_now} lost"},
+            ],
+            daily_trend=daily_trend,
+            funnel=funnel,
+            source_rows=source_rows,
+            team_board=team_board,
+            do_next_followups=FollowUp.objects.filter(status=FollowUp.Status.PENDING).select_related("customer", "opportunity").order_by("due_at")[:6],
             pipeline=[(label, by_status.get(value, 0), value) for value, label in Opportunity.Status.choices],
             recent=opportunities[:8],
             follow_ups=opportunities.filter(status__in=Opportunity.OPEN, next_follow_up__lte=now + timedelta(days=1))
             .order_by("next_follow_up")[:8],
             meetings=Meeting.objects.filter(status=Meeting.Status.SCHEDULED, start_at__gte=now - timedelta(hours=1))
-            .select_related("customer")[:8],
+            .select_related("customer")[:6],
             waiting_chats=Thread.objects.filter(needs_human=True).order_by("-updated_at")[:5],
             **kwargs,
         )
@@ -103,14 +235,14 @@ class OpportunityListView(CRMView, ListView):
     paginate_by = PAGE_SIZE
 
     def get_queryset(self):
-        qs, get = Opportunity.objects.select_related("customer", "service", "assigned_to"), self.request.GET
+        qs, get = Opportunity.objects.select_related("customer", "service", "assigned_to").prefetch_related("services"), self.request.GET
         status, service, q = get.get("status", "open"), get.get("service", ""), get.get("q", "").strip()
         if status == "open":
             qs = qs.filter(status__in=Opportunity.OPEN)
         elif status in Opportunity.Status.values:
             qs = qs.filter(status=status)
         if service.isdigit():
-            qs = qs.filter(service_id=service)
+            qs = qs.filter(Q(service_id=service) | Q(services__id=service)).distinct()
         if get.get("mine"):
             qs = qs.filter(assigned_to=self.request.user)
         if q:
@@ -121,8 +253,46 @@ class OpportunityListView(CRMView, ListView):
         return qs
 
     def get_context_data(self, **kwargs):
-        return super().get_context_data(statuses=Opportunity.Status.choices, services=Service.objects.all(),
-                                        **self.filters, **kwargs)
+        view_mode = self.request.GET.get("view", "board")
+        kanban_columns = []
+        if view_mode == "board":
+            all_opps = list(self.object_list[:120])
+            by_status = {val: [] for val, _ in Opportunity.Status.choices}
+            for opp in all_opps:
+                by_status.setdefault(opp.status, []).append(opp)
+            kanban_columns = [
+                {"value": val, "label": label, "items": by_status.get(val, [])}
+                for val, label in Opportunity.Status.choices
+            ]
+        return super().get_context_data(
+            statuses=Opportunity.Status.choices,
+            services=Service.objects.all(),
+            view_mode=view_mode,
+            kanban_columns=kanban_columns,
+            **self.filters,
+            **kwargs,
+        )
+
+
+class OpportunityStageView(CRMView, View):
+    """Quick stage update from the Kanban board (supports drag-and-drop JSON and form POST)."""
+    role = AGENT
+
+    def post(self, request, pk: int):
+        opp = get_object_or_404(Opportunity.objects.select_related("customer"), pk=pk)
+        new_status = request.POST.get("status", "")
+        is_json = "application/json" in request.headers.get("Accept", "") or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        if new_status not in Opportunity.Status.values:
+            if is_json:
+                return JsonResponse({"ok": False, "error": "Invalid stage"}, status=400)
+            return redirect(request.POST.get("next") or "crm:opportunities")
+        if new_status != opp.status:
+            services.set_status(opp, new_status, request.user)
+            if not is_json:
+                messages.success(request, f"Moved '{opp.title}' to {opp.get_status_display()}.")
+        if is_json:
+            return JsonResponse({"ok": True, "status": opp.status, "label": opp.get_status_display()})
+        return redirect(request.POST.get("next") or "crm:opportunities")
 
 
 class OpportunityCreateView(CRMView, CreateView):
@@ -150,7 +320,7 @@ class OpportunityCreateView(CRMView, CreateView):
 
 class OpportunityDetailView(CRMView, ActionsMixin, DetailView):
     template_name = "crm/opportunity_detail.html"
-    queryset = Opportunity.objects.select_related("customer", "service", "assigned_to", "thread")
+    queryset = Opportunity.objects.select_related("customer", "service", "assigned_to", "thread").prefetch_related("services")
 
     def get_context_data(self, **kwargs):
         opp = self.object
@@ -252,9 +422,18 @@ class CustomerDetailView(CRMView, ActionsMixin, DetailView):
         customer = self.object
         kwargs.setdefault("form", CustomerForm(instance=customer))
         kwargs.setdefault("note_form", NoteForm())
+        contacts = list(customer.contacts.select_related("platform_account"))
+        channel_messages = (
+            MetaMessage.objects.filter(contact__in=contacts)
+            .select_related("contact", "platform_account", "sent_by")
+            .order_by("-created_at")[:30]
+            if contacts else []
+        )
         return super().get_context_data(
             opportunities=customer.opportunities.select_related("service"),
-            contacts=customer.contacts.select_related("platform_account"),
+            contacts=contacts,
+            channel_messages=channel_messages,
+            follow_ups=customer.follow_ups.select_related("opportunity", "assigned_to").order_by("status", "due_at")[:15],
             activities=customer.activities.select_related("created_by")[:50],
             meetings=customer.meetings.all(), files=customer.google_files.all(),
             drive_form=DriveFileForm(), upload_form=UploadForm(), share_form=ShareForm(initial={"target": "folder"}),
@@ -612,3 +791,85 @@ class GoogleCallbackView(CRMView, View):
             return redirect("crm:settings")
         messages.success(request, f"Connected Google account {account.email}.")
         return redirect("crm:settings")
+
+
+# ---- follow-up scheduler ---------------------------------------------------------------------
+
+
+class FollowUpListView(CRMView, ListView):
+    """Scheduled follow-ups: overdue, due today, upcoming, and completed."""
+    template_name = "crm/follow_ups.html"
+    context_object_name = "follow_ups"
+    paginate_by = PAGE_SIZE
+
+    def get_queryset(self):
+        status = self.request.GET.get("status", FollowUp.Status.PENDING)
+        qs = FollowUp.objects.select_related("customer", "opportunity", "assigned_to")
+        if status in FollowUp.Status.values:
+            qs = qs.filter(status=status)
+        if self.request.GET.get("mine"):
+            qs = qs.filter(assigned_to=self.request.user)
+        return qs.order_by("due_at" if status == FollowUp.Status.PENDING else "-updated_at")
+
+    def get_context_data(self, **kwargs):
+        now = timezone.now()
+        return super().get_context_data(
+            status_filter=self.request.GET.get("status", FollowUp.Status.PENDING),
+            now=now,
+            overdue_count=FollowUp.objects.filter(status=FollowUp.Status.PENDING, due_at__lt=now).count(),
+            customers=Customer.objects.order_by("name")[:100],
+            channels=FollowUp.Channel.choices,
+            **kwargs,
+        )
+
+
+class FollowUpCreateView(CRMView, View):
+    role = AGENT
+
+    def post(self, request):
+        customer = get_object_or_404(Customer, pk=request.POST.get("customer_id"))
+        opp_id = request.POST.get("opportunity_id")
+        opportunity = Opportunity.objects.filter(pk=opp_id, customer=customer).first() if opp_id else None
+        due_raw = request.POST.get("due_at", "").strip()
+        note = request.POST.get("note", "").strip()
+        channel = request.POST.get("channel", FollowUp.Channel.WHATSAPP)
+        if channel not in FollowUp.Channel.values:
+            channel = FollowUp.Channel.WHATSAPP
+        try:
+            due_at = timezone.datetime.fromisoformat(due_raw)
+            if timezone.is_naive(due_at):
+                due_at = timezone.make_aware(due_at, timezone.get_current_timezone())
+        except ValueError:
+            due_at = timezone.now() + timedelta(days=1)
+        services.schedule_follow_up(
+            customer=customer,
+            opportunity=opportunity,
+            due_at=due_at,
+            channel=channel,
+            note=note,
+            created_by=request.user,
+        )
+        messages.success(request, f"Follow-up scheduled for {customer.name}.")
+        return redirect(request.POST.get("next") or "crm:follow-ups")
+
+
+class FollowUpActionView(CRMView, View):
+    role = AGENT
+
+    def post(self, request, pk: int):
+        fu = get_object_or_404(FollowUp.objects.select_related("customer", "opportunity"), pk=pk)
+        action = request.POST.get("action")
+        next_url = request.POST.get("next") or "crm:follow-ups"
+        if action == "done":
+            services.complete_follow_up(fu, user=request.user)
+            messages.success(request, "Follow-up marked done.")
+        elif action == "cancel":
+            fu.status = FollowUp.Status.CANCELLED
+            fu.save(update_fields=["status", "updated_at"])
+            messages.info(request, "Follow-up cancelled.")
+        elif action == "snooze":
+            hours = int(request.POST.get("hours", 24) or 24)
+            fu.due_at = timezone.now() + timedelta(hours=max(1, min(hours, 24 * 30)))
+            fu.save(update_fields=["due_at", "updated_at"])
+            messages.success(request, "Follow-up rescheduled.")
+        return redirect(next_url)

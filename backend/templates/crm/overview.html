@@ -1,90 +1,301 @@
 {% extends "crm/base.html" %}
-{% block title %}Overview · CRM{% endblock %}
+{% load humanize %}
+{% block title %}Sales Dashboard · CRM{% endblock %}
+
 {% block content %}
-<header class="flex flex-wrap items-end justify-between gap-3">
+<!-- Top Greeting + Date Range -->
+<header class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
     <div>
-        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">CRM overview</h1>
-        <p class="text-muted">Customers, what they want, meetings and chats that need you.</p>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight text-ink">
+            Hello, {{ request.user.get_full_name|default:request.user.username }}
+        </h1>
+        <p class="text-[13.5px] text-muted mt-0.5">
+            {{ stats.open }} open opportunit{{ stats.open|pluralize:"y,ies" }} · {{ stats.customers }} customer{{ stats.customers|pluralize }} · {{ stats.won_this_month }} won in the last 30 days.
+        </p>
     </div>
-    {% if can_edit %}
-    <div class="flex flex-wrap gap-2">
-        <a href="{% url 'crm:customer-create' %}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Customer</a>
-        <a href="{% url 'crm:opportunity-create' %}" class="btn btn-ghost"><i class="fa-solid fa-plus"></i> Opportunity</a>
-        <a href="{% url 'crm:meeting-create' %}" class="btn btn-ghost"><i class="fa-solid fa-calendar-plus"></i> Meeting</a>
+
+    <div class="flex items-center gap-2.5 flex-wrap">
+        <nav class="grid grid-cols-3 gap-1 bg-subtle border border-line rounded-xl p-1 text-[13px] font-medium" aria-label="Period">
+            {% for r in ranges %}
+            <a href="?days={{ r }}" class="h-8 px-3.5 rounded-lg flex items-center justify-center transition-colors {% if r == days %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">{{ r }} days</a>
+            {% endfor %}
+        </nav>
+        {% if can_edit %}
+        <a href="{% url 'crm:opportunity-create' %}" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Opportunity</a>
+        {% endif %}
     </div>
-    {% endif %}
 </header>
 
-<section class="grid grid-cols-2 lg:grid-cols-4 gap-4" aria-label="Key numbers">
-    <a href="{% url 'crm:opportunities' %}" class="card p-5 lift"><p class="caps">Open opportunities</p><p class="font-display text-3xl font-bold mt-1.5 tabular-nums">{{ stats.open }}</p></a>
-    <a href="{% url 'crm:opportunities' %}?status=all" class="card p-5 lift"><p class="caps">New this week</p><p class="font-display text-3xl font-bold mt-1.5 tabular-nums">{{ stats.new_this_week }}</p></a>
-    <a href="{% url 'crm:opportunities' %}?status=won" class="card p-5 lift"><p class="caps">Won (30 days)</p><p class="font-display text-3xl font-bold mt-1.5 text-ok tabular-nums">{{ stats.won_this_month }}</p></a>
-    <a href="{% url 'crm:customers' %}" class="card p-5 lift"><p class="caps">Customers</p><p class="font-display text-3xl font-bold mt-1.5 tabular-nums">{{ stats.customers }}</p></a>
-</section>
-
 {% if waiting_chats %}
-<section class="card p-5 border-bad/40 bg-bad/5">
-    <h2 class="font-display font-semibold flex items-center gap-2 text-bad"><i class="fa-solid fa-bell"></i> Chats waiting for a person</h2>
-    <ul class="mt-3 divide-y divide-line">
-        {% for t in waiting_chats %}
-        <li><a href="{% url 'crm:inbox-thread' t.pk %}" class="flex justify-between gap-3 py-2.5 hover:text-accent transition-colors"><span class="truncate font-medium">{{ t.name|default:"Visitor" }}</span><span class="text-muted text-[13px] shrink-0">{{ t.updated_at|timesince }} ago</span></a></li>
+<section class="card p-4 border-bad/35 bg-bad/5 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-2.5 text-[13.5px]">
+        <span class="w-8 h-8 rounded-lg bg-bad/15 text-bad flex items-center justify-center shrink-0"><i class="fa-solid fa-bell"></i></span>
+        <span><b>{{ waiting_chats|length }} chat{{ waiting_chats|pluralize }}</b> waiting for a team member to take over.</span>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        {% for t in waiting_chats|slice:":3" %}
+        <a href="{% url 'crm:inbox-thread' t.pk %}" class="btn btn-ghost btn-sm">{{ t.name|default:"Visitor" }} →</a>
         {% endfor %}
-    </ul>
+    </div>
 </section>
 {% endif %}
 
-<div class="grid lg:grid-cols-2 gap-6">
-    <section class="card p-5">
-        <h2 class="font-display font-semibold text-[16px]">Pipeline</h2>
-        <ul class="mt-4 flex flex-col gap-3.5">
+<!-- Row 1: ACTIVITY KPIs -->
+<section aria-labelledby="act-kpi-title" class="flex flex-col gap-2.5">
+    <h2 id="act-kpi-title" class="caps">Activity</h2>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {% for k in activity_kpis %}
+        <div class="card p-4 flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+                <span class="flex items-center gap-2 text-[12.5px] font-semibold text-muted">
+                    <span class="w-2 h-2 rounded-full {{ k.dot }}"></span> {{ k.label }}
+                </span>
+                {% if k.overdue %}<span class="pill bg-bad/10 text-bad text-[11px]">{{ k.overdue }} overdue</span>{% endif %}
+            </div>
+            <div class="font-display text-[28px] leading-[34px] font-bold tabular-nums text-ink">{{ k.value }}</div>
+            <div class="flex items-center justify-between text-[12px] text-muted">
+                <span>{{ k.sub }}</span>
+                {% if k.delta is not None %}
+                <span class="font-semibold {% if k.delta >= 0 %}text-ok{% else %}text-bad{% endif %}">
+                    {% if k.delta >= 0 %}+{{ k.delta }}%{% else %}{{ k.delta }}%{% endif %}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Row 2: PIPELINE KPIs -->
+<section aria-labelledby="pipe-kpi-title" class="flex flex-col gap-2.5">
+    <h2 id="pipe-kpi-title" class="caps">Pipeline &amp; Conversion</h2>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {% for k in pipeline_kpis %}
+        <div class="card p-4 flex flex-col gap-1.5">
+            <span class="flex items-center gap-2 text-[12.5px] font-semibold text-muted">
+                <span class="w-2 h-2 rounded-full {{ k.dot }}"></span> {{ k.label }}
+            </span>
+            <div class="font-display text-[28px] leading-[34px] font-bold tabular-nums text-ink">{{ k.value }}</div>
+            <div class="text-[12px] text-muted">
+                {% if k.sub %}{{ k.sub }}
+                {% elif k.delta is not None %}
+                <span class="font-semibold {% if k.delta >= 0 %}text-ok{% else %}text-bad{% endif %}">{% if k.delta >= 0 %}+{{ k.delta }}%{% else %}{{ k.delta }}%{% endif %}</span> vs previous {{ days }}d
+                {% else %}No change vs previous period{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Row 3: Daily Trend Chart + Conversion Funnel -->
+<div class="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-6 items-start">
+    <section class="card p-5 flex flex-col gap-4 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+                <h2 class="font-display text-[16px] font-semibold text-ink">Daily Trend</h2>
+                <p class="text-[12.5px] text-muted">New customers, opportunities &amp; activities over the last 14 days.</p>
+            </div>
+            <div class="flex items-center gap-3 text-[12px] text-muted">
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-indigo-500"></span> Customers</span>
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-violet-500"></span> Opportunities</span>
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Activities</span>
+            </div>
+        </div>
+        <div id="crmTrendChart" class="relative h-[220px] w-full"></div>
+        {{ daily_trend|json_script:"crm-trend-data" }}
+    </section>
+
+    <section class="card p-5 flex flex-col gap-4">
+        <div>
+            <h2 class="font-display text-[16px] font-semibold text-ink">Conversion Funnel</h2>
+            <p class="text-[12.5px] text-muted">From WhatsApp / Instagram contact to Won deal.</p>
+        </div>
+        <div class="flex flex-col gap-3">
+            {% for step in funnel %}
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="font-medium text-ink">{{ step.label }}</span>
+                    <span class="tabular-nums font-semibold text-ink">{{ step.count }} <span class="text-muted font-normal text-[12px]">({{ step.pct }}%)</span></span>
+                </div>
+                <div class="h-2.5 rounded-full bg-subtle overflow-hidden">
+                    <div class="h-full rounded-full {{ step.color }} transition-all duration-500" style="width: {{ step.pct }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+
+<!-- Row 4: Pipeline Stages + Do Next (Actionable Follow-ups) -->
+<div class="grid lg:grid-cols-2 gap-6 items-start">
+    <section class="card p-5 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="font-display text-[16px] font-semibold text-ink">Pipeline Stages</h2>
+                <p class="text-[12.5px] text-muted">Current breakdown across all opportunity stages.</p>
+            </div>
+            <a href="{% url 'crm:opportunities' %}" class="text-[13px] font-medium text-accent hover:underline">Open Board →</a>
+        </div>
+        <ul class="flex flex-col gap-3">
             {% for label, count, value in pipeline %}
             <li>
                 <a href="{% url 'crm:opportunities' %}?status={{ value }}" class="block group">
-                    <div class="flex justify-between text-[13.5px]"><span class="group-hover:text-accent transition-colors">{{ label }}</span><span class="font-semibold tabular-nums">{{ count }}</span></div>
-                    <div class="h-2 mt-1.5 rounded-full bg-subtle overflow-hidden"><div class="h-full bg-accent max-w-full rounded-full" style="width: {% widthratio count stats.open|add:stats.won_this_month|add:1 100 %}%"></div></div>
+                    <div class="flex justify-between text-[13.5px]">
+                        <span class="group-hover:text-accent transition-colors font-medium">{{ label }}</span>
+                        <span class="font-semibold tabular-nums">{{ count }}</span>
+                    </div>
+                    <div class="h-2 mt-1.5 rounded-full bg-subtle overflow-hidden">
+                        <div class="h-full bg-accent rounded-full max-w-full" style="width: {% widthratio count stats.open|add:stats.won_this_month|add:1 100 %}%"></div>
+                    </div>
                 </a>
             </li>
             {% endfor %}
         </ul>
     </section>
 
-    <section class="card p-5">
-        <div class="flex justify-between items-center"><h2 class="font-display font-semibold text-[16px]">Upcoming meetings</h2><a href="{% url 'crm:meetings' %}" class="text-[13px] font-medium text-accent hover:underline">All</a></div>
-        <ul class="mt-3 divide-y divide-line">
-            {% for m in meetings %}
-            <li class="py-3 flex items-center justify-between gap-3">
-                <a href="{% url 'crm:meeting' m.pk %}" class="min-w-0 group">
-                    <p class="font-medium truncate group-hover:text-accent transition-colors">{{ m.title }}</p>
-                    <p class="text-[12.5px] text-muted">{{ m.start_at|date:"D d M, H:i" }} · {{ m.customer }}</p>
-                </a>
-                {% if m.meet_url %}<a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm shrink-0"><i class="fa-solid fa-video text-accent"></i> Join</a>{% endif %}
+    <section class="card p-5 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="font-display text-[16px] font-semibold text-ink">Do Next</h2>
+                <p class="text-[12.5px] text-muted">Scheduled follow-ups &amp; callbacks needing action.</p>
+            </div>
+            <a href="{% url 'crm:follow-ups' %}" class="text-[13px] font-medium text-accent hover:underline">Scheduler →</a>
+        </div>
+        <ul class="divide-y divide-line">
+            {% for fu in do_next_followups %}
+            <li class="py-2.5 flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <a href="{% url 'crm:customer' fu.customer.pk %}" class="font-medium text-[13.5px] text-ink hover:text-accent truncate block">{{ fu.customer.name }} · {{ fu.note|default:fu.get_channel_display }}</a>
+                    <p class="text-[12px] {% if fu.is_overdue %}text-bad font-semibold{% else %}text-muted{% endif %}">
+                        {{ fu.get_channel_display }} · {% if fu.is_overdue %}Overdue ({{ fu.due_at|naturaltime }}){% else %}{{ fu.due_at|date:"d M, H:i" }}{% endif %}
+                    </p>
+                </div>
+                {% if can_edit %}
+                <form method="post" action="{% url 'crm:follow-up-action' fu.pk %}" class="flex items-center gap-1.5 shrink-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" name="action" value="snooze" class="btn btn-ghost btn-sm px-2 text-[12px]">Tomorrow</button>
+                    <button type="submit" name="action" value="done" class="btn btn-primary btn-sm px-2.5 text-[12px]">Done</button>
+                </form>
+                {% endif %}
             </li>
-            {% empty %}<li class="py-6 text-center text-muted text-[13.5px]">Nothing scheduled.</li>
-            {% endfor %}
-        </ul>
-    </section>
-
-    <section class="card p-5">
-        <div class="flex justify-between items-center"><h2 class="font-display font-semibold text-[16px]">Recent opportunities</h2><a href="{% url 'crm:opportunities' %}?status=all" class="text-[13px] font-medium text-accent hover:underline">All</a></div>
-        <ul class="mt-3 divide-y divide-line">
-            {% for opp in recent %}
-            <li><a href="{% url 'crm:opportunity' opp.pk %}" class="py-2.5 flex items-center justify-between gap-3 hover:text-accent transition-colors">
-                <span class="min-w-0"><span class="block truncate font-medium">{{ opp.title }}</span><span class="block text-[12.5px] text-muted">{{ opp.customer.name }} · {{ opp.get_source_display }} · {{ opp.created_at|timesince }} ago</span></span>
-                {% include "crm/_status.html" %}
-            </a></li>
-            {% empty %}<li class="py-6 text-center text-muted text-[13.5px]">Nothing yet.</li>
-            {% endfor %}
-        </ul>
-    </section>
-
-    <section class="card p-5">
-        <h2 class="font-display font-semibold text-[16px]">Follow-ups due</h2>
-        <ul class="mt-3 divide-y divide-line">
-            {% for opp in follow_ups %}
-            <li><a href="{% url 'crm:opportunity' opp.pk %}" class="py-2.5 flex justify-between gap-3 hover:text-accent transition-colors"><span class="truncate font-medium">{{ opp.customer.name }} — {{ opp.title }}</span><span class="text-[12.5px] text-muted shrink-0 tabular-nums">{{ opp.next_follow_up|date:"d M, H:i" }}</span></a></li>
-            {% empty %}<li class="py-6 text-center text-muted text-[13.5px]">Nothing due.</li>
+            {% empty %}
+            <li class="py-8 text-center text-muted text-[13.5px]">All caught up! No pending follow-ups.</li>
             {% endfor %}
         </ul>
     </section>
 </div>
+
+<!-- Row 5: Source Attribution + Team Leaderboard -->
+<div class="grid lg:grid-cols-2 gap-6 items-start">
+    <section class="card overflow-hidden">
+        <div class="px-5 pt-5 pb-3">
+            <h2 class="font-display text-[16px] font-semibold text-ink">Channel Attribution</h2>
+            <p class="text-[12.5px] text-muted">Where customers &amp; won deals originate.</p>
+        </div>
+        {% if source_rows %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-[13.5px]">
+                <thead><tr class="table-head border-y border-line"><th>Source</th><th class="text-right">Customers</th><th class="text-right">Opps</th><th class="text-right">Won</th></tr></thead>
+                <tbody class="divide-y divide-line tabular-nums">
+                    {% for row in source_rows %}
+                    <tr class="hover:bg-subtle/50">
+                        <td class="px-5 py-2.5 font-medium text-ink">{{ row.label }}</td>
+                        <td class="px-5 py-2.5 text-right">{{ row.customers }}</td>
+                        <td class="px-5 py-2.5 text-right">{{ row.opportunities }}</td>
+                        <td class="px-5 py-2.5 text-right font-semibold text-ok">{{ row.won }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="px-5 pb-5 text-[13.5px] text-muted">No source data yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card overflow-hidden">
+        <div class="px-5 pt-5 pb-3">
+            <h2 class="font-display text-[16px] font-semibold text-ink">Team Leaderboard</h2>
+            <p class="text-[12.5px] text-muted">Activity &amp; deal performance in the last {{ days }} days.</p>
+        </div>
+        {% if team_board %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-[13.5px]">
+                <thead><tr class="table-head border-y border-line"><th>Member</th><th class="text-right">Activities</th><th class="text-right">Done FU</th><th class="text-right">Opps</th><th class="text-right">Won</th></tr></thead>
+                <tbody class="divide-y divide-line tabular-nums">
+                    {% for m in team_board %}
+                    <tr class="hover:bg-subtle/50">
+                        <td class="px-5 py-2.5 font-medium text-ink">{{ m.name }}{% if m.is_you %} <span class="pill bg-accent/10 text-accent ml-1">You</span>{% endif %}</td>
+                        <td class="px-5 py-2.5 text-right">{{ m.activities }}</td>
+                        <td class="px-5 py-2.5 text-right">{{ m.followups_done }}</td>
+                        <td class="px-5 py-2.5 text-right">{{ m.opportunities }}</td>
+                        <td class="px-5 py-2.5 text-right font-semibold text-ok">{{ m.won }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="px-5 pb-5 text-[13.5px] text-muted">No team activity yet.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const el = document.getElementById('crmTrendChart');
+    const dataEl = document.getElementById('crm-trend-data');
+    if (!el || !dataEl) return;
+    const data = JSON.parse(dataEl.textContent);
+
+    function draw() {
+        const W = el.clientWidth || 560, H = el.clientHeight || 220;
+        const padL = 28, padR = 12, padT = 14, padB = 26;
+        const iw = W - padL - padR, ih = H - padT - padB;
+        const n = data.labels.length;
+        const allVals = [...data.customers, ...data.opportunities, ...data.activities, 1];
+        const maxV = Math.max(...allVals);
+        const step = Math.max(1, Math.ceil(maxV / 4));
+        const yMax = Math.ceil(maxV / step) * step;
+        const x = i => padL + (n > 1 ? (i / (n - 1)) * iw : iw / 2);
+        const y = v => padT + ih - (v / yMax) * ih;
+
+        let svg = `<svg width="${W}" height="${H}" class="block overflow-visible" aria-hidden="true">`;
+        for (let v = 0; v <= yMax; v += step) {
+            const yy = Math.round(y(v)) + 0.5;
+            svg += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" stroke="rgb(var(--line))" stroke-width="1"/>`;
+            svg += `<text x="${padL - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="rgb(var(--muted))">${v}</text>`;
+        }
+
+        const series = [
+            { vals: data.customers, color: '#6366f1' },
+            { vals: data.opportunities, color: '#8b5cf6' },
+            { vals: data.activities, color: '#10b981' },
+        ];
+        series.forEach(s => {
+            const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+            svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/>`;
+            s.vals.forEach((v, i) => {
+                if (v > 0) svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.2" fill="${s.color}"/>`;
+            });
+        });
+
+        const labelEvery = Math.ceil(n / 6);
+        data.labels.forEach((lbl, i) => {
+            if (i % labelEvery === 0 || i === n - 1) {
+                svg += `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="rgb(var(--muted))">${lbl}</text>`;
+            }
+        });
+        svg += '</svg>';
+        el.innerHTML = svg;
+    }
+
+    draw();
+    let t;
+    addEventListener('resize', () => { clearTimeout(t); t = setTimeout(draw, 120); });
+})();
+</script>
 {% endblock %}

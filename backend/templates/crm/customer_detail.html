@@ -28,7 +28,7 @@
                         {% for opp in opportunities %}
                         <tr class="hover:bg-subtle/60 transition-colors">
                             <td class="cell px-5"><a href="{% url 'crm:opportunity' opp.pk %}" class="font-semibold hover:text-accent transition-colors">{{ opp.title }}</a><div class="text-[12px] text-muted">{{ opp.get_source_display }}</div></td>
-                            <td class="cell px-5 text-[13px]">{{ opp.service|default:"—" }}</td>
+                            <td class="cell px-5 text-[13px]"><div class="flex flex-wrap gap-1">{% for svc in opp.service_list %}<span class="pill bg-accent/10 text-accent">{{ svc }}</span>{% empty %}<span class="text-muted">—</span>{% endfor %}</div></td>
                             <td class="cell px-5">{% include "crm/_status.html" %}</td>
                             <td class="cell px-5 text-[13px] text-muted whitespace-nowrap">{{ opp.created_at|date:"d M Y" }}</td>
                         </tr>
@@ -110,13 +110,46 @@
         </section>
 
         <section class="card p-5">
-            <h2 class="font-display font-semibold text-[16px]">Activity</h2>
+            <h2 class="font-display font-semibold text-[16px]">Unified Omnichannel Messages</h2>
+            <p class="text-[12.5px] text-muted mt-0.5">Latest messages across all linked WhatsApp &amp; Instagram identities.</p>
+            {% if channel_messages %}
+            <ul class="mt-4 divide-y divide-line max-h-80 overflow-y-auto">
+                {% for msg in channel_messages %}
+                <li class="py-2.5 flex items-start gap-3 text-[13.5px]">
+                    <span class="w-7 h-7 rounded-lg bg-subtle border border-line flex items-center justify-center shrink-0 mt-0.5">
+                        <i class="{{ msg.platform_account.platform_icon }} {{ msg.platform_account.platform_color_class }} text-xs"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="font-semibold text-[12.5px]">
+                                {% if msg.direction == 'incoming' %}{{ customer.name }}{% else %}Team / AI{% endif %}
+                                <span class="text-muted font-normal">via {{ msg.platform_account.get_platform_display }}</span>
+                            </span>
+                            <span class="text-[11.5px] text-muted">{{ msg.created_at|date:"d M, H:i" }}</span>
+                        </div>
+                        <p class="text-ink mt-0.5 break-words">{{ msg.message_text|default:"(Media / attachment)" }}</p>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mt-3 text-[13.5px] text-muted">No linked WhatsApp or Instagram messages yet.</p>
+            {% endif %}
+        </section>
+
+        <section class="card p-5">
+            <div class="flex items-center justify-between">
+                <h2 class="font-display font-semibold text-[16px]">Activity Timeline</h2>
+                <span class="text-[12px] text-muted">{{ activities|length }} event{{ activities|length|pluralize }}</span>
+            </div>
             {% if can_edit %}
-            <form method="post" class="mt-4 flex flex-col sm:flex-row gap-2">{% csrf_token %}
+            <form method="post" class="mt-4 rounded-xl border border-line bg-subtle/40 p-3 flex flex-col gap-2.5">{% csrf_token %}
                 <input type="hidden" name="action" value="note">
-                <div class="field sm:w-36"><label for="{{ note_form.kind.id_for_label }}" class="sr-only">Type</label>{{ note_form.kind }}</div>
-                <div class="field flex-1"><label for="{{ note_form.body.id_for_label }}" class="sr-only">Note</label>{{ note_form.body }}</div>
-                <button class="btn btn-primary self-start">Add</button>
+                <div class="field"><label for="{{ note_form.body.id_for_label }}" class="sr-only">Note</label>{{ note_form.body }}</div>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="field w-40"><label for="{{ note_form.kind.id_for_label }}" class="sr-only">Type</label>{{ note_form.kind }}</div>
+                    <button class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Log Activity</button>
+                </div>
             </form>
             {% endif %}
             <div class="mt-5">{% include "crm/_activities.html" %}</div>
@@ -161,6 +194,40 @@
                 <div class="field"><label for="{{ message_form.contact.id_for_label }}" class="text-[13px] font-semibold">Send a message</label>{{ message_form.contact }}</div>
                 <div class="field"><label for="{{ message_form.text.id_for_label }}" class="sr-only">Message</label>{{ message_form.text }}</div>
                 <button class="btn btn-primary btn-sm self-start"><i class="fa-solid fa-paper-plane"></i> Send</button>
+            </form>
+            {% endif %}
+        </section>
+
+        <section class="card p-5 text-[13.5px]">
+            <div class="flex items-center justify-between">
+                <h2 class="caps">Follow-ups</h2>
+                <a href="{% url 'crm:follow-ups' %}" class="text-[12px] text-accent hover:underline">Scheduler</a>
+            </div>
+            <ul class="mt-2.5 flex flex-col gap-2">
+                {% for fu in follow_ups %}
+                <li class="flex items-center justify-between gap-2 py-1 border-b border-line/60 last:border-0">
+                    <div class="min-w-0">
+                        <p class="font-medium truncate {% if fu.status == 'done' %}line-through text-muted{% endif %}">{{ fu.note|default:fu.get_channel_display }}</p>
+                        <p class="text-[11.5px] {% if fu.is_overdue %}text-bad font-semibold{% else %}text-muted{% endif %}">{{ fu.due_at|date:"d M, H:i" }} · {{ fu.get_status_display }}</p>
+                    </div>
+                    {% if can_edit and fu.status == 'pending' %}
+                    <form method="post" action="{% url 'crm:follow-up-action' fu.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <button type="submit" name="action" value="done" class="btn btn-ghost btn-sm px-2 text-ok" title="Mark done"><i class="fa-solid fa-check"></i></button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% empty %}<li class="text-muted">None scheduled.</li>{% endfor %}
+            </ul>
+            {% if can_edit %}
+            <form method="post" action="{% url 'crm:follow-up-create' %}" class="mt-3 pt-3 border-t border-line flex flex-col gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="customer_id" value="{{ customer.pk }}">
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <div class="field"><input type="datetime-local" name="due_at" required class="!py-1.5 !text-[12.5px]"></div>
+                <div class="field"><input type="text" name="note" placeholder="Follow-up note…" class="!py-1.5 !text-[12.5px]"></div>
+                <button type="submit" class="btn btn-ghost btn-sm self-start"><i class="fa-regular fa-clock"></i> Schedule</button>
             </form>
             {% endif %}
         </section>

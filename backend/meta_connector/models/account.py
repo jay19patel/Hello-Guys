@@ -57,6 +57,10 @@ class PlatformAccount(models.Model):
         default=False,
         help_text="Reply to incoming DMs with the website AI assistant (one AI thread per contact)"
     )
+    ai_require_approval = models.BooleanField(
+        default=False,
+        help_text="Queue AI replies in the Approval Queue for human review before sending"
+    )
 
     # Token health, filled from Meta's /debug_token (see TokenService). checked_at=None means never checked.
     token_type = models.CharField(max_length=20, blank=True, default='', help_text="PAGE, USER or SYSTEM_USER")

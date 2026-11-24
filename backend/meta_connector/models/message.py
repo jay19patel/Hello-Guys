@@ -128,3 +128,76 @@ class Message(models.Model):
     def __str__(self):
         text_snippet = (self.message_text[:30] + '...') if len(self.message_text) > 30 else (self.message_text or f"[{self.message_type}]")
         return f"[{self.direction.upper()}] {self.contact} - {text_snippet}"
+
+
+class PendingAIReply(models.Model):
+    """AI-drafted reply waiting for human approval before sending to the contact."""
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_FAILED = 'failed'
+
+    STATUS_CHOICES = (
+        (STATUS_PENDING, _('Pending approval')),
+        (STATUS_APPROVED, _('Approved & sent')),
+        (STATUS_REJECTED, _('Rejected')),
+        (STATUS_FAILED, _('Send failed')),
+    )
+
+    platform_account = models.ForeignKey(
+        PlatformAccount,
+        on_delete=models.CASCADE,
+        related_name='pending_ai_replies',
+    )
+    contact = models.ForeignKey(
+        Contact,
+        on_delete=models.CASCADE,
+        related_name='pending_ai_replies',
+    )
+    trigger_message = models.ForeignKey(
+        Message,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='triggered_approvals',
+    )
+    draft_text = models.TextField()
+    edited_text = models.TextField(blank=True, default='')
+    reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default='Account requires human approval before sending AI replies',
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_ai_replies',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    sent_message = models.ForeignKey(
+        Message,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approval_records',
+    )
+    error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f"Approval #{self.pk} ({self.status}) -> {self.contact}"

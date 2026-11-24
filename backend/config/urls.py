@@ -4,8 +4,10 @@ from django.views.generic import RedirectView
 from django.contrib.auth import views as auth_views
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.throttling import ScopedRateThrottle
-from config.views import HubPortalView
-from meta_connector.views import AccountDetailView, ContactDetailView, DashboardIndexView, SettingsView, WebhookActionsView
+from meta_connector.views import (
+    AccountDetailView, ApprovalActionView, ApprovalQueueView, ContactDetailView,
+    DashboardIndexView, SettingsView, WebhookActionsView,
+)
 
 
 class ThrottledObtainAuthToken(ObtainAuthToken):
@@ -15,9 +17,6 @@ class ThrottledObtainAuthToken(ObtainAuthToken):
 
 
 urlpatterns = [
-    # Root workspace launcher / module hub
-    path('', HubPortalView.as_view(), name='hub-portal'),
-
     path('admin/', admin.site.urls),
     path('api/auth/token/', ThrottledObtainAuthToken.as_view(), name='api_token_auth'),
 
@@ -29,6 +28,8 @@ urlpatterns = [
     path('dashboard/accounts/<int:pk>/', AccountDetailView.as_view(), name='dashboard-account'),
     path('dashboard/insights/', RedirectView.as_view(pattern_name='dashboard', query_string=True), name='dashboard-insights'),
     path('dashboard/contacts/<int:pk>/', ContactDetailView.as_view(), name='dashboard-contact'),
+    path('dashboard/approvals/', ApprovalQueueView.as_view(), name='dashboard-approvals'),
+    path('dashboard/approvals/<int:pk>/action/', ApprovalActionView.as_view(), name='dashboard-approval-action'),
     path('dashboard/', DashboardIndexView.as_view(), name='dashboard'),
 
     # CMS content is managed via Django Admin (/admin/cms/)
