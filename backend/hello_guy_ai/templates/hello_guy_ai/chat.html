@@ -1,104 +1,134 @@
-{% load static %}<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hello Guy AI</title>
-<link rel="stylesheet" href="{% static 'hello_guy_ai/chat.css' %}">
-</head>
-<body>
-<aside class="sidebar" id="sidebar" aria-label="Agents and conversations">
-  <div class="brand">
-    <span class="brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2zm7 11l.9 2.6 2.6.9-2.6.9L19 20l-.9-2.6-2.6-.9 2.6-.9L19 13z"/></svg>
-    </span>
-    Hello Guy AI
-  </div>
-  <button id="new" class="new-chat" type="button">
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-    New chat
-  </button>
-  <div class="side-label">Agents</div>
-  <nav id="agents" class="agents" aria-label="Agents"></nav>
-  <div class="side-label">Recent chats</div>
-  <nav id="threads" aria-label="Conversations"></nav>
-  <div class="side-foot">
-    <span class="side-user">{{ user.get_full_name|default:user.get_username }}</span>
-    {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin ↗</a>{% endif %}
-  </div>
-</aside>
+{% extends "base.html" %}
+{% load static %}
+{% block title %}AI Chat · Hello Guy AI{% endblock %}
 
-<main>
-  <header class="topbar">
-    <button class="menu-btn" id="menu" type="button" aria-label="Open sidebar" aria-controls="sidebar">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-    </button>
-    <div class="top-title">
-      <h1 id="title">New chat</h1>
-      <span id="agent-pill" class="agent-pill"></span>
-    </div>
-    <button id="sched-btn" class="ghost-btn" type="button" aria-controls="sched" aria-expanded="false">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      <span id="sched-label">Scheduled</span>
-    </button>
-    <button id="notif-btn" class="ghost-btn" type="button" aria-controls="notif" aria-expanded="false">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-      <span id="notif-label">Notifications</span>
-    </button>
-    <button id="info-btn" class="ghost-btn" type="button" aria-controls="info" aria-expanded="false">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
-      <span>Agent details</span>
-    </button>
-  </header>
+{% block head %}
+<link rel="stylesheet" href="{% static 'hello_guy_ai/chat.css' %}?v=4">
+{% endblock %}
 
-  <div class="content">
-    <div id="messages" aria-live="polite"></div>
-    <aside id="sched" class="info-panel" aria-label="Scheduled reminders and tasks" hidden>
-      <div class="info-head">
-        <h2>Scheduled</h2>
-        <button id="sched-close" class="hg-act" type="button" aria-label="Close scheduled list">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <p class="info-desc">Reminders and recurring tasks. Ask the assistant to add or change one.</p>
-      <ul id="sched-list" class="info-tools"></ul>
-    </aside>
-    <aside id="notif" class="info-panel" aria-label="Notifications" hidden>
-      <div class="info-head">
-        <h2>Notifications</h2>
-        <button id="notif-close" class="hg-act" type="button" aria-label="Close notifications">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <ul id="notif-list" class="info-tools"></ul>
-    </aside>
-    <aside id="info" class="info-panel" aria-label="Agent details" hidden>
-      <div class="info-head">
-        <h2 id="info-name"></h2>
-        <button id="info-close" class="hg-act" type="button" aria-label="Close agent details">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <p id="info-desc" class="info-desc"></p>
-      <dl class="info-meta">
-        <dt>Model</dt><dd id="info-model"></dd>
-      </dl>
-      <h3 class="info-sub">Tools <span id="info-count"></span></h3>
-      <ul id="info-tools" class="info-tools"></ul>
-    </aside>
-  </div>
+{% block sidebar_brand %}
+<a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-2.5">
+    <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+    <span class="font-display font-bold text-[15px] text-ink">Hello Guy AI</span>
+</a>
+{% endblock %}
 
-  <div class="composer-wrap">
-    <form id="composer">
-      <textarea id="input" rows="1" placeholder="Message the agent…" maxlength="8000" aria-label="Message"></textarea>
-      <button id="send" type="submit" aria-label="Send message" title="Send">
-        <svg class="i-send" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-        <svg class="i-stop" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
-      </button>
-    </form>
-    <p class="hint">Enter to send · Shift + Enter for a new line · Actions that change data always ask for your approval</p>
-  </div>
-</main>
+{% block nav_aria_label %}Hello Guy AI{% endblock %}
+
+{% block sidebar_nav %}
+<div class="caps px-3 pt-1 pb-1">Monitoring</div>
+{% if user.is_staff %}
+<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-chart-line w-4 text-center shrink-0"></i> AI Analytics
+</a>
+{% endif %}
+<a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg bg-accent/10 text-accent font-semibold">
+    <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> AI Chat
+</a>
+
+<div class="caps px-3 pt-3 pb-1">Workspace</div>
+<button id="sched-btn" type="button" aria-controls="sched" aria-expanded="false" class="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors text-left">
+    <i class="fa-regular fa-clock w-4 text-center shrink-0"></i>
+    <span id="sched-label" class="truncate">Scheduled</span>
+</button>
+<button id="notif-btn" type="button" aria-controls="notif" aria-expanded="false" class="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors text-left">
+    <i class="fa-regular fa-bell w-4 text-center shrink-0"></i>
+    <span id="notif-label" class="truncate">Notifications</span>
+</button>
+<button id="info-btn" type="button" aria-controls="info" aria-expanded="false" class="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors text-left">
+    <i class="fa-solid fa-circle-info w-4 text-center shrink-0"></i>
+    <span class="truncate">Agent details</span>
+</button>
+
+<div class="caps px-3 pt-3 pb-1">Agents</div>
+<nav id="agents" class="agents" aria-label="Agents"></nav>
+{% endblock %}
+
+{% block sidebar_system %}
+{% if user.is_staff %}
+<div class="border-t border-line/70 px-3 py-2.5 flex flex-col gap-0.5 text-[13.5px]">
+    <div class="caps px-3 pb-1">Admin</div>
+    <a href="/admin/hello_guy_ai/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+        <i class="fa-solid fa-database w-4 text-center shrink-0"></i> AI Models &amp; Data
+    </a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block user_role_label %}{% if user.is_superuser %}Superuser{% elif user.is_staff %}Staff{% else %}Member{% endif %}{% endblock %}
+
+{% block content %}
+<div class="grid lg:grid-cols-[minmax(0,1fr)_280px] gap-4 h-[calc(100vh-8.5rem)] min-h-[540px]">
+    <!-- Main Chat Card -->
+    <section class="card flex flex-col min-w-0 min-h-0 overflow-hidden">
+        <div class="px-4 py-3 border-b border-line flex items-center justify-between gap-3 shrink-0 bg-surface">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <h1 id="title" class="font-display font-semibold text-[15px] text-ink truncate">New chat</h1>
+                <span id="agent-pill" class="agent-pill"></span>
+            </div>
+            <button id="new" class="btn btn-primary btn-sm shrink-0" type="button">
+                <i class="fa-solid fa-plus text-[11px]"></i> New chat
+            </button>
+        </div>
+
+        <div class="content flex-1 min-h-0">
+            <div id="messages" aria-live="polite"></div>
+            <aside id="sched" class="info-panel" aria-label="Scheduled reminders and tasks" hidden>
+                <div class="info-head">
+                    <h2>Scheduled</h2>
+                    <button id="sched-close" class="hg-act" type="button" aria-label="Close scheduled list">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                    </button>
+                </div>
+                <p class="info-desc">Reminders and recurring tasks. Ask the assistant to add or change one.</p>
+                <ul id="sched-list" class="info-tools"></ul>
+            </aside>
+            <aside id="notif" class="info-panel" aria-label="Notifications" hidden>
+                <div class="info-head">
+                    <h2>Notifications</h2>
+                    <button id="notif-close" class="hg-act" type="button" aria-label="Close notifications">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                    </button>
+                </div>
+                <ul id="notif-list" class="info-tools"></ul>
+            </aside>
+            <aside id="info" class="info-panel" aria-label="Agent details" hidden>
+                <div class="info-head">
+                    <h2 id="info-name"></h2>
+                    <button id="info-close" class="hg-act" type="button" aria-label="Close agent details">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                    </button>
+                </div>
+                <p id="info-desc" class="info-desc"></p>
+                <dl class="info-meta">
+                    <dt>Model</dt><dd id="info-model"></dd>
+                </dl>
+                <h3 class="info-sub">Tools <span id="info-count"></span></h3>
+                <ul id="info-tools" class="info-tools"></ul>
+            </aside>
+        </div>
+
+        <div class="composer-wrap shrink-0">
+            <form id="composer">
+                <textarea id="input" rows="1" placeholder="Message the agent…" maxlength="8000" aria-label="Message"></textarea>
+                <button id="send" type="submit" aria-label="Send message" title="Send">
+                    <svg class="i-send" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                    <svg class="i-stop" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+                </button>
+            </form>
+            <p class="hint">Enter to send · Shift + Enter for a new line · Actions that change data always ask for your approval</p>
+        </div>
+    </section>
+
+    <!-- Right Side: Recent Chat History -->
+    <aside class="card flex flex-col min-h-0 overflow-hidden" aria-label="Recent chat history">
+        <div class="px-4 py-3 border-b border-line flex items-center justify-between shrink-0">
+            <span class="caps">Chat History</span>
+            <i class="fa-regular fa-clock text-muted text-xs"></i>
+        </div>
+        <nav id="threads" class="flex-1 overflow-y-auto p-2" aria-label="Conversations"></nav>
+    </aside>
+</div>
 
 <script src="{% static 'hello_guy_ai/markdown.js' %}"></script>
 <script src="{% static 'hello_guy_ai/client.js' %}"></script>
@@ -403,7 +433,7 @@
   function closeNav() { document.body.classList.remove("nav-open"); }
 
   $("new").onclick = () => { if (view.isBusy()) return; closeNav(); openThread(null); loadThreads(); $("input").focus(); };
-  $("menu").onclick = () => document.body.classList.toggle("nav-open");
+  if ($("menu")) $("menu").onclick = () => document.body.classList.toggle("nav-open");
   document.body.addEventListener("click", (e) => { if (e.target === document.body) closeNav(); }); // tap on the dimmed overlay
   $("info-btn").onclick = () => toggleInfo();
   $("info-close").onclick = () => toggleInfo(false);
@@ -435,5 +465,4 @@
   $("input").focus();
 })();
 </script>
-</body>
-</html>
+{% endblock %}

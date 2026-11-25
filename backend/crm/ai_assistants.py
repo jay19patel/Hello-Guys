@@ -29,15 +29,14 @@ class SalesAssistant(StaffOnly, AIAssistant):
         "- Rate each opportunity's priority (High/Medium/Low) from budget, urgency and fit, and say why in one line.\n"
         "- Draft reply emails as text for the user to send; you cannot send email yourself.\n"
         "- Only call update_opportunity_status when the user says so (e.g. the reply was sent); it needs approval.\n"
-        "- list_customers and upcoming_meetings answer questions about customers and the schedule.\n"
+        "- list_customers answers questions about customers.\n"
         "- Customers' details are personal data: never repeat them outside this conversation.\n" + STYLE
     )
     suggestions = [
         "Show open opportunities",
         "Prioritise this month's opportunities",
         "Draft a reply to the latest enquiry",
-        "What meetings do I have this week?",
+        "Which customers have open opportunities?",
     ]
     temperature = 0.3
-    builtin_tools = ["list_opportunities", "get_opportunity", "update_opportunity_status", "list_customers",
-                     "upcoming_meetings"]
+    builtin_tools = ["list_opportunities", "get_opportunity", "update_opportunity_status", "list_customers"]
