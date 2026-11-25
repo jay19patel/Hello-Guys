@@ -164,13 +164,22 @@ def list_customers(query: str = "", limit: int = 10) -> list[dict]:
 
 @tool
 def upcoming_meetings(limit: int = 10) -> list[dict]:
-    """Scheduled meetings from now on, soonest first, with the customer and Google Meet link."""
+    """Scheduled Hello Guy Meet rooms from now on, soonest first."""
     from django.utils import timezone
+    from hello_guy_meet.models import MeetRoom
 
-    _require("view", Meeting)
-    qs = Meeting.objects.filter(status=Meeting.Status.SCHEDULED, start_at__gte=timezone.now())
+    _require("view", Opportunity)
+    qs = MeetRoom.objects.filter(
+        status__in=[MeetRoom.Status.SCHEDULED, MeetRoom.Status.LIVE],
+        scheduled_start__gte=timezone.now(),
+    ).order_by("scheduled_start")
     return [
-        {"title": m.title, "start_at": m.start_at, "end_at": m.end_at, "with": str(m.customer),
-         "meet_url": m.meet_url}
-        for m in qs.select_related("customer")[: _limit(limit)]
+        {
+            "title": r.title,
+            "start_at": r.scheduled_start,
+            "end_at": r.scheduled_end,
+            "room_code": r.room_code,
+            "meet_url": f"/meet/room/{r.room_code}/",
+        }
+        for r in qs[: _limit(limit)]
     ]

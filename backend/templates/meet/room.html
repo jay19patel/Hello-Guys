@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ room.title }} · Hello Guy Meet</title>
+    {% include "components/_theme_head.html" %}
+</head>
+<body class="bg-bg text-ink min-h-screen flex flex-col antialiased"
+      x-data="helloGuyMeet()"
+      x-init="init()">
+    {{ meet_config|json_script:"meet-config" }}
+    <input type="hidden" id="meet-csrf" value="{{ csrf_token }}">
+
+    <!-- Top Room Header -->
+    <header class="h-14 border-b border-line bg-surface/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shrink-0"><i class="fa-solid fa-video"></i></span>
+            <div class="min-w-0">
+                <h1 class="font-display font-bold text-[15px] text-ink truncate">{{ room.title }}</h1>
+                <p class="text-[11.5px] text-muted font-mono">{{ room.room_code }}</p>
+            </div>
+            <span class="pill" :class="signalConnected ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn'" x-text="signalConnected ? 'WebRTC Live' : 'Connecting…'"></span>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+            <button type="button" @click="copyInvite()" class="btn btn-ghost btn-sm">
+                <i class="fa-regular fa-copy"></i>
+                <span class="hidden sm:inline" x-text="copied ? 'Copied!' : 'Copy Invite'"></span>
+            </button>
+            {% if is_host %}
+            <a href="{% url 'meet:dashboard' %}" class="btn btn-ghost btn-sm hidden sm:inline-flex">Rooms</a>
+            {% endif %}
+        </div>
+    </header>
+
+    <!-- Mobile / Insecure Context & Autoplay Alerts -->
+    <div x-show="mediaWarning || audioBlocked" x-cloak class="px-4 sm:px-6 py-2 bg-warn/15 border-b border-warn/30 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-ink">
+        <span x-show="mediaWarning" x-text="mediaWarning"></span>
+        <button x-show="audioBlocked" type="button" @click="unlockAudio()" class="btn btn-primary btn-sm ml-auto">
+            <i class="fa-solid fa-volume-high"></i> Tap to Enable Sound
+        </button>
+    </div>
+
+    <!-- Main Stage + Transcript Sidebar -->
+    <main class="flex-1 grid lg:grid-cols-[minmax(0,1fr)_340px] min-h-0">
+        <!-- Video / Audio Grid -->
+        <div class="flex flex-col justify-between p-4 sm:p-6 gap-4 min-h-[70vh]">
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 flex-1 content-center" id="videoGrid">
+                <!-- Local Video Tile -->
+                <div class="card overflow-hidden relative aspect-video bg-slate-950 flex items-center justify-center">
+                    <video id="localVideo" autoplay muted playsinline class="w-full h-full object-cover" :class="{ 'hidden': videoOff }"></video>
+                    <div x-show="videoOff" class="flex flex-col items-center gap-2 text-slate-300">
+                        <span class="w-14 h-14 rounded-full bg-accent/20 text-accent flex items-center justify-center font-display font-bold text-lg" x-text="displayName.slice(0,2).toUpperCase()"></span>
+                        <span class="text-xs font-medium" x-text="displayName + ' (You)'"></span>
+                    </div>
+                    <div class="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-black/60 text-white text-[12px] font-medium flex items-center gap-1.5 backdrop-blur-xs">
+                        <i class="fa-solid text-[10px]" :class="micMuted ? 'fa-microphone-slash text-bad' : 'fa-microphone text-ok'"></i>
+                        <span x-text="displayName + ' (You)'"></span>
+                    </div>
+                </div>
+
+                <!-- AI Voice Assistant Tile -->
+                <div x-show="aiActive" x-transition class="card overflow-hidden relative aspect-video bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 border-accent/40 flex flex-col items-center justify-center gap-2.5 p-4 text-center">
+                    <span class="w-14 h-14 rounded-2xl bg-accent/20 text-accent border border-accent/40 flex items-center justify-center text-2xl" :class="{ 'animate-pulse': aiConnected }">
+                        <i class="fa-solid fa-robot"></i>
+                    </span>
+                    <div>
+                        <p class="font-display font-semibold text-white text-[14px]" x-text="botName"></p>
+                        <p class="text-[11.5px] text-slate-300" x-text="aiConnected ? 'Pipecat AI Listening' : 'Connecting AI…'"></p>
+                    </div>
+                </div>
+
+                <!-- Remote WebRTC Peer Tiles -->
+                <template x-for="peer in remotePeers" :key="peer.peer_id">
+                    <div class="card overflow-hidden relative aspect-video bg-slate-950 flex items-center justify-center">
+                        <video :id="'remote-video-' + peer.peer_id" autoplay playsinline webkit-playsinline muted class="w-full h-full object-cover"></video>
+                        <audio :id="'remote-audio-' + peer.peer_id" autoplay playsinline></audio>
+                        <div class="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-black/60 text-white text-[12px] font-medium flex items-center gap-1.5 backdrop-blur-xs">
+                            <i class="fa-solid text-[10px]" :class="peer.muted ? 'fa-microphone-slash text-bad' : 'fa-microphone text-ok'"></i>
+                            <span x-text="peer.name"></span>
+                            <span class="text-[10px] opacity-75" x-text="peer.hasAudio ? '· Audio OK' : '· No Mic'"></span>
+                            <span class="text-[10px] opacity-75" x-show="peer.iceState && peer.iceState !== 'connected' && peer.iceState !== 'completed'" x-text="'(' + peer.iceState + ')'"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Controls Bar -->
+            <div class="card px-4 py-3 flex flex-wrap items-center justify-center gap-2.5 self-center">
+                <button type="button" @click="toggleMic()" class="btn btn-sm" :class="micMuted ? 'bg-bad/15 text-bad border border-bad/30' : 'btn-ghost'">
+                    <i class="fa-solid" :class="micMuted ? 'fa-microphone-slash' : 'fa-microphone'"></i>
+                    <span x-text="micMuted ? 'Unmute' : 'Mute'"></span>
+                </button>
+                <button type="button" @click="toggleCam()" class="btn btn-sm" :class="videoOff ? 'bg-bad/15 text-bad border border-bad/30' : 'btn-ghost'">
+                    <i class="fa-solid" :class="videoOff ? 'fa-video-slash' : 'fa-video'"></i>
+                    <span x-text="videoOff ? 'Start Video' : 'Stop Video'"></span>
+                </button>
+                <button type="button" @click="toggleScreenShare()" class="btn btn-ghost btn-sm">
+                    <i class="fa-solid fa-desktop"></i>
+                    <span x-text="sharing ? 'Stop Share' : 'Share Screen'"></span>
+                </button>
+                {% if is_host %}
+                <button type="button" @click="toggleAI()" class="btn btn-sm" :class="aiActive ? 'bg-accent/15 text-accent border border-accent/30' : 'btn-ghost'">
+                    <i class="fa-solid fa-robot"></i>
+                    <span x-text="aiActive ? 'AI On' : 'Add AI'"></span>
+                </button>
+                <button type="button" @click="endMeeting()" :disabled="ending" class="btn btn-sm bg-bad text-white hover:bg-bad/90">
+                    <i class="fa-solid" :class="ending ? 'fa-spinner fa-spin' : 'fa-phone-slash'"></i>
+                    <span x-text="ending ? 'Saving MoM…' : 'End & Save MoM'"></span>
+                </button>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Live Chat & Transcript Sidebar -->
+        <aside class="border-t lg:border-t-0 lg:border-l border-line bg-surface flex flex-col h-[50vh] lg:h-[calc(100vh-3.5rem)]">
+            <div class="px-3 py-2.5 border-b border-line flex items-center justify-between gap-2">
+                <div class="grid grid-cols-2 gap-1 bg-subtle border border-line rounded-xl p-1 flex-1 text-[12.5px] font-medium">
+                    <button type="button" @click="sideTab = 'chat'; unreadChat = 0" class="h-7 rounded-lg flex items-center justify-center gap-1.5 transition-colors" :class="sideTab === 'chat' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
+                        <i class="fa-solid fa-comments text-[11px]"></i> Chat
+                        <span x-show="unreadChat > 0" x-text="unreadChat" class="pill bg-accent text-on-accent h-4 px-1.5 text-[10px]"></span>
+                    </button>
+                    <button type="button" x-show="aiActive" x-cloak @click="sideTab = 'transcript'" class="h-7 rounded-lg flex items-center justify-center gap-1.5 transition-colors" :class="sideTab === 'transcript' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
+                        <i class="fa-solid fa-robot text-[11px]"></i> AI &amp; Transcript
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab 1: Live Meeting Chat -->
+            <div x-show="sideTab === 'chat'" class="flex-1 flex flex-col min-h-0">
+                <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5 text-[13px]" id="chatFeed">
+                    <template x-for="(c, i) in chatMessages" :key="i">
+                        <div class="rounded-xl px-3 py-2 border bg-subtle/60 border-line">
+                            <div class="flex items-center justify-between gap-2 mb-0.5">
+                                <span class="text-[11px] font-semibold text-accent" x-text="c.sender"></span>
+                                <span class="text-[10.5px] text-muted" x-text="c.at"></span>
+                            </div>
+                            <p class="text-ink whitespace-pre-line" x-text="c.text"></p>
+                        </div>
+                    </template>
+                    <p x-show="!chatMessages.length" class="text-muted text-center py-8 text-[12.5px]">Send a live message to everyone in this meeting.</p>
+                </div>
+                <form @submit.prevent="sendLiveChat()" class="p-3 border-t border-line flex gap-2">
+                    <input type="text" x-model="liveChatInput" placeholder="Message participants…"
+                           class="flex-1 rounded-xl border border-line bg-bg px-3 py-2 text-[13px] focus:outline-none focus:border-accent">
+                    <button type="submit" class="btn btn-primary btn-sm px-3"><i class="fa-solid fa-paper-plane"></i></button>
+                </form>
+            </div>
+
+            <!-- Tab 2: AI & Live Transcript -->
+            <div x-show="sideTab === 'transcript'" x-cloak class="flex-1 flex flex-col min-h-0">
+                <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5 text-[13px]" id="transcriptFeed">
+                    <template x-for="(t, i) in transcript" :key="i">
+                        <div class="rounded-xl px-3 py-2 border" :class="t.role === 'assistant' ? 'bg-accent/10 border-accent/20' : 'bg-subtle/60 border-line'">
+                            <p class="text-[11px] font-semibold mb-0.5" :class="t.role === 'assistant' ? 'text-accent' : 'text-muted'" x-text="t.speaker"></p>
+                            <p class="text-ink whitespace-pre-line" x-text="t.text"></p>
+                        </div>
+                    </template>
+                    <p x-show="!transcript.length" class="text-muted text-center py-8 text-[12.5px]">Speak or ask the AI assistant below.</p>
+                </div>
+                <form @submit.prevent="sendTextTurn()" class="p-3 border-t border-line flex gap-2">
+                    <input type="text" x-model="chatInput" placeholder="Ask AI or add note to transcript…"
+                           class="flex-1 rounded-xl border border-line bg-bg px-3 py-2 text-[13px] focus:outline-none focus:border-accent">
+                    <button type="submit" class="btn btn-primary btn-sm px-3"><i class="fa-solid fa-paper-plane"></i></button>
+                </form>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Guest Pre-Join Name Modal -->
+    <div x-show="!joined" x-cloak class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <form @submit.prevent="joinAsGuest()" class="card max-w-md w-full p-6 flex flex-col gap-4">
+            <div class="flex items-center gap-3">
+                <span class="w-10 h-10 rounded-xl bg-accent text-on-accent flex items-center justify-center shrink-0"><i class="fa-solid fa-video"></i></span>
+                <div class="min-w-0">
+                    <h2 class="font-display text-lg font-bold text-ink truncate">{{ room.title }}</h2>
+                    <p class="text-[12px] text-muted font-mono">{{ room.room_code }}</p>
+                </div>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label for="guestNameInput" class="text-[13px] font-medium text-ink">Your Name</label>
+                <input id="guestNameInput" type="text" x-model="guestNameInput" required maxlength="60" autofocus
+                       placeholder="Enter your name (e.g. Rahul)"
+                       class="rounded-xl border border-line bg-bg px-3.5 py-2.5 text-[14px] text-ink focus:outline-none focus:border-accent">
+                <p class="text-[12px] text-muted">This name will be shown to everyone in the meeting.</p>
+            </div>
+            <button type="submit" class="btn btn-primary w-full justify-center">
+                <i class="fa-solid fa-arrow-right-to-bracket"></i> Join Meeting
+            </button>
+        </form>
+    </div>
+
+    <!-- MoM Result Modal -->
+    <div x-show="momSummary" x-cloak class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="card max-w-lg w-full p-6 flex flex-col gap-4">
+            <h2 class="font-display text-lg font-bold text-ink">Meeting Ended · Minutes of Meeting</h2>
+            <p class="text-[13.5px] text-ink bg-subtle/60 border border-line rounded-xl p-4 whitespace-pre-line" x-text="momSummary"></p>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <a href="{% url 'meet:mom-list' %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-clipboard-list text-accent"></i> View MoM Records</a>
+                <a href="{% url 'meet:dashboard' %}" class="btn btn-primary btn-sm ml-auto">Back to Meet Rooms</a>
+            </div>
+        </div>
+    </div>
+
+<script>
+function helloGuyMeet() {
+    const cfg = JSON.parse(document.getElementById('meet-config').textContent);
+    cfg.csrf = document.getElementById('meet-csrf')?.value || '';
+    return {
+        roomCode: cfg.roomCode,
+        displayName: cfg.displayName,
+        joined: !cfg.needsName,
+        guestNameInput: (localStorage.getItem('meet_guest_name') || ''),
+        isHost: cfg.isHost,
+        aiActive: cfg.aiEnabled,
+        botName: cfg.botName,
+        wsSignalUrl: cfg.wsSignalUrl,
+        wsAiUrl: cfg.wsAiUrl,
+        iceServers: cfg.iceServers,
+        toggleAiUrl: cfg.toggleAiUrl,
+        endUrl: cfg.endUrl,
+        csrf: cfg.csrf,
+
+        localStream: null,
+        peers: {},
+        remotePeers: [],
+        signalWs: null,
+        aiWs: null,
+        signalConnected: false,
+        aiConnected: false,
+        micMuted: false,
+        videoOff: false,
+        sharing: false,
+        copied: false,
+        ending: false,
+        audioBlocked: false,
+        mediaWarning: '',
+        sideTab: 'chat',
+        unreadChat: 0,
+        liveChatInput: '',
+        chatMessages: cfg.initialChat || [],
+        chatInput: '',
+        transcript: cfg.initialTranscript || [],
+        momSummary: '',
+        driveUrl: '',
+
+        resolveWsUrl(rawUrl) {
+            if (rawUrl && rawUrl.startsWith('/')) {
+                const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                return `${proto}//${window.location.host}${rawUrl}`;
+            }
+            try {
+                const u = new URL(rawUrl);
+                if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+                    u.hostname = window.location.hostname || u.hostname;
+                }
+                if (window.location.protocol === 'https:' && u.protocol === 'ws:') {
+                    u.protocol = 'wss:';
+                }
+                return u.toString();
+            } catch (e) {
+                return rawUrl;
+            }
+        },
+
+        async init() {
+            const unlock = () => { this.unlockAudio(); };
+            document.addEventListener('click', unlock, { passive: true });
+            document.addEventListener('touchstart', unlock, { passive: true });
+            window.addEventListener('beforeunload', () => {
+                this.ending = true;
+                this.signalWs?.close();
+                this.aiWs?.close();
+                Object.values(this.peers).forEach(({ pc }) => pc.close());
+            });
+            if (this.joined) {
+                await this.startRoom();
+            }
+        },
+
+        async joinAsGuest() {
+            const name = (this.guestNameInput || '').trim();
+            if (!name) return;
+            this.displayName = name.slice(0, 60);
+            try { localStorage.setItem('meet_guest_name', this.displayName); } catch (e) {}
+            this.joined = true;
+            await this.startRoom();
+        },
+
+        async startRoom() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                this.micMuted = true;
+                this.videoOff = true;
+                this.mediaWarning = 'Mic/Camera blocked on HTTP over Wi-Fi. Use HTTPS (e.g. ngrok/cloudflared) or localhost for mobile audio/video.';
+            } else {
+                try {
+                    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+                    document.getElementById('localVideo').srcObject = this.localStream;
+                } catch (e) {
+                    try {
+                        this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                        this.videoOff = true;
+                    } catch (err) {
+                        this.micMuted = true;
+                        this.videoOff = true;
+                        this.mediaWarning = 'Could not access microphone/camera. Check browser permissions.';
+                    }
+                }
+            }
+            this.connectSignal();
+            if (this.aiActive) this.connectAI();
+        },
+
+        connectSignal() {
+            if (this.signalWs && (this.signalWs.readyState === WebSocket.OPEN || this.signalWs.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+            const base = this.resolveWsUrl(this.wsSignalUrl);
+            const url = `${base}?name=${encodeURIComponent(this.displayName)}&host=${this.isHost ? '1' : '0'}`;
+            this.signalWs = new WebSocket(url);
+            this.signalWs.onopen = () => { this.signalConnected = true; };
+            this.signalWs.onclose = () => {
+                this.signalConnected = false;
+                if (!this.ending && !this.momSummary) {
+                    setTimeout(() => this.connectSignal(), 3000);
+                }
+            };
+            this.signalWs.onmessage = async (ev) => {
+                const msg = JSON.parse(ev.data);
+                if (msg.type === 'welcome') {
+                    for (const p of msg.peers) await this.createPeer(p.peer_id, p.name, true);
+                } else if (msg.type === 'peer-joined') {
+                    await this.createPeer(msg.peer_id, msg.name, false);
+                } else if (msg.type === 'peer-left') {
+                    this.removePeer(msg.peer_id);
+                } else if (msg.type === 'offer') {
+                    await this.handleOffer(msg);
+                } else if (msg.type === 'answer') {
+                    const entry = this.peers[msg.sender];
+                    if (entry) {
+                        await entry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+                        await this.flushIceQueue(entry);
+                    }
+                } else if (msg.type === 'ice-candidate') {
+                    const entry = this.peers[msg.sender];
+                    if (entry && msg.candidate) {
+                        if (entry.pc.remoteDescription) {
+                            await entry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                        } else {
+                            entry.pendingIce.push(msg.candidate);
+                        }
+                    }
+                } else if (msg.type === 'mute-state') {
+                    const entry = this.peers[msg.sender];
+                    if (entry) {
+                        entry.muted = !!msg.muted;
+                        this.syncRemotePeers();
+                    }
+                } else if (msg.type === 'ai-state') {
+                    this.aiActive = !!msg.enabled;
+                    if (!this.aiActive && this.sideTab === 'transcript') this.sideTab = 'chat';
+                } else if (msg.type === 'transcript') {
+                    this.transcript.push({ role: msg.role || 'user', speaker: msg.speaker, text: msg.text });
+                } else if (msg.type === 'chat') {
+                    this.chatMessages.push({ sender: msg.sender || msg.sender_name, text: msg.text, at: msg.at || '' });
+                    if (this.sideTab !== 'chat') this.unreadChat++;
+                }
+            };
+        },
+
+        async flushIceQueue(entry) {
+            while (entry.pendingIce.length) {
+                const c = entry.pendingIce.shift();
+                try { await entry.pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
+            }
+        },
+
+        syncRemotePeers() {
+            this.remotePeers = Object.entries(this.peers).map(([id, v]) => ({
+                peer_id: id,
+                name: v.name,
+                muted: !!v.muted,
+                hasAudio: !!v.hasAudio,
+                iceState: v.iceState || 'connecting',
+            }));
+        },
+
+        unlockAudio() {
+            this.audioBlocked = false;
+            this.remotePeers.forEach(p => {
+                const aud = document.getElementById('remote-audio-' + p.peer_id);
+                const vid = document.getElementById('remote-video-' + p.peer_id);
+                if (aud && aud.srcObject) {
+                    aud.muted = false;
+                    aud.play().catch(() => { this.audioBlocked = true; });
+                }
+                if (vid && vid.srcObject) vid.play().catch(() => {});
+            });
+        },
+
+        async createPeer(peerId, name, initiator) {
+            if (this.peers[peerId]) return this.peers[peerId].pc;
+            const pc = new RTCPeerConnection({ iceServers: this.iceServers });
+            this.peers[peerId] = {
+                pc,
+                name,
+                muted: false,
+                hasAudio: false,
+                iceState: 'connecting',
+                pendingIce: [],
+                videoStream: new MediaStream(),
+                audioStream: new MediaStream(),
+            };
+            this.syncRemotePeers();
+
+            pc.oniceconnectionstatechange = () => {
+                if (this.peers[peerId]) {
+                    this.peers[peerId].iceState = pc.iceConnectionState;
+                    this.syncRemotePeers();
+                }
+            };
+
+            const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
+            const videoTracks = this.localStream ? this.localStream.getVideoTracks() : [];
+            audioTracks.forEach(t => pc.addTrack(t, this.localStream));
+            videoTracks.forEach(t => pc.addTrack(t, this.localStream));
+            if (!audioTracks.length) pc.addTransceiver('audio', { direction: 'recvonly' });
+            if (!videoTracks.length) pc.addTransceiver('video', { direction: 'recvonly' });
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate && this.signalWs?.readyState === WebSocket.OPEN) {
+                    this.signalWs.send(JSON.stringify({ type: 'ice-candidate', target: peerId, candidate: e.candidate }));
+                }
+            };
+            pc.ontrack = (e) => {
+                const entry = this.peers[peerId];
+                if (!entry || !e.track) return;
+                if (e.track.kind === 'audio') {
+                    entry.audioStream = new MediaStream([e.track]);
+                    entry.hasAudio = true;
+                    this.syncRemotePeers();
+                } else if (e.track.kind === 'video') {
+                    entry.videoStream = new MediaStream([e.track]);
+                }
+                this.$nextTick(() => {
+                    const attach = () => {
+                        const vid = document.getElementById('remote-video-' + peerId);
+                        if (vid && entry.videoStream.getVideoTracks().length && vid.srcObject !== entry.videoStream) {
+                            vid.srcObject = entry.videoStream;
+                            vid.play().catch(() => {});
+                        }
+                        const aud = document.getElementById('remote-audio-' + peerId);
+                        if (aud && entry.audioStream.getAudioTracks().length) {
+                            if (aud.srcObject !== entry.audioStream) aud.srcObject = entry.audioStream;
+                            aud.muted = false;
+                            aud.play().catch(() => { this.audioBlocked = true; });
+                        }
+                    };
+                    attach();
+                    setTimeout(attach, 80);
+                });
+            };
+            if (initiator) {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                this.signalWs.send(JSON.stringify({ type: 'offer', target: peerId, sdp: offer }));
+            }
+            return pc;
+        },
+
+        async handleOffer(msg) {
+            const pc = await this.createPeer(msg.sender, msg.sender_name || 'Guest', false);
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+            await this.flushIceQueue(this.peers[msg.sender]);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            this.signalWs.send(JSON.stringify({ type: 'answer', target: msg.sender, sdp: answer }));
+        },
+
+        removePeer(peerId) {
+            this.peers[peerId]?.pc.close();
+            delete this.peers[peerId];
+            this.syncRemotePeers();
+        },
+
+        connectAI() {
+            if (this.aiWs && this.aiWs.readyState === WebSocket.OPEN) return;
+            this.aiWs = new WebSocket(this.resolveWsUrl(this.wsAiUrl));
+            this.aiWs.onopen = () => { this.aiConnected = true; };
+            this.aiWs.onclose = () => { this.aiConnected = false; };
+            this.aiWs.onmessage = (ev) => {
+                if (typeof ev.data === 'string') {
+                    const data = JSON.parse(ev.data);
+                    if (data.type === 'ai-reply') {
+                        this.transcript.push({ role: 'assistant', speaker: data.speaker || this.botName, text: data.text });
+                    }
+                }
+            };
+        },
+
+        toggleAI() {
+            this.aiActive = !this.aiActive;
+            if (this.aiActive) this.connectAI();
+            else {
+                this.aiWs?.close();
+                this.aiConnected = false;
+                if (this.sideTab === 'transcript') this.sideTab = 'chat';
+            }
+            if (this.signalWs?.readyState === WebSocket.OPEN) {
+                this.signalWs.send(JSON.stringify({ type: 'ai-state', enabled: this.aiActive }));
+            }
+            if (this.isHost && this.toggleAiUrl) {
+                fetch(this.toggleAiUrl, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': this.csrf },
+                }).catch(() => {});
+            }
+        },
+
+        sendLiveChat() {
+            const text = this.liveChatInput.trim();
+            if (!text) return;
+            this.liveChatInput = '';
+            const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            this.chatMessages.push({ sender: this.displayName, text, at });
+            if (this.signalWs?.readyState === WebSocket.OPEN) {
+                this.signalWs.send(JSON.stringify({ type: 'chat', text }));
+            }
+        },
+
+        sendTextTurn() {
+            const text = this.chatInput.trim();
+            if (!text) return;
+            this.chatInput = '';
+            this.transcript.push({ role: 'user', speaker: this.displayName, text });
+            if (this.signalWs?.readyState === WebSocket.OPEN) {
+                this.signalWs.send(JSON.stringify({ type: 'transcript', speaker: this.displayName, text }));
+            }
+            if (this.aiActive && this.aiWs?.readyState === WebSocket.OPEN) {
+                this.aiWs.send(JSON.stringify({ speaker: this.displayName, text }));
+            }
+        },
+
+        toggleMic() {
+            this.micMuted = !this.micMuted;
+            this.localStream?.getAudioTracks().forEach(t => { t.enabled = !this.micMuted; });
+            Object.values(this.peers).forEach(({ pc }) => {
+                pc.getSenders().forEach(s => {
+                    if (s.track?.kind === 'audio') s.track.enabled = !this.micMuted;
+                });
+            });
+            if (this.signalWs?.readyState === WebSocket.OPEN) {
+                this.signalWs.send(JSON.stringify({ type: 'mute-state', muted: this.micMuted }));
+            }
+        },
+
+        toggleCam() {
+            this.videoOff = !this.videoOff;
+            this.localStream?.getVideoTracks().forEach(t => { t.enabled = !this.videoOff; });
+            Object.values(this.peers).forEach(({ pc }) => {
+                pc.getSenders().forEach(s => {
+                    if (s.track?.kind === 'video') s.track.enabled = !this.videoOff;
+                });
+            });
+        },
+
+        async toggleScreenShare() {
+            if (this.sharing) { this.sharing = false; return; }
+            try {
+                const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                const track = screen.getVideoTracks()[0];
+                Object.values(this.peers).forEach(({ pc }) => {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) sender.replaceTrack(track);
+                });
+                document.getElementById('localVideo').srcObject = screen;
+                this.sharing = true;
+                this.videoOff = false;
+                track.onended = () => {
+                    this.sharing = false;
+                    if (this.localStream) document.getElementById('localVideo').srcObject = this.localStream;
+                };
+            } catch (e) {}
+        },
+
+        copyInvite() {
+            navigator.clipboard.writeText(window.location.href);
+            this.copied = true;
+            setTimeout(() => { this.copied = false; }, 1800);
+        },
+
+        async endMeeting() {
+            this.ending = true;
+            try {
+                const res = await fetch(this.endUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrf },
+                    body: JSON.stringify({ transcript: this.transcript }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.momSummary = data.call_summary;
+                    this.driveUrl = data.drive_transcript_url || '';
+                    this.signalWs?.close();
+                    this.aiWs?.close();
+                    this.localStream?.getTracks().forEach(t => t.stop());
+                }
+            } finally {
+                this.ending = false;
+            }
+        }
+    };
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+import calendar as pycal
+import json
+from datetime import date, timedelta
+
+from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
+from django.utils import timezone
+from django.views import View
+from django.views.generic import DetailView, ListView, TemplateView
+
+from hello_guy_meet import services
+from hello_guy_meet.forms import MeetRoomForm, MeetSettingsForm
+from hello_guy_meet.models import MeetMinutes, MeetRoom, MeetSettings
+
+
+class MeetStaffView(LoginRequiredMixin):
+    """Base view for authenticated Hello Guy Meet pages (independent of any other app)."""
+
+    def get_context_data(self, **kwargs):
+        user = self.request.user
+        is_admin = bool(user.is_superuser or user.is_staff)
+        return super().get_context_data(
+            meet_role="Admin" if is_admin else "Member",
+            can_edit=user.is_authenticated,
+            is_admin=is_admin,
+            **kwargs,
+        )
+
+
+class MeetDashboardView(MeetStaffView, ListView):
+    """Main Hello Guy Meet hub (/meet/): create rooms, copy invite links, join or review MoMs."""
+    template_name = "meet/dashboard.html"
+    context_object_name = "rooms"
+    paginate_by = 20
+
+    def get_queryset(self):
+        return MeetRoom.objects.select_related("host", "minutes").order_by("-created_at")
+
+    def get_context_data(self, **kwargs):
+        cfg = MeetSettings.get_solo()
+        initial = {"bot_name": cfg.default_bot_name, "ai_enabled": cfg.ai_auto_join_default}
+        kwargs.setdefault("form", MeetRoomForm(initial=initial))
+        return super().get_context_data(meet_settings=cfg, **kwargs)
+
+    def post(self, request):
+        form = MeetRoomForm(request.POST)
+        if not form.is_valid():
+            self.object_list = self.get_queryset()
+            return self.render_to_response(self.get_context_data(form=form))
+        room = services.create_meet_room(
+            title=form.cleaned_data["title"],
+            host=request.user,
+            scheduled_start=form.cleaned_data.get("scheduled_start"),
+            scheduled_end=form.cleaned_data.get("scheduled_end"),
+            ai_enabled=form.cleaned_data.get("ai_enabled", True),
+            bot_name=form.cleaned_data.get("bot_name", ""),
+            custom_prompt=form.cleaned_data.get("system_prompt", ""),
+        )
+        messages.success(request, f"Room '{room.title}' ({room.room_code}) created.")
+        return redirect("meet:room", room_code=room.room_code)
+
+
+class MeetCalendarView(MeetStaffView, TemplateView):
+    """Google Calendar-style Schedule & Agenda view (/meet/calendar/) for MeetRooms."""
+    template_name = "meet/calendar.html"
+
+    def get_context_data(self, **kwargs):
+        today = timezone.localdate()
+        try:
+            year = int(self.request.GET.get("year", today.year))
+            month = int(self.request.GET.get("month", today.month))
+            if not (1 <= month <= 12):
+                raise ValueError
+        except (TypeError, ValueError):
+            year, month = today.year, today.month
+
+        first_day = date(year, month, 1)
+        prev_month = (first_day - timedelta(days=1)).replace(day=1)
+        next_month = (first_day + timedelta(days=32)).replace(day=1)
+
+        cal = pycal.Calendar(firstweekday=6)
+        month_days = cal.monthdatescalendar(year, month)
+
+        events_by_day: dict[date, list[dict]] = {}
+        start_range = month_days[0][0]
+        end_range = month_days[-1][-1] + timedelta(days=1)
+
+        for r in MeetRoom.objects.filter(scheduled_start__date__gte=start_range, scheduled_start__date__lt=end_range).order_by("scheduled_start"):
+            d = timezone.localtime(r.scheduled_start).date()
+            events_by_day.setdefault(d, []).append({
+                "kind": "meet",
+                "title": r.title,
+                "time": timezone.localtime(r.scheduled_start).strftime("%H:%M"),
+                "url": reverse("meet:room", args=[r.room_code]),
+                "status": r.status,
+            })
+
+        weeks = [
+            [
+                {
+                    "date": d,
+                    "iso": d.isoformat(),
+                    "in_month": d.month == month,
+                    "is_today": d == today,
+                    "events": events_by_day.get(d, []),
+                }
+                for d in week
+            ]
+            for week in month_days
+        ]
+
+        cfg = MeetSettings.get_solo()
+        kwargs.setdefault("form", MeetRoomForm(initial={"bot_name": cfg.default_bot_name, "ai_enabled": cfg.ai_auto_join_default}))
+        return super().get_context_data(
+            year=year,
+            month=month,
+            month_label=first_day.strftime("%B %Y"),
+            prev_year=prev_month.year,
+            prev_month=prev_month.month,
+            next_year=next_month.year,
+            next_month=next_month.month,
+            weeks=weeks,
+            upcoming_rooms=MeetRoom.objects.filter(status__in=[MeetRoom.Status.SCHEDULED, MeetRoom.Status.LIVE]).order_by("scheduled_start", "-created_at")[:10],
+            **kwargs,
+        )
+
+    def post(self, request):
+        form = MeetRoomForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        room = services.create_meet_room(
+            title=form.cleaned_data["title"],
+            host=request.user,
+            scheduled_start=form.cleaned_data.get("scheduled_start"),
+            scheduled_end=form.cleaned_data.get("scheduled_end"),
+            ai_enabled=form.cleaned_data.get("ai_enabled", True),
+            bot_name=form.cleaned_data.get("bot_name", ""),
+            custom_prompt=form.cleaned_data.get("system_prompt", ""),
+        )
+        messages.success(request, f"Scheduled '{room.title}' ({room.room_code}).")
+        return redirect("meet:calendar")
+
+
+class MeetMinutesListView(MeetStaffView, ListView):
+    """Minutes of Meeting (MoM) table viewer (/meet/mom/)."""
+    template_name = "meet/mom_list.html"
+    context_object_name = "minutes_list"
+    paginate_by = 20
+
+    def get_queryset(self):
+        return MeetMinutes.objects.select_related("room", "created_by").order_by("-created_at")
+
+
+class MeetRoomView(DetailView):
+    """WebRTC Video/Audio & Pipecat AI Meeting Room (/meet/room/<room_code>/). Open to anyone with link."""
+    model = MeetRoom
+    slug_field = "room_code"
+    slug_url_kwarg = "room_code"
+    template_name = "meet/room.html"
+    context_object_name = "room"
+
+    def get_context_data(self, **kwargs):
+        room = self.object
+        cfg = MeetSettings.get_solo()
+        ws_base = (cfg.ws_base_url or "").strip().rstrip("/")
+        if ws_base in ("", "ws://localhost:8001", "ws://127.0.0.1:8001", "ws://localhost:8000", "ws://127.0.0.1:8000"):
+            ws_signal_url = f"/ws/meet/signal/{room.room_code}"
+            ws_ai_url = f"/ws/meet/ai/{room.room_code}"
+        else:
+            ws_signal_url = f"{ws_base}/ws/meet/signal/{room.room_code}"
+            ws_ai_url = f"{ws_base}/ws/meet/ai/{room.room_code}"
+        is_host = self.request.user.is_authenticated
+        display_name = (
+            self.request.GET.get("name")
+            or ((self.request.user.get_full_name() or self.request.user.username) if self.request.user.is_authenticated else "Guest")
+        )
+        meet_config = {
+            "roomCode": room.room_code,
+            "displayName": display_name,
+            "needsName": (not is_host) and (not bool(self.request.GET.get("name"))),
+            "isHost": is_host,
+            "aiEnabled": bool(room.ai_enabled),
+            "botName": room.bot_name,
+            "wsSignalUrl": ws_signal_url,
+            "wsAiUrl": ws_ai_url,
+            "iceServers": cfg.ice_servers or [],
+            "initialChat": room.chat_messages or [],
+            "initialTranscript": room.transcript or [],
+            "toggleAiUrl": reverse("meet:room-toggle-ai", args=[room.room_code]),
+            "endUrl": reverse("meet:room-end", args=[room.room_code]),
+        }
+        return super().get_context_data(
+            meet_config=meet_config,
+            is_host=is_host,
+            display_name=display_name,
+            meet_settings=cfg,
+            **kwargs,
+        )
+
+
+class MeetToggleAIView(MeetStaffView, View):
+    """POST /meet/api/rooms/<room_code>/toggle-ai/ — add/remove AI Assistant from Meeting Rooms."""
+    http_method_names = ["post"]
+
+    def post(self, request, room_code: str):
+        room = get_object_or_404(MeetRoom, room_code=room_code)
+        room.ai_enabled = not room.ai_enabled
+        room.save(update_fields=["ai_enabled", "updated_at"])
+        state = "added to" if room.ai_enabled else "removed from"
+        messages.success(request, f"AI Assistant {state} '{room.title}'.")
+        return redirect("meet:dashboard")
+
+
+class MeetEndAPIView(MeetStaffView, View):
+    """POST /meet/api/rooms/<room_code>/end/ — end meeting and save MoM to MeetMinutes table."""
+    http_method_names = ["post"]
+
+    def post(self, request, room_code: str):
+        room = get_object_or_404(MeetRoom, room_code=room_code)
+        transcript = None
+        if request.content_type and "application/json" in request.content_type:
+            try:
+                payload = json.loads(request.body.decode("utf-8") or "{}")
+                if isinstance(payload.get("transcript"), list):
+                    transcript = payload["transcript"]
+            except json.JSONDecodeError:
+                pass
+        minutes = services.finalize_room(room, transcript=transcript, user=request.user)
+        is_json = "application/json" in (request.content_type or "") or "application/json" in request.headers.get("Accept", "")
+        if not is_json:
+            messages.success(request, f"Ended '{room.title}' and saved MoM to database.")
+            return redirect("meet:mom-list")
+        return JsonResponse({
+            "ok": True,
+            "room_code": room.room_code,
+            "status": room.status,
+            "minutes_id": str(minutes.id),
+            "call_summary": minutes.summary,
+            "action_items": minutes.action_items,
+        })
+
+
+class MeetSettingsView(MeetStaffView, UserPassesTestMixin, TemplateView):
+    """Dedicated Settings page (/meet/settings/) for WebRTC ICE servers & Pipecat AI."""
+    template_name = "meet/settings.html"
+
+    def test_func(self):
+        return bool(self.request.user.is_superuser or self.request.user.is_staff)
+
+    def get_context_data(self, **kwargs):
+        cfg = MeetSettings.get_solo()
+        kwargs.setdefault("form", MeetSettingsForm(instance=cfg))
+        return super().get_context_data(cfg=cfg, **kwargs)
+
+    def post(self, request):
+        cfg = MeetSettings.get_solo()
+        form = MeetSettingsForm(request.POST, instance=cfg)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        form.save()
+        messages.success(request, "Hello Guy Meet settings saved.")
+        return redirect("meet:settings")

@@ -51,7 +51,7 @@ DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings}" "$ROOT/.venv
 W=$!
 "$PY" manage.py hello_guy_scheduler 2>&1 | sed -l 's/^/[scheduler] /' &
 S=$!
-"$PY" manage.py runserver "$PORT" 2>&1 | sed -l 's/^/[web] /' &
+"$ROOT/.venv/bin/uvicorn" hello_guy_meet.realtime_server:app --host 0.0.0.0 --port "$PORT" --reload 2>&1 | sed -l 's/^/[web] /' &
 R=$!
 "$PY" manage.py crm_google_sync 2>&1 | sed -l 's/^/[google] /' &
 G=$!

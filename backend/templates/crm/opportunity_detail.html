@@ -15,7 +15,7 @@
         </div>
     </div>
     {% if can_edit %}
-    <a href="{% url 'crm:meeting-create' %}?customer={{ customer.pk }}&amp;opportunity={{ opp.pk }}" class="btn btn-ghost"><i class="fa-solid fa-calendar-plus"></i> Schedule meeting</a>
+    <a href="{% url 'meet:dashboard' %}?customer={{ customer.pk }}&amp;opportunity={{ opp.pk }}" class="btn btn-ghost"><i class="fa-solid fa-video text-accent"></i> Start Hello Guy Meet</a>
     {% endif %}
 </header>
 
@@ -66,14 +66,6 @@
             {% if customer.phone %}<span class="flex items-center gap-2"><i class="fa-solid fa-phone w-4 text-muted"></i> {{ customer.phone }}</span>{% endif %}
             <span class="text-muted">Owner: {% include "crm/_user.html" with u=opp.assigned_to empty="unassigned" %}</span>
             {% if opp.next_follow_up %}<span class="text-muted">Follow up: {{ opp.next_follow_up|date:"D d M, H:i" }}</span>{% endif %}
-        </section>
-
-        <section class="card p-5 text-[13.5px]">
-            <h2 class="caps">Meetings</h2>
-            <ul class="mt-2.5 flex flex-col gap-2.5">
-                {% for m in meetings %}<li><a href="{% url 'crm:meeting' m.pk %}" class="font-medium hover:text-accent">{{ m.title }}</a><div class="text-[12px] text-muted">{{ m.start_at|date:"d M Y, H:i" }} · {{ m.get_status_display }}</div></li>
-                {% empty %}<li class="text-muted">None.</li>{% endfor %}
-            </ul>
         </section>
 
         {% if transcript %}

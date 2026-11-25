@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{% block page_title %}Meet{% endblock %} · Hello Guy Meet{% endblock %}
+
+{% block sidebar_brand %}
+<a href="{% url 'meet:dashboard' %}" class="flex items-center gap-2.5">
+    <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-solid fa-video"></i></span>
+    <span class="font-display font-bold text-[15px] text-ink">Meet</span>
+</a>
+{% endblock %}
+
+{% block nav_aria_label %}Hello Guy Meet{% endblock %}
+
+{% block sidebar_nav %}
+{% with url_name=request.resolver_match.url_name %}
+<div class="caps px-3 pt-1 pb-1">Hello Guy Meet</div>
+<a href="{% url 'meet:dashboard' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'dashboard' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-solid fa-video w-4 text-center shrink-0"></i> Meet Rooms
+</a>
+<a href="{% url 'meet:calendar' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'calendar' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-solid fa-calendar-days w-4 text-center shrink-0"></i> Calendar
+</a>
+<a href="{% url 'meet:mom-list' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'mom-list' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-solid fa-clipboard-list w-4 text-center shrink-0"></i> MoM Records
+</a>
+{% endwith %}
+{% endblock %}
+
+{% block sidebar_system %}
+{% if is_admin %}
+{% with url_name=request.resolver_match.url_name %}
+<div class="border-t border-line/70 px-3 py-2.5 flex flex-col gap-0.5 text-[13.5px]">
+    <div class="caps px-3 pb-1">System</div>
+    <a href="{% url 'meet:settings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'settings' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+        <i class="fa-solid fa-sliders w-4 text-center shrink-0"></i> Meet Settings
+    </a>
+    <a href="/admin/hello_guy_meet/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+        <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django Admin
+    </a>
+</div>
+{% endwith %}
+{% endif %}
+{% endblock %}
+
+{% block user_role_label %}{{ meet_role|default:"No role" }}{% endblock %}

@@ -39,12 +39,10 @@ def test_every_page_renders_for_admin(admin_client, data):
         reverse("crm:opportunities"), reverse("crm:opportunities") + "?status=all&q=x",
         reverse("crm:opportunity", args=[data["opportunity"].pk]),
         reverse("crm:customers"), reverse("crm:customer", args=[data["customer"].pk]),
-        reverse("crm:meetings"), reverse("crm:meetings") + "?when=past",
-        reverse("crm:meeting", args=[data["meeting"].pk]),
         reverse("crm:inbox"), reverse("crm:inbox") + "?show=all",
         reverse("crm:inbox-thread", args=[data["thread"].pk]),
         reverse("crm:settings"),
-        reverse("crm:opportunity-create"), reverse("crm:customer-create"), reverse("crm:meeting-create"),
+        reverse("crm:opportunity-create"), reverse("crm:customer-create"),
         reverse("crm:customer-create") + f"?thread={data['thread'].pk}",
     ]
     for url in urls:
