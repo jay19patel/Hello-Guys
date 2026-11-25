@@ -160,26 +160,3 @@ def list_customers(query: str = "", limit: int = 10) -> list[dict]:
     qs = qs.annotate(open_opportunities=Count("opportunities", filter=Q(opportunities__status__in=Opportunity.OPEN)))
     return list(qs.values("id", "name", "company", "email", "phone", "instagram_username", "open_opportunities")
                 [: _limit(limit)])
-
-
-@tool
-def upcoming_meetings(limit: int = 10) -> list[dict]:
-    """Scheduled Hello Guy Meet rooms from now on, soonest first."""
-    from django.utils import timezone
-    from hello_guy_meet.models import MeetRoom
-
-    _require("view", Opportunity)
-    qs = MeetRoom.objects.filter(
-        status__in=[MeetRoom.Status.SCHEDULED, MeetRoom.Status.LIVE],
-        scheduled_start__gte=timezone.now(),
-    ).order_by("scheduled_start")
-    return [
-        {
-            "title": r.title,
-            "start_at": r.scheduled_start,
-            "end_at": r.scheduled_end,
-            "room_code": r.room_code,
-            "meet_url": f"/meet/room/{r.room_code}/",
-        }
-        for r in qs[: _limit(limit)]
-    ]

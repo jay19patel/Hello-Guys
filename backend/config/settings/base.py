@@ -43,7 +43,6 @@ INSTALLED_APPS = [
     'meta_connector.apps.MetaConnectorConfig',
     'cms.apps.CmsConfig',
     'crm.apps.CrmConfig',
-    'hello_guy_meet.apps.HelloGuyMeetConfig',
 ]
 
 MIDDLEWARE = [

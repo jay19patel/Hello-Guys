@@ -12,7 +12,6 @@
     {% if can_edit %}
     <div class="flex flex-wrap gap-2">
         <a href="{% url 'crm:opportunity-create' %}?customer={{ customer.pk }}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add opportunity</a>
-        <a href="{% url 'meet:dashboard' %}?customer={{ customer.pk }}" class="btn btn-ghost"><i class="fa-solid fa-video text-accent"></i> Start Meet</a>
     </div>
     {% endif %}
 </header>
@@ -231,14 +230,6 @@
             </form>
             {% endif %}
         </section>
-
-        {% if can_edit %}
-        <section class="card p-5 flex flex-col gap-2.5">
-            <h2 class="caps">Hello Guy Meet</h2>
-            <p class="text-[12.5px] text-muted">Start a WebRTC video/audio room with Pipecat AI &amp; automatic MoM.</p>
-            <a href="{% url 'meet:dashboard' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm self-start"><i class="fa-solid fa-video"></i> Start Meet Room</a>
-        </section>
-        {% endif %}
 
         {% if is_admin %}
         <form method="post" onsubmit="return confirm('Delete this customer and their notes? Google files stay in Drive.')">{% csrf_token %}

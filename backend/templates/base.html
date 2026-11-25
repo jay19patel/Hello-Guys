@@ -66,7 +66,6 @@
                 <div class="hidden sm:flex items-center gap-1 bg-subtle border border-line rounded-xl p-1 text-[12.5px] font-medium">
                     <a href="{% url 'dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/meta' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meta Inbox</a>
                     <a href="{% url 'crm:overview' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/crm' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">CRM</a>
-                    <a href="{% url 'meet:dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/meet' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meet</a>
                 </div>
             </div>
 
@@ -95,7 +94,6 @@
                         <a href="{% url 'crm:customer-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-user-plus w-4 text-accent"></i> New Customer</a>
                         <a href="{% url 'crm:opportunity-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-filter w-4 text-ok"></i> New Opportunity</a>
                         <a href="{% url 'crm:follow-ups' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> Schedule Follow-up</a>
-                        <a href="{% url 'meet:calendar' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-video w-4 text-accent"></i> Schedule Meet</a>
                     </div>
                 </div>
             </div>

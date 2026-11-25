@@ -14,9 +14,6 @@
             </p>
         </div>
     </div>
-    {% if can_edit %}
-    <a href="{% url 'meet:dashboard' %}?customer={{ customer.pk }}&amp;opportunity={{ opp.pk }}" class="btn btn-ghost"><i class="fa-solid fa-video text-accent"></i> Start Hello Guy Meet</a>
-    {% endif %}
 </header>
 
 <div class="grid lg:grid-cols-3 gap-6">
