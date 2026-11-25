@@ -273,6 +273,9 @@ function helloGuyMeet() {
         resolveLiveKitUrl(rawUrl) {
             try {
                 const u = new URL(rawUrl);
+                if (window.location.protocol === 'https:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) {
+                    return `wss://${window.location.host}`;
+                }
                 if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1') && window.location.hostname) {
                     u.hostname = window.location.hostname;
                 }

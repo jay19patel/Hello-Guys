@@ -105,6 +105,48 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.websocket("/rtc")
+@app.websocket("/rtc/{path:path}")
+async def livekit_ws_proxy(websocket: WebSocket, path: str = "") -> None:
+    """Proxy LiveKit /rtc WebSocket through port 8000 so HTTPS tunnels (ngrok) work with 1 port."""
+    import websockets
+
+    await websocket.accept()
+    cfg = await sync_to_async(MeetSettings.get_solo)()
+    lk_url, _, _ = cfg.get_livekit_credentials()
+    qs = websocket.url.query
+    suffix = f"/{path}" if path else ""
+    target = f"{lk_url.rstrip('/')}/rtc{suffix}" + (f"?{qs}" if qs else "")
+
+    try:
+        async with websockets.connect(target) as lk_ws:
+            async def _c2s() -> None:
+                while True:
+                    msg = await websocket.receive()
+                    if msg["type"] == "websocket.disconnect":
+                        break
+                    if msg.get("bytes") is not None:
+                        await lk_ws.send(msg["bytes"])
+                    elif msg.get("text") is not None:
+                        await lk_ws.send(msg["text"])
+
+            async def _s2c() -> None:
+                async for data in lk_ws:
+                    if isinstance(data, bytes):
+                        await websocket.send_bytes(data)
+                    else:
+                        await websocket.send_text(data)
+
+            await asyncio.gather(_c2s(), _s2c())
+    except Exception:
+        pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
 @app.websocket("/ws/meet/signal/{room_code}")
 async def webrtc_signal(websocket: WebSocket, room_code: str) -> None:
     """WebRTC mesh signaling: peer discovery, SDP offer/answer, ICE candidates, chat, and live transcript."""
