@@ -1,0 +1,95 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --dev --bind 0.0.0.0 --redis-host redis:6379
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: hello-guys:latest
+    build: .
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             uvicorn hello_guy_meet.realtime_server:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_ENV: local
+      REDIS_URL: redis://redis:6379/0
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/db.sqlite3:/app/backend/db.sqlite3
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    restart: unless-stopped
+
+  agent:
+    image: hello-guys:latest
+    command: python -m hello_guy_meet.livekit_agent start
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_ENV: local
+      REDIS_URL: redis://redis:6379/0
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+    volumes:
+      - ./backend/db.sqlite3:/app/backend/db.sqlite3
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    image: hello-guys:latest
+    command: dramatiq hello_guy_ai.tasks.worker hello_guy_meet.tasks --processes 1 --threads 4
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings
+      DJANGO_ENV: local
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/db.sqlite3:/app/backend/db.sqlite3
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:

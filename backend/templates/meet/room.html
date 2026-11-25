@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ room.title }} · Hello Guy Meet</title>
     {% include "components/_theme_head.html" %}
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
 </head>
 <body class="bg-bg text-ink min-h-screen flex flex-col antialiased">
 {% if room.status == 'ended' %}
@@ -242,35 +243,24 @@ function helloGuyMeet() {
         isHost: cfg.isHost,
         aiActive: cfg.aiEnabled,
         botName: cfg.botName,
-        wsSignalUrl: cfg.wsSignalUrl,
-        wsAiUrl: cfg.wsAiUrl,
-        iceServers: cfg.iceServers,
+        livekitUrl: cfg.livekitUrl,
+        livekitToken: cfg.livekitToken,
         toggleAiUrl: cfg.toggleAiUrl,
         endUrl: cfg.endUrl,
         csrf: cfg.csrf,
 
-        localStream: null,
+        lkRoom: null,
         peers: {},
         remotePeers: [],
-        signalWs: null,
-        aiWs: null,
         signalConnected: false,
         aiConnected: false,
+        aiSpeaking: false,
         micMuted: false,
         videoOff: false,
         sharing: false,
         copied: false,
         ending: false,
         audioBlocked: false,
-        aiSpeaking: false,
-        aiAudioQueue: [],
-        aiCooldownUntil: 0,
-        aiRecording: false,
-        aiRecorder: null,
-        aiAudioChunks: [],
-        vadTimer: null,
-        vadCtx: null,
-        speechRec: null,
         mediaWarning: '',
         sideTab: 'chat',
         unreadChat: 0,
@@ -279,20 +269,12 @@ function helloGuyMeet() {
         chatInput: '',
         transcript: cfg.initialTranscript || [],
         momSummary: '',
-        driveUrl: '',
 
-        resolveWsUrl(rawUrl) {
-            if (rawUrl && rawUrl.startsWith('/')) {
-                const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                return `${proto}//${window.location.host}${rawUrl}`;
-            }
+        resolveLiveKitUrl(rawUrl) {
             try {
                 const u = new URL(rawUrl);
-                if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
-                    u.hostname = window.location.hostname || u.hostname;
-                }
-                if (window.location.protocol === 'https:' && u.protocol === 'ws:') {
-                    u.protocol = 'wss:';
+                if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1') && window.location.hostname) {
+                    u.hostname = window.location.hostname;
                 }
                 return u.toString();
             } catch (e) {
@@ -306,9 +288,7 @@ function helloGuyMeet() {
             document.addEventListener('touchstart', unlock, { passive: true });
             window.addEventListener('beforeunload', () => {
                 this.ending = true;
-                this.signalWs?.close();
-                this.aiWs?.close();
-                Object.values(this.peers).forEach(({ pc }) => pc.close());
+                this.lkRoom?.disconnect();
             });
             if (!this.joined && this.guestNameInput.trim()) {
                 this.displayName = this.guestNameInput.trim().slice(0, 60);
@@ -333,524 +313,190 @@ function helloGuyMeet() {
         },
 
         async startRoom() {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                this.micMuted = true;
-                this.videoOff = true;
-                this.mediaWarning = 'Mic/Camera blocked on HTTP over Wi-Fi. Use HTTPS (e.g. ngrok/cloudflared) or localhost for mobile audio/video.';
-            } else {
-                try {
-                    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-                    document.getElementById('localVideo').srcObject = this.localStream;
-                } catch (e) {
-                    try {
-                        this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                        this.videoOff = true;
-                    } catch (err) {
-                        this.micMuted = true;
-                        this.videoOff = true;
-                        this.mediaWarning = 'Could not access microphone/camera. Check browser permissions.';
-                    }
-                }
-            }
-            this.connectSignal();
-            this.connectAI();
-        },
-
-        connectSignal() {
-            if (this.signalWs && (this.signalWs.readyState === WebSocket.OPEN || this.signalWs.readyState === WebSocket.CONNECTING)) {
+            if (!window.LivekitClient) {
+                this.mediaWarning = 'LiveKit client SDK failed to load.';
                 return;
             }
-            const base = this.resolveWsUrl(this.wsSignalUrl);
-            const url = `${base}?name=${encodeURIComponent(this.displayName)}&host=${this.isHost ? '1' : '0'}`;
-            this.signalWs = new WebSocket(url);
-            this.signalWs.onopen = () => { this.signalConnected = true; };
-            this.signalWs.onclose = () => {
-                this.signalConnected = false;
-                Object.keys(this.peers).forEach(id => this.removePeer(id));
-                if (!this.ending && !this.momSummary) {
-                    setTimeout(() => this.connectSignal(), 3000);
-                }
-            };
-            this.signalWs.onmessage = async (ev) => {
-                const msg = JSON.parse(ev.data);
-                if (msg.type === 'welcome') {
-                    for (const p of msg.peers) await this.createPeer(p.peer_id, p.name, true);
-                } else if (msg.type === 'peer-joined') {
-                    await this.createPeer(msg.peer_id, msg.name, false);
-                } else if (msg.type === 'peer-left') {
-                    this.removePeer(msg.peer_id);
-                } else if (msg.type === 'offer') {
-                    await this.handleOffer(msg);
-                } else if (msg.type === 'answer') {
-                    const entry = this.peers[msg.sender];
-                    if (entry) {
-                        await entry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-                        await this.flushIceQueue(entry);
-                    }
-                } else if (msg.type === 'ice-candidate') {
-                    const entry = this.peers[msg.sender];
-                    if (entry && msg.candidate) {
-                        if (entry.pc.remoteDescription) {
-                            await entry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                        } else {
-                            entry.pendingIce.push(msg.candidate);
-                        }
-                    }
-                } else if (msg.type === 'mute-state') {
-                    const entry = this.peers[msg.sender];
-                    if (entry) {
-                        entry.muted = !!msg.muted;
-                        this.syncRemotePeers();
-                    }
-                } else if (msg.type === 'ai-state') {
-                    this.aiActive = !!msg.enabled;
-                    if (!this.aiActive) {
-                        this.stopAiPlayback();
-                    }
-                } else if (msg.type === 'meeting-ended') {
-                    this.ending = true;
-                    this.stopAutoVad();
-                    this.stopAiClip();
-                    this.signalWs?.close();
-                    this.aiWs?.close();
-                    this.localStream?.getTracks().forEach(t => t.stop());
-                    window.location.reload();
-                } else if (msg.type === 'ai-reply') {
-                    this.playAiReply(msg);
-                } else if (msg.type === 'transcript') {
-                    this.transcript.push({ role: msg.role || 'user', speaker: msg.speaker, text: msg.text });
-                } else if (msg.type === 'chat') {
-                    this.chatMessages.push({ sender: msg.sender || msg.sender_name, text: msg.text, at: msg.at || '' });
-                    if (this.sideTab !== 'chat') this.unreadChat++;
-                }
-            };
-        },
+            const LK = window.LivekitClient;
+            const room = new LK.Room({ adaptiveStream: true, dynacast: true });
+            this.lkRoom = room;
 
-        async flushIceQueue(entry) {
-            while (entry.pendingIce.length) {
-                const c = entry.pendingIce.shift();
-                try { await entry.pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
-            }
-        },
-
-        syncRemotePeers() {
-            this.remotePeers = Object.entries(this.peers).map(([id, v]) => ({
-                peer_id: id,
-                name: v.name,
-                muted: !!v.muted,
-                hasAudio: !!v.hasAudio,
-                iceState: v.iceState || 'connecting',
-            }));
-        },
-
-        unlockAudio() {
-            this.audioBlocked = false;
-            const aiEl = document.getElementById('aiVoicePlayer');
-            if (aiEl && aiEl.src && aiEl.paused) {
-                aiEl.muted = false;
-                aiEl.play().catch(() => { this.audioBlocked = true; });
-            }
-            this.remotePeers.forEach(p => {
-                const aud = document.getElementById('remote-audio-' + p.peer_id);
-                const vid = document.getElementById('remote-video-' + p.peer_id);
-                if (aud && aud.srcObject) {
-                    aud.muted = false;
-                    aud.play().catch(() => { this.audioBlocked = true; });
-                }
-                if (vid && vid.srcObject) vid.play().catch(() => {});
+            room.on(LK.RoomEvent.Connected, () => {
+                this.signalConnected = true;
+                this.syncParticipants();
             });
-        },
+            room.on(LK.RoomEvent.Disconnected, () => {
+                this.signalConnected = false;
+            });
+            room.on(LK.RoomEvent.ParticipantConnected, (p) => {
+                if (p.identity?.startsWith('agent-')) this.aiConnected = true;
+                this.syncParticipants();
+            });
+            room.on(LK.RoomEvent.ParticipantDisconnected, (p) => {
+                delete this.peers[p.identity];
+                this.syncParticipants();
+            });
+            room.on(LK.RoomEvent.TrackMuted, () => this.syncParticipants());
+            room.on(LK.RoomEvent.TrackUnmuted, () => this.syncParticipants());
+            room.on(LK.RoomEvent.AudioPlaybackStatusChanged, () => {
+                this.audioBlocked = !room.canPlaybackAudio;
+            });
 
-        async createPeer(peerId, name, initiator) {
-            if (this.peers[peerId]) return this.peers[peerId].pc;
-            const pc = new RTCPeerConnection({ iceServers: this.iceServers });
-            this.peers[peerId] = {
-                pc,
-                name,
-                muted: false,
-                hasAudio: false,
-                iceState: 'connecting',
-                pendingIce: [],
-                videoStream: new MediaStream(),
-                audioStream: new MediaStream(),
-            };
-            this.syncRemotePeers();
-
-            pc.oniceconnectionstatechange = () => {
-                if (this.peers[peerId]) {
-                    this.peers[peerId].iceState = pc.iceConnectionState;
-                    this.syncRemotePeers();
-                }
-            };
-
-            const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
-            const videoTracks = this.localStream ? this.localStream.getVideoTracks() : [];
-            audioTracks.forEach(t => pc.addTrack(t, this.localStream));
-            videoTracks.forEach(t => pc.addTrack(t, this.localStream));
-            if (!audioTracks.length) pc.addTransceiver('audio', { direction: 'recvonly' });
-            if (!videoTracks.length) pc.addTransceiver('video', { direction: 'recvonly' });
-
-            pc.onicecandidate = (e) => {
-                if (e.candidate && this.signalWs?.readyState === WebSocket.OPEN) {
-                    this.signalWs.send(JSON.stringify({ type: 'ice-candidate', target: peerId, candidate: e.candidate }));
-                }
-            };
-            pc.ontrack = (e) => {
-                const entry = this.peers[peerId];
-                if (!entry || !e.track) return;
-                if (e.track.kind === 'audio') {
-                    entry.audioStream = new MediaStream([e.track]);
-                    entry.hasAudio = true;
-                    this.syncRemotePeers();
-                } else if (e.track.kind === 'video') {
-                    entry.videoStream = new MediaStream([e.track]);
-                }
+            room.on(LK.RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+                if (participant.identity?.startsWith('agent-')) this.aiConnected = true;
+                this.syncParticipants();
                 this.$nextTick(() => {
                     const attach = () => {
-                        const vid = document.getElementById('remote-video-' + peerId);
-                        if (vid && entry.videoStream.getVideoTracks().length && vid.srcObject !== entry.videoStream) {
-                            vid.srcObject = entry.videoStream;
-                            vid.play().catch(() => {});
-                        }
-                        const aud = document.getElementById('remote-audio-' + peerId);
-                        if (aud && entry.audioStream.getAudioTracks().length) {
-                            if (aud.srcObject !== entry.audioStream) aud.srcObject = entry.audioStream;
-                            aud.muted = false;
-                            aud.play().catch(() => { this.audioBlocked = true; });
+                        if (track.kind === LK.Track.Kind.Video) {
+                            const vid = document.getElementById('remote-video-' + participant.identity);
+                            if (vid) track.attach(vid);
+                        } else if (track.kind === LK.Track.Kind.Audio) {
+                            const aud = document.getElementById('remote-audio-' + participant.identity);
+                            if (aud) track.attach(aud);
+                            else {
+                                const el = track.attach();
+                                el.style.display = 'none';
+                                document.body.appendChild(el);
+                            }
                         }
                     };
                     attach();
-                    setTimeout(attach, 80);
+                    setTimeout(attach, 60);
                 });
-            };
-            if (initiator) {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                this.signalWs.send(JSON.stringify({ type: 'offer', target: peerId, sdp: offer }));
-            }
-            return pc;
-        },
+            });
 
-        async handleOffer(msg) {
-            const pc = await this.createPeer(msg.sender, msg.sender_name || 'Guest', false);
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-            await this.flushIceQueue(this.peers[msg.sender]);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            this.signalWs.send(JSON.stringify({ type: 'answer', target: msg.sender, sdp: answer }));
-        },
+            room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
+                track.detach();
+            });
 
-        removePeer(peerId) {
-            this.peers[peerId]?.pc.close();
-            delete this.peers[peerId];
-            this.syncRemotePeers();
-        },
-
-        connectAI() {
-            if (this.aiWs && this.aiWs.readyState === WebSocket.OPEN) return;
-            this.aiWs = new WebSocket(this.resolveWsUrl(this.wsAiUrl));
-            this.aiWs.onopen = () => {
-                this.aiConnected = true;
-                this.startAutoVad();
-            };
-            this.aiWs.onclose = () => {
-                this.aiConnected = false;
-                this.stopAutoVad();
-            };
-            this.aiWs.onmessage = (ev) => {
-                if (typeof ev.data === 'string') {
-                    const data = JSON.parse(ev.data);
-                    if (data.type === 'user-transcript') {
-                        this.transcript.push({ role: 'user', speaker: data.speaker || this.displayName, text: data.text });
-                    } else if (data.type === 'ai-reply') {
-                        this.playAiReply(data);
-                    }
-                }
-            };
-        },
-
-        stopAiPlayback() {
-            this.aiSpeaking = false;
-            this.aiAudioQueue = [];
-            const aiEl = document.getElementById('aiVoicePlayer');
-            if (aiEl) {
+            room.on(LK.RoomEvent.DataReceived, (payload) => {
                 try {
-                    aiEl.pause();
-                    aiEl.currentTime = 0;
-                    aiEl.removeAttribute('src');
-                    aiEl.load();
+                    const msg = JSON.parse(new TextDecoder().decode(payload));
+                    if (msg.type === 'chat') {
+                        this.chatMessages.push({ sender: msg.sender || 'Guest', text: msg.text, at: msg.at || '' });
+                        if (this.sideTab !== 'chat') this.unreadChat++;
+                    } else if (msg.type === 'transcript') {
+                        this.transcript.push({ role: msg.role || 'user', speaker: msg.speaker || 'Speaker', text: msg.text });
+                    } else if (msg.type === 'meeting-ended') {
+                        window.location.reload();
+                    }
                 } catch (e) {}
-            }
-            if (window.speechSynthesis) {
-                try { window.speechSynthesis.cancel(); } catch (e) {}
-            }
-        },
+            });
 
-        playNextAiAudio() {
-            if (!this.aiActive || this.aiSpeaking || !this.aiAudioQueue.length) return;
-            const nextItem = this.aiAudioQueue.shift();
-            const aiEl = document.getElementById('aiVoicePlayer');
-            if (nextItem.audio_b64 && aiEl) {
-                this.aiSpeaking = true;
-                aiEl.src = 'data:audio/mp3;base64,' + nextItem.audio_b64;
-                aiEl.muted = false;
-                aiEl.onended = () => {
-                    this.aiSpeaking = false;
-                    this.aiCooldownUntil = Date.now() + 1500;
-                    this.playNextAiAudio();
-                };
-                aiEl.onerror = () => {
-                    this.aiSpeaking = false;
-                    this.playNextAiAudio();
-                };
-                aiEl.play().catch(() => {
-                    this.aiSpeaking = false;
-                    this.audioBlocked = true;
-                });
+            try {
+                await room.connect(this.resolveLiveKitUrl(this.livekitUrl), this.livekitToken);
+            } catch (e) {
+                this.mediaWarning = 'Could not connect to LiveKit server (' + this.livekitUrl + ').';
                 return;
             }
-            if (nextItem.text && window.speechSynthesis) {
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                this.micMuted = true;
+                this.videoOff = true;
+                this.mediaWarning = 'Mic/Camera blocked on HTTP over Wi-Fi. Use HTTPS (ngrok) or localhost.';
+                return;
+            }
+
+            try {
+                await room.localParticipant.setCameraEnabled(true);
+                await room.localParticipant.setMicrophoneEnabled(true);
+                const camPub = room.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+                if (camPub?.track) {
+                    camPub.track.attach(document.getElementById('localVideo'));
+                }
+            } catch (e) {
+                this.micMuted = !room.localParticipant.isMicrophoneEnabled;
+                this.videoOff = !room.localParticipant.isCameraEnabled;
+            }
+        },
+
+        syncParticipants() {
+            if (!this.lkRoom) return;
+            const list = [];
+            this.lkRoom.remoteParticipants.forEach((p) => {
+                if (p.identity?.startsWith('agent-')) {
+                    this.aiConnected = true;
+                    return;
+                }
+                const micPub = p.getTrackPublication(window.LivekitClient.Track.Source.Microphone);
+                list.push({
+                    peer_id: p.identity,
+                    name: p.name || p.identity,
+                    muted: micPub ? micPub.isMuted : true,
+                    hasAudio: !!micPub,
+                    iceState: 'connected',
+                });
+            });
+            this.remotePeers = list;
+        },
+
+        async unlockAudio() {
+            this.audioBlocked = false;
+            if (this.lkRoom) {
                 try {
-                    const u = new SpeechSynthesisUtterance(nextItem.text);
-                    u.onend = () => {
-                        this.aiSpeaking = false;
-                        this.aiCooldownUntil = Date.now() + 1500;
-                        this.playNextAiAudio();
-                    };
-                    this.aiSpeaking = true;
-                    window.speechSynthesis.speak(u);
+                    await this.lkRoom.startAudio();
+                    this.audioBlocked = !this.lkRoom.canPlaybackAudio;
                 } catch (e) {
-                    this.aiSpeaking = false;
+                    this.audioBlocked = true;
                 }
             }
         },
 
-        playAiReply(data) {
-            if (!this.aiActive) return;
-            this.transcript.push({ role: 'assistant', speaker: data.speaker || this.botName, text: data.text });
-            this.aiAudioQueue.push({ audio_b64: data.audio_b64 || '', text: data.text || '' });
-            this.playNextAiAudio();
+        async toggleMic() {
+            this.micMuted = !this.micMuted;
+            if (this.lkRoom) {
+                await this.lkRoom.localParticipant.setMicrophoneEnabled(!this.micMuted);
+            }
         },
 
-        startAutoVad() {
-            this.stopAutoVad();
-            const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
-            if (!audioTracks.length || !window.AudioContext) return;
+        async toggleCam() {
+            this.videoOff = !this.videoOff;
+            if (this.lkRoom) {
+                await this.lkRoom.localParticipant.setCameraEnabled(!this.videoOff);
+                const camPub = this.lkRoom.localParticipant.getTrackPublication(window.LivekitClient.Track.Source.Camera);
+                if (camPub?.track && !this.videoOff) {
+                    camPub.track.attach(document.getElementById('localVideo'));
+                }
+            }
+        },
+
+        async toggleScreenShare() {
+            if (!this.lkRoom) return;
+            this.sharing = !this.sharing;
             try {
-                const ctx = new AudioContext();
-                const src = ctx.createMediaStreamSource(new MediaStream([audioTracks[0]]));
-                const analyser = ctx.createAnalyser();
-                analyser.fftSize = 512;
-                src.connect(analyser);
-                const buf = new Uint8Array(analyser.frequencyBinCount);
-                this.vadCtx = ctx;
-
-                let speaking = false;
-                let silenceTicks = 0;
-                let speechTicks = 0;
-
-                this.vadTimer = setInterval(() => {
-                    if (!this.aiConnected || this.micMuted || this.aiSpeaking || Date.now() < this.aiCooldownUntil) return;
-                    analyser.getByteTimeDomainData(buf);
-                    let sum = 0;
-                    for (let i = 0; i < buf.length; i++) {
-                        const v = (buf[i] - 128) / 128;
-                        sum += v * v;
-                    }
-                    const rms = Math.sqrt(sum / buf.length);
-                    if (rms > 0.03) {
-                        speechTicks++;
-                        silenceTicks = 0;
-                        if (!speaking && speechTicks >= 3 && !this.aiRecording) {
-                            speaking = true;
-                            this.startAiClip();
-                        }
-                    } else if (speaking) {
-                        silenceTicks++;
-                        if (silenceTicks >= 6) {
-                            speaking = false;
-                            speechTicks = 0;
-                            silenceTicks = 0;
-                            this.stopAiClip();
-                        }
-                    } else {
-                        speechTicks = 0;
-                    }
-                }, 100);
-            } catch (e) {}
-        },
-
-        stopAutoVad() {
-            if (this.vadTimer) { clearInterval(this.vadTimer); this.vadTimer = null; }
-            if (this.vadCtx) { try { this.vadCtx.close(); } catch (e) {} this.vadCtx = null; }
-        },
-
-        startAiClip() {
-            if (this.aiRecording || this.aiWs?.readyState !== WebSocket.OPEN) return;
-            const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
-            if (!audioTracks.length) return;
-            const stream = new MediaStream([audioTracks[0]]);
-            this.aiAudioChunks = [];
-            const recorder = new MediaRecorder(stream);
-            recorder.ondataavailable = (e) => { if (e.data.size > 0) this.aiAudioChunks.push(e.data); };
-            recorder.onstop = () => {
-                const blob = new Blob(this.aiAudioChunks, { type: recorder.mimeType || 'audio/webm' });
-                if (blob.size < 4000) return;
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const res = String(reader.result || '');
-                    const b64 = res.includes(',') ? res.split(',')[1] : '';
-                    if (b64 && this.aiWs?.readyState === WebSocket.OPEN) {
-                        this.aiWs.send(JSON.stringify({
-                            type: 'audio-turn',
-                            speaker: this.displayName,
-                            audio_b64: b64,
-                            mime: blob.type || 'audio/webm',
-                            transcribe_only: !this.aiActive,
-                        }));
-                    }
-                };
-                reader.readAsDataURL(blob);
-            };
-            this.aiRecorder = recorder;
-            this.aiRecording = true;
-            recorder.start();
-        },
-
-        stopAiClip() {
-            if (this.aiRecording && this.aiRecorder) {
-                try { this.aiRecorder.stop(); } catch (e) {}
-                this.aiRecording = false;
+                await this.lkRoom.localParticipant.setScreenShareEnabled(this.sharing);
+            } catch (e) {
+                this.sharing = false;
             }
         },
 
-        toggleAiMic() {
-            if (!this.aiActive || this.aiWs?.readyState !== WebSocket.OPEN) return;
-            if (this.aiRecording) this.stopAiClip();
-            else this.startAiClip();
-        },
-
-        startBrowserSpeech() {
-            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SR || this.speechRec || !this.localStream || !this.localStream.getAudioTracks().length) return;
-            try {
-                const rec = new SR();
-                rec.continuous = true;
-                rec.interimResults = false;
-                rec.onresult = (ev) => {
-                    if (this.micMuted || this.aiActive) return;
-                    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-                        if (ev.results[i].isFinal) {
-                            const text = (ev.results[i][0]?.transcript || '').trim();
-                            if (text) {
-                                this.transcript.push({ role: 'user', speaker: this.displayName, text });
-                                if (this.signalWs?.readyState === WebSocket.OPEN) {
-                                    this.signalWs.send(JSON.stringify({ type: 'transcript', speaker: this.displayName, text }));
-                                }
-                            }
-                        }
-                    }
-                };
-                rec.onend = () => {
-                    if (this.speechRec && !this.aiActive && !this.ending) {
-                        try { rec.start(); } catch (e) {}
-                    }
-                };
-                this.speechRec = rec;
-                rec.start();
-            } catch (e) {}
-        },
-
-        stopBrowserSpeech() {
-            if (this.speechRec) {
-                const rec = this.speechRec;
-                this.speechRec = null;
-                try { rec.stop(); } catch (e) {}
-            }
-        },
-
-        toggleAI() {
-            this.aiActive = !this.aiActive;
-            if (this.aiActive) {
-                this.connectAI();
-            } else {
-                this.aiSpeaking = false;
-            }
-            if (this.signalWs?.readyState === WebSocket.OPEN) {
-                this.signalWs.send(JSON.stringify({ type: 'ai-state', enabled: this.aiActive }));
-            }
-            if (this.isHost && this.toggleAiUrl) {
-                fetch(this.toggleAiUrl, {
-                    method: 'POST',
-                    headers: { 'X-CSRFToken': this.csrf },
-                }).catch(() => {});
-            }
-        },
-
-        sendLiveChat() {
+        async sendLiveChat() {
             const text = this.liveChatInput.trim();
             if (!text) return;
             this.liveChatInput = '';
             const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const entry = { type: 'chat', sender: this.displayName, text, at };
             this.chatMessages.push({ sender: this.displayName, text, at });
-            if (this.signalWs?.readyState === WebSocket.OPEN) {
-                this.signalWs.send(JSON.stringify({ type: 'chat', text }));
+            if (this.lkRoom && this.signalConnected) {
+                await this.lkRoom.localParticipant.publishData(
+                    new TextEncoder().encode(JSON.stringify(entry)),
+                    { reliable: true }
+                );
             }
         },
 
-        sendTextTurn() {
+        async sendTextTurn() {
             const text = this.chatInput.trim();
             if (!text) return;
             this.chatInput = '';
+            const entry = { type: 'transcript', role: 'user', speaker: this.displayName, text };
             this.transcript.push({ role: 'user', speaker: this.displayName, text });
-            if (this.signalWs?.readyState === WebSocket.OPEN) {
-                this.signalWs.send(JSON.stringify({ type: 'transcript', speaker: this.displayName, text }));
+            if (this.lkRoom && this.signalConnected) {
+                await this.lkRoom.localParticipant.publishData(
+                    new TextEncoder().encode(JSON.stringify(entry)),
+                    { reliable: true }
+                );
             }
-            if (this.aiActive && this.aiWs?.readyState === WebSocket.OPEN) {
-                this.aiWs.send(JSON.stringify({ speaker: this.displayName, text }));
-            }
-        },
-
-        toggleMic() {
-            this.micMuted = !this.micMuted;
-            this.localStream?.getAudioTracks().forEach(t => { t.enabled = !this.micMuted; });
-            Object.values(this.peers).forEach(({ pc }) => {
-                pc.getSenders().forEach(s => {
-                    if (s.track?.kind === 'audio') s.track.enabled = !this.micMuted;
-                });
-            });
-            if (this.signalWs?.readyState === WebSocket.OPEN) {
-                this.signalWs.send(JSON.stringify({ type: 'mute-state', muted: this.micMuted }));
-            }
-        },
-
-        toggleCam() {
-            this.videoOff = !this.videoOff;
-            this.localStream?.getVideoTracks().forEach(t => { t.enabled = !this.videoOff; });
-            Object.values(this.peers).forEach(({ pc }) => {
-                pc.getSenders().forEach(s => {
-                    if (s.track?.kind === 'video') s.track.enabled = !this.videoOff;
-                });
-            });
-        },
-
-        async toggleScreenShare() {
-            if (this.sharing) { this.sharing = false; return; }
-            try {
-                const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                const track = screen.getVideoTracks()[0];
-                Object.values(this.peers).forEach(({ pc }) => {
-                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) sender.replaceTrack(track);
-                });
-                document.getElementById('localVideo').srcObject = screen;
-                this.sharing = true;
-                this.videoOff = false;
-                track.onended = () => {
-                    this.sharing = false;
-                    if (this.localStream) document.getElementById('localVideo').srcObject = this.localStream;
-                };
-            } catch (e) {}
         },
 
         copyInvite() {
@@ -861,12 +507,7 @@ function helloGuyMeet() {
 
         leaveMeeting() {
             this.ending = true;
-            this.stopAutoVad();
-            this.stopAiClip();
-            this.signalWs?.close();
-            this.aiWs?.close();
-            Object.values(this.peers).forEach(({ pc }) => pc.close());
-            this.localStream?.getTracks().forEach(t => t.stop());
+            this.lkRoom?.disconnect();
             if (this.isHost) {
                 window.location.href = "{% url 'meet:dashboard' %}";
             } else {
@@ -885,10 +526,7 @@ function helloGuyMeet() {
                 const data = await res.json();
                 if (data.ok) {
                     this.momSummary = data.call_summary;
-                    this.driveUrl = data.drive_transcript_url || '';
-                    this.signalWs?.close();
-                    this.aiWs?.close();
-                    this.localStream?.getTracks().forEach(t => t.stop());
+                    this.lkRoom?.disconnect();
                 }
             } finally {
                 this.ending = false;

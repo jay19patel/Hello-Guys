@@ -53,9 +53,16 @@ W=$!
 S=$!
 "$ROOT/.venv/bin/uvicorn" hello_guy_meet.realtime_server:app --host 0.0.0.0 --port "$PORT" --reload 2>&1 | sed -l 's/^/[web] /' &
 R=$!
+if docker info >/dev/null 2>&1; then
+  docker compose -f "$ROOT/docker-compose.yml" up -d livekit 2>&1 | sed -l 's/^/[livekit-docker] /'
+else
+  livekit-server --dev --bind 0.0.0.0 2>&1 | sed -l 's/^/[livekit] /' &
+fi
+"$PY" -m hello_guy_meet.livekit_agent dev 2>&1 | sed -l 's/^/[lk-agent] /' &
+A=$!
 "$PY" manage.py crm_google_sync 2>&1 | sed -l 's/^/[google] /' &
 G=$!
 
-echo "✓ Open http://127.0.0.1:$PORT/admin/  (Ctrl+C to stop)"
-while kill -0 $W 2>/dev/null && kill -0 $S 2>/dev/null && kill -0 $R 2>/dev/null && kill -0 $G 2>/dev/null; do sleep 2; done
+echo "✓ Open http://127.0.0.1:$PORT/meet/  (Ctrl+C to stop)"
+while kill -0 $W 2>/dev/null && kill -0 $S 2>/dev/null && kill -0 $R 2>/dev/null && kill -0 $A 2>/dev/null && kill -0 $G 2>/dev/null; do sleep 2; done
 echo "✗ A process exited, stopping the rest."

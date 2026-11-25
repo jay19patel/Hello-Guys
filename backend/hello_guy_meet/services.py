@@ -64,6 +64,36 @@ def resolve_llm_model_and_key(cfg: MeetSettings) -> tuple[str, str]:
     return model, openai_key
 
 
+def create_livekit_token(
+    *,
+    room_code: str,
+    identity: str,
+    name: str,
+    is_host: bool = False,
+) -> str:
+    """Generate a signed LiveKit JWT token for a room participant."""
+    from livekit import api
+
+    cfg = MeetSettings.get_solo()
+    _, api_key, api_secret = cfg.get_livekit_credentials()
+    token = (
+        api.AccessToken(api_key, api_secret)
+        .with_identity(identity)
+        .with_name(name)
+        .with_grants(
+            api.VideoGrants(
+                room_join=True,
+                room=room_code,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+                room_admin=is_host,
+            )
+        )
+    )
+    return token.to_jwt()
+
+
 def generate_mom_summary(transcript: list[dict[str, Any]], cfg: MeetSettings | None = None) -> str:
     """Generate a concise Minutes of Meeting summary from transcript turns."""
     if not transcript:

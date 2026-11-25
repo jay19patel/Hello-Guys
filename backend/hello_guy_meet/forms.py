@@ -41,6 +41,11 @@ class MeetSettingsForm(forms.ModelForm):
         label="Mistral AI API Key (optional)",
         widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
     )
+    livekit_api_secret = forms.CharField(
+        required=False,
+        label="LiveKit API Secret (optional)",
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+    )
     ice_servers_json = forms.CharField(
         label="WebRTC ICE Servers (STUN / TURN JSON)",
         widget=forms.Textarea(attrs={"rows": 3, "class": "font-mono text-[12.5px]"}),
@@ -54,6 +59,8 @@ class MeetSettingsForm(forms.ModelForm):
             "llm_model",
             "stt_provider",
             "edge_voice",
+            "livekit_url",
+            "livekit_api_key",
             "ai_auto_join_default",
             "allow_interruptions",
             "default_system_prompt",
@@ -73,6 +80,10 @@ class MeetSettingsForm(forms.ModelForm):
                 self.fields[fname].widget.attrs["placeholder"] = (
                     "Saved (leave blank to keep)" if has_val else f"Paste {env_name}…"
                 )
+            has_lk_secret = bool(self.instance.livekit_api_secret_enc)
+            self.fields["livekit_api_secret"].widget.attrs["placeholder"] = (
+                "Saved (leave blank to keep)" if has_lk_secret else "Default: secret (dev mode)"
+            )
 
     def clean_ice_servers_json(self):
         raw = self.cleaned_data.get("ice_servers_json", "[]")
@@ -91,6 +102,7 @@ class MeetSettingsForm(forms.ModelForm):
         key_fields = {
             "groq_api_key": "groq_api_key_enc",
             "mistral_api_key": "mistral_api_key_enc",
+            "livekit_api_secret": "livekit_api_secret_enc",
         }
         for form_field, model_field in key_fields.items():
             raw = (self.cleaned_data.get(form_field) or "").strip()

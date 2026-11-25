@@ -185,6 +185,25 @@ class MeetRoomView(DetailView):
         is_ai_active_now = bool(room.ai_enabled) and (
             room.scheduled_start is None or timezone.now() >= room.scheduled_start
         )
+        lk_url, _, _ = cfg.get_livekit_credentials()
+        if lk_url.startswith("ws://livekit:"):
+            lk_url = lk_url.replace("ws://livekit:", "ws://localhost:", 1)
+        import uuid
+        identity = (
+            f"host-{self.request.user.pk}-{uuid.uuid4().hex[:4]}"
+            if self.request.user.is_authenticated
+            else f"guest-{uuid.uuid4().hex[:8]}"
+        )
+        livekit_token = services.create_livekit_token(
+            room_code=room.room_code,
+            identity=identity,
+            name=display_name,
+            is_host=is_host,
+        )
+        if room.status == MeetRoom.Status.SCHEDULED:
+            room.status = MeetRoom.Status.LIVE
+            room.started_at = room.started_at or timezone.now()
+            room.save(update_fields=["status", "started_at", "updated_at"])
         meet_config = {
             "roomCode": room.room_code,
             "displayName": display_name,
@@ -192,6 +211,8 @@ class MeetRoomView(DetailView):
             "isHost": is_host,
             "aiEnabled": is_ai_active_now,
             "botName": room.bot_name,
+            "livekitUrl": lk_url,
+            "livekitToken": livekit_token,
             "wsSignalUrl": ws_signal_url,
             "wsAiUrl": ws_ai_url,
             "iceServers": cfg.ice_servers or [],

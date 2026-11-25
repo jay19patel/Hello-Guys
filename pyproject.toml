@@ -34,6 +34,10 @@ dependencies = [
     "uvicorn[standard]>=0.54.0",
     "groq>=1.7.0",
     "edge-tts>=7.3.1",
+    "livekit-api>=1.2.3",
+    "livekit-agents>=1.8.13",
+    "livekit-plugins-openai>=1.8.13",
+    "livekit-plugins-silero>=1.8.13",
 ]
 
 [tool.uv]

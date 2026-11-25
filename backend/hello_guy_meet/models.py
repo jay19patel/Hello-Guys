@@ -89,6 +89,13 @@ class MeetSettings(models.Model):
     openai_api_key_enc = models.TextField(blank=True, default="")
     deepgram_api_key_enc = models.TextField(blank=True, default="")
     cartesia_api_key_enc = models.TextField(blank=True, default="")
+    livekit_url = models.CharField(
+        max_length=255,
+        default="ws://localhost:7880",
+        help_text="LiveKit Server WebSocket URL (e.g. ws://localhost:7880 or wss://livekit.yourdomain.com).",
+    )
+    livekit_api_key = models.CharField(max_length=120, default="devkey")
+    livekit_api_secret_enc = models.TextField(blank=True, default="")
     ai_auto_join_default = models.BooleanField(default=True, help_text="Enable AI Voice Assistant in new rooms by default.")
     allow_interruptions = models.BooleanField(default=True, help_text="Allow speakers to interrupt the AI mid-sentence (Silero VAD).")
     default_system_prompt = models.TextField(
@@ -130,6 +137,13 @@ class MeetSettings(models.Model):
         }
         val = decrypt_secret(field_map.get(env_name, ""))
         return val or os.environ.get(env_name, "").strip()
+
+    def get_livekit_credentials(self) -> tuple[str, str, str]:
+        """Return (livekit_url, api_key, api_secret) with dev defaults."""
+        url = (self.livekit_url or "").strip() or os.environ.get("LIVEKIT_URL", "ws://localhost:7880")
+        key = (self.livekit_api_key or "").strip() or os.environ.get("LIVEKIT_API_KEY", "devkey")
+        secret = decrypt_secret(self.livekit_api_secret_enc) or os.environ.get("LIVEKIT_API_SECRET", "secret")
+        return url, key, secret
 
 
 class MeetRoom(models.Model):

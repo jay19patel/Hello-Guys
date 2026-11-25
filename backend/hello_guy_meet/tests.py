@@ -97,6 +97,8 @@ class HelloGuyMeetTests(TestCase):
                 "llm_model": "mistral/mistral-small-latest",
                 "stt_provider": MeetSettings.STTProvider.GROQ,
                 "edge_voice": "en-IN-NeerjaNeural",
+                "livekit_url": "ws://localhost:7880",
+                "livekit_api_key": "devkey",
                 "groq_api_key": "gsk_test_secret_12345",
                 "mistral_api_key": "mistral_test_secret_67890",
                 "ai_auto_join_default": True,
