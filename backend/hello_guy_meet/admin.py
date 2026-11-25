@@ -5,7 +5,7 @@ from hello_guy_meet.models import MeetMinutes, MeetRoom, MeetSettings
 
 @admin.register(MeetSettings)
 class MeetSettingsAdmin(admin.ModelAdmin):
-    list_display = ("default_bot_name", "ws_base_url", "llm_model", "stt_provider", "tts_provider", "updated_at")
+    list_display = ("default_bot_name", "llm_model", "stt_provider", "tts_provider", "updated_at")
 
 
 @admin.register(MeetRoom)

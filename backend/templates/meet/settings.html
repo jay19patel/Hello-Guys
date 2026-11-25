@@ -2,20 +2,108 @@
 {% block title %}Meet Settings · Hello Guy Meet{% endblock %}
 
 {% block content %}
-<header class="flex items-center justify-between gap-3">
-    <div>
-        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Hello Guy Meet Settings</h1>
-        <p class="text-muted">Configure WebRTC ICE (STUN/TURN) servers, Pipecat AI voice pipeline, and database MoM generation.</p>
-    </div>
-    <a href="{% url 'meet:dashboard' %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrow-left"></i> Back to Rooms</a>
-</header>
+<div x-data="meetSettingsTest('{% url 'meet:settings-test' %}', '{{ csrf_token }}')">
+    <header class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+            <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Hello Guy Meet Settings</h1>
+            <p class="text-muted">Configure WebRTC ICE (STUN/TURN) servers, Pipecat AI voice pipeline, and database MoM generation.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button type="button" @click="runTest()" :disabled="testing" class="btn btn-ghost btn-sm">
+                <i class="fa-solid" :class="testing ? 'fa-spinner fa-spin' : 'fa-volume-high text-accent'"></i>
+                <span x-text="testing ? 'Testing…' : 'Test AI &amp; Audio'"></span>
+            </button>
+            <a href="{% url 'meet:dashboard' %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrow-left"></i> Back to Rooms</a>
+        </div>
+    </header>
 
-<form method="post" class="card p-6 grid sm:grid-cols-2 gap-5">
-    {% csrf_token %}
-    {% include "components/_fields.html" %}
-    <div class="sm:col-span-2 flex items-center justify-between gap-3 pt-4 border-t border-line">
-        <p class="text-[12.5px] text-muted">API keys (`OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`) are read securely from `.env`.</p>
-        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Settings</button>
-    </div>
-</form>
+    <!-- Live Test Result Panel -->
+    <section x-show="result" x-cloak class="card p-5 mb-6 flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <span class="pill" :class="result?.ok ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn'" x-text="result?.ok ? 'All Systems Connected' : 'Check Needed'"></span>
+                <span class="text-[13px] text-muted">Save settings first if you changed any keys or model above.</span>
+            </div>
+            <button x-show="result?.tts?.audio_b64" type="button" @click="playAudio()" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-play"></i> Play Test Audio
+            </button>
+        </div>
+        <div class="grid sm:grid-cols-3 gap-3 text-[13px]">
+            <div class="rounded-xl border border-line bg-subtle/40 p-3">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                    <span class="font-semibold text-ink">STT (Speech-to-Text)</span>
+                    <span class="pill" :class="result?.stt?.ok ? 'bg-ok/15 text-ok' : 'bg-bad/15 text-bad'" x-text="result?.stt?.ok ? 'OK' : 'Missing'"></span>
+                </div>
+                <p class="text-muted text-[12px]" x-text="result?.stt?.provider + ' · ' + result?.stt?.detail"></p>
+            </div>
+            <div class="rounded-xl border border-line bg-subtle/40 p-3">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                    <span class="font-semibold text-ink">LLM (AI Brain)</span>
+                    <span class="pill" :class="result?.llm?.ok ? 'bg-ok/15 text-ok' : 'bg-bad/15 text-bad'" x-text="result?.llm?.ok ? 'OK' : 'Error'"></span>
+                </div>
+                <p class="text-muted text-[12px]" x-text="result?.llm?.model + ' · ' + result?.llm?.detail"></p>
+                <p x-show="result?.llm?.reply" class="text-ink text-[12px] mt-1.5 italic" x-text="'“' + result?.llm?.reply + '”'"></p>
+            </div>
+            <div class="rounded-xl border border-line bg-subtle/40 p-3">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                    <span class="font-semibold text-ink">TTS (Voice Audio)</span>
+                    <span class="pill" :class="result?.tts?.ok ? 'bg-ok/15 text-ok' : 'bg-bad/15 text-bad'" x-text="result?.tts?.ok ? 'OK' : 'Error'"></span>
+                </div>
+                <p class="text-muted text-[12px]" x-text="result?.tts?.provider + ' · ' + result?.tts?.detail"></p>
+            </div>
+        </div>
+    </section>
+
+    <form method="post" class="card p-6 grid sm:grid-cols-2 gap-5">
+        {% csrf_token %}
+        {% include "components/_fields.html" %}
+        <div class="sm:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-line">
+            <p class="text-[12.5px] text-muted">API keys saved here are encrypted in the database (and fall back to `.env` if left blank).</p>
+            <div class="flex items-center gap-2">
+                <button type="button" @click="runTest()" :disabled="testing" class="btn btn-ghost">
+                    <i class="fa-solid" :class="testing ? 'fa-spinner fa-spin' : 'fa-volume-high text-accent'"></i>
+                    <span x-text="testing ? 'Testing…' : 'Test AI &amp; Audio'"></span>
+                </button>
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Settings</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function meetSettingsTest(testUrl, csrf) {
+    return {
+        testing: false,
+        result: null,
+        async runTest() {
+            this.testing = true;
+            try {
+                const res = await fetch(testUrl, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrf },
+                });
+                this.result = await res.json();
+                if (this.result?.tts?.audio_b64) {
+                    this.playAudio();
+                }
+            } catch (e) {
+                this.result = {
+                    ok: false,
+                    stt: { provider: 'STT', ok: false, detail: 'Request failed' },
+                    llm: { model: 'LLM', ok: false, detail: String(e), reply: '' },
+                    tts: { provider: 'TTS', ok: false, detail: 'Request failed', audio_b64: '' },
+                };
+            } finally {
+                this.testing = false;
+            }
+        },
+        playAudio() {
+            const b64 = this.result?.tts?.audio_b64;
+            if (!b64) return;
+            const audio = new Audio('data:audio/mp3;base64,' + b64);
+            audio.play().catch(() => {});
+        }
+    };
+}
+</script>
 {% endblock %}

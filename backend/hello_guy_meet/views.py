@@ -165,13 +165,8 @@ class MeetRoomView(DetailView):
     def get_context_data(self, **kwargs):
         room = self.object
         cfg = MeetSettings.get_solo()
-        ws_base = (cfg.ws_base_url or "").strip().rstrip("/")
-        if ws_base in ("", "ws://localhost:8001", "ws://127.0.0.1:8001", "ws://localhost:8000", "ws://127.0.0.1:8000"):
-            ws_signal_url = f"/ws/meet/signal/{room.room_code}"
-            ws_ai_url = f"/ws/meet/ai/{room.room_code}"
-        else:
-            ws_signal_url = f"{ws_base}/ws/meet/signal/{room.room_code}"
-            ws_ai_url = f"{ws_base}/ws/meet/ai/{room.room_code}"
+        ws_signal_url = f"/ws/meet/signal/{room.room_code}"
+        ws_ai_url = f"/ws/meet/ai/{room.room_code}"
         is_host = self.request.user.is_authenticated
         display_name = (
             self.request.GET.get("name")
@@ -263,3 +258,86 @@ class MeetSettingsView(MeetStaffView, UserPassesTestMixin, TemplateView):
         form.save()
         messages.success(request, "Hello Guy Meet settings saved.")
         return redirect("meet:settings")
+
+
+class MeetSettingsTestView(MeetStaffView, UserPassesTestMixin, View):
+    """POST /meet/settings/test/ — live check for STT key, LLM reply, and TTS test audio."""
+    http_method_names = ["post"]
+
+    def test_func(self):
+        return bool(self.request.user.is_superuser or self.request.user.is_staff)
+
+    def post(self, request):
+        import asyncio
+        import base64
+
+        cfg = MeetSettings.get_solo()
+
+        # 1. STT check
+        if cfg.stt_provider == MeetSettings.STTProvider.GROQ:
+            stt_ok = bool(cfg.get_api_key("GROQ_API_KEY"))
+            stt_detail = "Groq API key configured" if stt_ok else "Missing GROQ_API_KEY"
+        elif cfg.stt_provider == MeetSettings.STTProvider.DEEPGRAM:
+            stt_ok = bool(cfg.get_api_key("DEEPGRAM_API_KEY"))
+            stt_detail = "Deepgram API key configured" if stt_ok else "Missing DEEPGRAM_API_KEY"
+        else:
+            stt_ok = True
+            stt_detail = "Browser Web Speech"
+
+        # 2. LLM live test
+        model, api_key = services.resolve_llm_model_and_key(cfg)
+        llm_ok = False
+        reply_text = ""
+        llm_detail = ""
+        if not api_key:
+            llm_detail = f"No API key configured for model '{model}'"
+        else:
+            try:
+                import litellm
+                resp = litellm.completion(
+                    model=model,
+                    api_key=api_key,
+                    messages=[
+                        {"role": "system", "content": "Reply in 1 short friendly sentence confirming you are ready."},
+                        {"role": "user", "content": "Hello, test connection."},
+                    ],
+                    max_tokens=60,
+                )
+                reply_text = resp.choices[0].message.content.strip()
+                llm_ok = bool(reply_text)
+                llm_detail = "Connected"
+            except Exception as exc:
+                llm_detail = str(exc)[:200]
+
+        # 3. TTS live audio test (fixed to Edge TTS)
+        tts_ok = False
+        audio_b64 = ""
+        tts_detail = ""
+        speech_text = reply_text or f"Hello! {cfg.default_bot_name} audio test is working."
+        try:
+            import edge_tts
+
+            async def _synth() -> bytes:
+                comm = edge_tts.Communicate(speech_text, cfg.edge_voice or "en-IN-NeerjaNeural")
+                buf = bytearray()
+                async for chunk in comm.stream():
+                    if chunk["type"] == "audio":
+                        buf.extend(chunk["data"])
+                return bytes(buf)
+
+            raw_mp3 = asyncio.run(_synth())
+            if raw_mp3:
+                audio_b64 = base64.b64encode(raw_mp3).decode("ascii")
+                tts_ok = True
+                tts_detail = f"Edge TTS ({cfg.edge_voice})"
+            else:
+                tts_detail = "Edge TTS returned empty audio"
+        except Exception as exc:
+            tts_detail = str(exc)[:200]
+
+        return JsonResponse({
+            "ok": bool(stt_ok and llm_ok and tts_ok),
+            "stt": {"provider": cfg.get_stt_provider_display(), "ok": stt_ok, "detail": stt_detail},
+            "llm": {"model": model, "ok": llm_ok, "reply": reply_text, "detail": llm_detail},
+            "tts": {"provider": "Edge TTS", "ok": tts_ok, "audio_b64": audio_b64, "detail": tts_detail},
+        })

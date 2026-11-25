@@ -42,17 +42,38 @@ def create_meet_room(
     )
 
 
-def generate_mom_summary(transcript: list[dict[str, Any]], llm_model: str = "gpt-4o-mini") -> str:
+def resolve_llm_model_and_key(cfg: MeetSettings) -> tuple[str, str]:
+    """Select the configured LLM model and matching API key (Mistral, Groq, or OpenAI)."""
+    model = (cfg.llm_model or "").strip() or "groq/llama-3.3-70b-versatile"
+    mistral_key = cfg.get_api_key("MISTRAL_API_KEY")
+    groq_key = cfg.get_api_key("GROQ_API_KEY")
+    openai_key = cfg.get_api_key("OPENAI_API_KEY")
+
+    if model.startswith("mistral/") and mistral_key:
+        return model, mistral_key
+    if model.startswith("groq/") and groq_key:
+        return model, groq_key
+    if mistral_key and not groq_key and not openai_key:
+        return (model if model.startswith("mistral/") else "mistral/mistral-small-latest"), mistral_key
+    if groq_key and not openai_key:
+        return (model if model.startswith("groq/") else "groq/llama-3.3-70b-versatile"), groq_key
+    return model, openai_key
+
+
+def generate_mom_summary(transcript: list[dict[str, Any]], cfg: MeetSettings | None = None) -> str:
     """Generate a concise Minutes of Meeting summary from transcript turns."""
     if not transcript:
         return "Meeting ended (no speech transcript recorded)."
+    cfg = cfg or MeetSettings.get_solo()
     lines = [f"{t.get('speaker') or t.get('role', 'Speaker')}: {t.get('text', '')}" for t in transcript if t.get("text")]
     joined = "\n".join(lines)
-    if os.environ.get("OPENAI_API_KEY"):
+    model, api_key = resolve_llm_model_and_key(cfg)
+    if api_key:
         try:
             import litellm
             resp = litellm.completion(
-                model=llm_model,
+                model=model,
+                api_key=api_key,
                 messages=[
                     {"role": "system", "content": "Create concise Minutes of Meeting (MoM) with 3-5 bullet points: key discussion points, decisions, and action items."},
                     {"role": "user", "content": joined[:6000]},
@@ -89,7 +110,7 @@ def finalize_room(
     if transcript is not None:
         room.transcript = transcript
     if not room.call_summary:
-        room.call_summary = generate_mom_summary(room.transcript or [], llm_model=cfg.llm_model)
+        room.call_summary = generate_mom_summary(room.transcript or [], cfg=cfg)
     room.status = MeetRoom.Status.ENDED
     room.ended_at = room.ended_at or timezone.now()
     room.save(update_fields=["transcript", "call_summary", "status", "ended_at", "updated_at"])

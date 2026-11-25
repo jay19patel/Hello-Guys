@@ -160,7 +160,10 @@
                     <p x-show="!transcript.length" class="text-muted text-center py-8 text-[12.5px]">Speak or ask the AI assistant below.</p>
                 </div>
                 <form @submit.prevent="sendTextTurn()" class="p-3 border-t border-line flex gap-2">
-                    <input type="text" x-model="chatInput" placeholder="Ask AI or add note to transcript…"
+                    <button type="button" @click="toggleAiMic()" class="btn btn-sm px-3" :class="aiRecording ? 'bg-bad text-white animate-pulse' : 'btn-ghost'" title="Speak to AI (Groq Whisper)">
+                        <i class="fa-solid" :class="aiRecording ? 'fa-stop' : 'fa-microphone'"></i>
+                    </button>
+                    <input type="text" x-model="chatInput" placeholder="Ask AI or add note…"
                            class="flex-1 rounded-xl border border-line bg-bg px-3 py-2 text-[13px] focus:outline-none focus:border-accent">
                     <button type="submit" class="btn btn-primary btn-sm px-3"><i class="fa-solid fa-paper-plane"></i></button>
                 </form>
@@ -235,6 +238,9 @@ function helloGuyMeet() {
         copied: false,
         ending: false,
         audioBlocked: false,
+        aiRecording: false,
+        aiRecorder: null,
+        aiAudioChunks: [],
         mediaWarning: '',
         sideTab: 'chat',
         unreadChat: 0,
@@ -492,11 +498,52 @@ function helloGuyMeet() {
             this.aiWs.onmessage = (ev) => {
                 if (typeof ev.data === 'string') {
                     const data = JSON.parse(ev.data);
-                    if (data.type === 'ai-reply') {
+                    if (data.type === 'user-transcript') {
+                        this.transcript.push({ role: 'user', speaker: data.speaker || this.displayName, text: data.text });
+                    } else if (data.type === 'ai-reply') {
                         this.transcript.push({ role: 'assistant', speaker: data.speaker || this.botName, text: data.text });
+                        if (data.audio_b64) {
+                            const audio = new Audio('data:audio/mp3;base64,' + data.audio_b64);
+                            audio.play().catch(() => {});
+                        }
                     }
                 }
             };
+        },
+
+        toggleAiMic() {
+            if (!this.aiActive || this.aiWs?.readyState !== WebSocket.OPEN) return;
+            if (this.aiRecording && this.aiRecorder) {
+                this.aiRecorder.stop();
+                this.aiRecording = false;
+                return;
+            }
+            const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
+            if (!audioTracks.length) return;
+            const stream = new MediaStream([audioTracks[0]]);
+            this.aiAudioChunks = [];
+            const recorder = new MediaRecorder(stream);
+            recorder.ondataavailable = (e) => { if (e.data.size > 0) this.aiAudioChunks.push(e.data); };
+            recorder.onstop = () => {
+                const blob = new Blob(this.aiAudioChunks, { type: recorder.mimeType || 'audio/webm' });
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const res = String(reader.result || '');
+                    const b64 = res.includes(',') ? res.split(',')[1] : '';
+                    if (b64 && this.aiWs?.readyState === WebSocket.OPEN) {
+                        this.aiWs.send(JSON.stringify({
+                            type: 'audio-turn',
+                            speaker: this.displayName,
+                            audio_b64: b64,
+                            mime: blob.type || 'audio/webm',
+                        }));
+                    }
+                };
+                reader.readAsDataURL(blob);
+            };
+            this.aiRecorder = recorder;
+            this.aiRecording = true;
+            recorder.start();
         },
 
         toggleAI() {

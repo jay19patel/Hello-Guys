@@ -4,6 +4,8 @@ Run alongside Django:
     cd backend && ../.venv/bin/uvicorn hello_guy_meet.realtime_server:app --host 0.0.0.0 --port 8001
 """
 
+import base64
+import io
 import json
 import logging
 import os
@@ -32,7 +34,7 @@ from django.core.asgi import get_asgi_application  # noqa: E402
 from django.utils import timezone  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from hello_guy_meet.models import MeetRoom, MeetSettings  # noqa: E402
-from hello_guy_meet.services import finalize_room  # noqa: E402
+from hello_guy_meet.services import finalize_room, resolve_llm_model_and_key  # noqa: E402
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Hello Guy Meet Realtime Server")
@@ -173,9 +175,69 @@ async def webrtc_signal(websocket: WebSocket, room_code: str) -> None:
         await hub.leave(room_code, peer_id)
 
 
+async def _groq_transcribe(cfg: MeetSettings, audio_b64: str, mime: str) -> str:
+    """Transcribe base64-encoded browser audio using Groq Whisper."""
+    api_key = cfg.get_api_key("GROQ_API_KEY")
+    if not api_key or not audio_b64:
+        return ""
+    from groq import AsyncGroq
+
+    ext = "webm" if "webm" in (mime or "") else ("mp4" if "mp4" in (mime or "") else "wav")
+    raw = base64.b64decode(audio_b64)
+    buf = io.BytesIO(raw)
+    buf.name = f"turn.{ext}"
+    client = AsyncGroq(api_key=api_key)
+    res = await client.audio.transcriptions.create(
+        file=buf,
+        model="whisper-large-v3-turbo",
+        response_format="text",
+    )
+    return str(res).strip()
+
+
+async def _groq_chat_reply(cfg: MeetSettings, system_prompt: str, transcript: list[dict[str, Any]]) -> str:
+    """Generate a concise live meeting reply via Mistral, Groq, or OpenAI."""
+    model, api_key = resolve_llm_model_and_key(cfg)
+    if api_key:
+        try:
+            import litellm
+            resp = await litellm.acompletion(
+                model=model,
+                api_key=api_key,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    *[{"role": t["role"], "content": t["text"]} for t in transcript[-10:] if t.get("text")],
+                ],
+                max_tokens=160,
+            )
+            return resp.choices[0].message.content.strip()
+        except Exception:
+            logger.exception("LLM reply failed")
+    last = transcript[-1]["text"][:120] if transcript else ""
+    return f"Got it. I've noted: \"{last}\"."
+
+
+async def _edge_tts_b64(text: str, voice: str) -> str:
+    """Synthesize speech to base64 MP3 using free Microsoft Edge TTS."""
+    if not text:
+        return ""
+    try:
+        import edge_tts
+
+        communicate = edge_tts.Communicate(text, voice or "en-IN-NeerjaNeural")
+        chunks = bytearray()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                chunks.extend(chunk["data"])
+        return base64.b64encode(bytes(chunks)).decode("ascii") if chunks else ""
+    except Exception:
+        logger.exception("Edge TTS synthesis failed")
+        return ""
+
+
 @app.websocket("/ws/meet/ai/{room_code}")
 async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
-    """Pipecat AI Voice Assistant WebSocket (Silero VAD + STT -> LLM -> TTS) with text fallback."""
+    """AI Voice Assistant WebSocket: Groq Whisper + Groq LLM + Edge TTS (or Pipecat when configured)."""
     await websocket.accept()
     room = await sync_to_async(MeetRoom.objects.filter(room_code=room_code).first)()
     if room is None:
@@ -186,6 +248,8 @@ async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
     transcript: list[dict[str, str]] = list(room.transcript or [])
 
     try:
+        if True:
+            raise ImportError("Using Groq + Edge TTS mode")
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.pipeline.pipeline import Pipeline
         from pipecat.pipeline.runner import PipelineRunner
@@ -198,14 +262,22 @@ async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
             FastAPIWebsocketTransport,
         )
 
+        openai_key = cfg.get_api_key("OPENAI_API_KEY")
+        deepgram_key = cfg.get_api_key("DEEPGRAM_API_KEY")
+        cartesia_key = cfg.get_api_key("CARTESIA_API_KEY")
+        if not openai_key or not deepgram_key:
+            raise KeyError("Missing Pipecat API key")
+
         if cfg.tts_provider == MeetSettings.TTSProvider.OPENAI:
             from pipecat.services.openai import OpenAITTSService
-            tts = OpenAITTSService(api_key=os.environ["OPENAI_API_KEY"])
+            tts = OpenAITTSService(api_key=openai_key)
         else:
+            if not cartesia_key:
+                raise KeyError("Missing CARTESIA_API_KEY")
             from pipecat.services.cartesia import CartesiaTTSService
             tts = CartesiaTTSService(
-                api_key=os.environ["CARTESIA_API_KEY"],
-                voice_id=cfg.cartesia_voice_id,
+                api_key=cartesia_key,
+                voice_id=cfg.cartesia_voice_id or os.environ.get("CARTESIA_VOICE_ID", "79a125e8-cd45-4c13-8a67-188112f4dd22"),
             )
 
         transport = FastAPIWebsocketTransport(
@@ -219,8 +291,8 @@ async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
                 vad_audio_passthrough=True,
             ),
         )
-        stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
-        llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model=cfg.llm_model)
+        stt = DeepgramSTTService(api_key=deepgram_key)
+        llm = OpenAILLMService(api_key=openai_key, model=cfg.llm_model)
         context = OpenAILLMContext(
             messages=[{"role": "system", "content": room.system_prompt or cfg.default_system_prompt}]
         )
@@ -254,33 +326,29 @@ async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
         await PipelineRunner().run(task)
 
     except (ImportError, KeyError) as exc:
-        logger.info("Pipecat audio mode unavailable (%s); running JSON text AI fallback.", exc)
-        await websocket.send_json({"type": "ai-ready", "mode": "text_fallback", "bot_name": room.bot_name})
+        logger.info("Running Groq + Edge TTS AI mode (%s).", exc)
+        await websocket.send_json({"type": "ai-ready", "mode": "groq_edge_tts", "bot_name": room.bot_name})
         try:
             while True:
                 raw = await websocket.receive_text()
                 data = json.loads(raw)
+                speaker = data.get("speaker") or "Participant"
                 user_text = (data.get("text") or "").strip()
+
+                if data.get("type") == "audio-turn" and data.get("audio_b64"):
+                    user_text = await _groq_transcribe(cfg, data["audio_b64"], data.get("mime", "audio/webm"))
+                    if user_text:
+                        await websocket.send_json({"type": "user-transcript", "speaker": speaker, "text": user_text})
+                        await hub.broadcast(room_code, {"type": "transcript", "role": "user", "speaker": speaker, "text": user_text})
+
                 if not user_text:
                     continue
-                speaker = data.get("speaker") or "Participant"
+
                 transcript.append({"role": "user", "speaker": speaker, "text": user_text})
-                reply_text = f"Got it, {speaker}. I've noted: \"{user_text[:120]}\"."
-                if os.environ.get("OPENAI_API_KEY"):
-                    try:
-                        import litellm
-                        resp = litellm.completion(
-                            model=cfg.llm_model,
-                            messages=[
-                                {"role": "system", "content": room.system_prompt or cfg.default_system_prompt},
-                                *[{"role": t["role"], "content": t["text"]} for t in transcript[-10:]],
-                            ],
-                            max_tokens=160,
-                        )
-                        reply_text = resp.choices[0].message.content.strip()
-                    except Exception:
-                        pass
+                reply_text = await _groq_chat_reply(cfg, room.system_prompt or cfg.default_system_prompt, transcript)
                 transcript.append({"role": "assistant", "speaker": room.bot_name, "text": reply_text})
+
+                audio_b64 = await _edge_tts_b64(reply_text, cfg.edge_voice)
 
                 def _save_t() -> None:
                     r = MeetRoom.objects.get(pk=room.pk)
@@ -288,7 +356,12 @@ async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
                     r.save(update_fields=["transcript", "updated_at"])
 
                 await sync_to_async(_save_t)()
-                await websocket.send_json({"type": "ai-reply", "speaker": room.bot_name, "text": reply_text})
+                await websocket.send_json({
+                    "type": "ai-reply",
+                    "speaker": room.bot_name,
+                    "text": reply_text,
+                    "audio_b64": audio_b64,
+                })
         except WebSocketDisconnect:
             pass
     except WebSocketDisconnect:

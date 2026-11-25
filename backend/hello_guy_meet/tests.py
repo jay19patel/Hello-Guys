@@ -76,11 +76,11 @@ class HelloGuyMeetTests(TestCase):
             reverse("meet:settings"),
             data={
                 "default_bot_name": "NJTech AI",
-                "ws_base_url": "wss://meet.example.com",
-                "llm_model": "gpt-4o-mini",
-                "stt_provider": MeetSettings.STTProvider.DEEPGRAM,
-                "tts_provider": MeetSettings.TTSProvider.CARTESIA,
-                "cartesia_voice_id": "voice-123",
+                "llm_model": "mistral/mistral-small-latest",
+                "stt_provider": MeetSettings.STTProvider.GROQ,
+                "edge_voice": "en-IN-NeerjaNeural",
+                "groq_api_key": "gsk_test_secret_12345",
+                "mistral_api_key": "mistral_test_secret_67890",
                 "ai_auto_join_default": True,
                 "allow_interruptions": True,
                 "default_system_prompt": "Be concise.",
@@ -90,7 +90,24 @@ class HelloGuyMeetTests(TestCase):
         self.assertEqual(post_resp.status_code, 302)
         cfg = MeetSettings.get_solo()
         self.assertEqual(cfg.default_bot_name, "NJTech AI")
-        self.assertEqual(cfg.ws_base_url, "wss://meet.example.com")
+        self.assertEqual(cfg.get_api_key("GROQ_API_KEY"), "gsk_test_secret_12345")
+        self.assertEqual(cfg.get_api_key("MISTRAL_API_KEY"), "mistral_test_secret_67890")
+        self.assertNotEqual(cfg.groq_api_key_enc, "gsk_test_secret_12345")
+        self.assertNotEqual(cfg.mistral_api_key_enc, "mistral_test_secret_67890")
+
+        # Secret must never be rendered in plaintext on GET
+        after_resp = self.client.get(reverse("meet:settings"))
+        self.assertNotContains(after_resp, "gsk_test_secret_12345")
+        self.assertNotContains(after_resp, "mistral_test_secret_67890")
+        self.assertContains(after_resp, "Saved (leave blank to keep)")
+
+        # Test AI & Audio endpoint returns structured check JSON
+        test_resp = self.client.post(reverse("meet:settings-test"))
+        self.assertEqual(test_resp.status_code, 200)
+        tdata = test_resp.json()
+        self.assertIn("stt", tdata)
+        self.assertIn("llm", tdata)
+        self.assertIn("tts", tdata)
 
     def test_meet_calendar_view_and_schedule(self):
         get_resp = self.client.get(reverse("meet:calendar"))
