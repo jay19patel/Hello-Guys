@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}AI Analytics · Hello Guy AI{% endblock %}
+
+{% block sidebar_brand %}
+<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-2.5">
+    <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+    <span class="font-display font-bold text-[15px] text-ink">Hello Guy AI</span>
+</a>
+{% endblock %}
+
+{% block nav_aria_label %}Hello Guy AI{% endblock %}
+
+{% block sidebar_nav %}
+<div class="caps px-3 pt-1 pb-1">Monitoring</div>
+<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg bg-accent/10 text-accent font-semibold">
+    <i class="fa-solid fa-chart-line w-4 text-center shrink-0"></i> AI Analytics
+</a>
+<a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> AI Chat
+</a>
+{% endblock %}
+
+{% block sidebar_system %}
+<div class="border-t border-line/70 px-3 py-2.5 flex flex-col gap-0.5 text-[13.5px]">
+    <div class="caps px-3 pb-1">Admin</div>
+    <a href="/admin/hello_guy_ai/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+        <i class="fa-solid fa-database w-4 text-center shrink-0"></i> AI Models &amp; Data
+    </a>
+</div>
+{% endblock %}
+
+{% block user_role_label %}{% if request.user.is_superuser %}Superuser{% else %}Staff{% endif %}{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Hello Guy AI Analytics</h1>
+        <p class="text-muted">Live health, run success rates, token &amp; cost tracking, RAG knowledge base, and recent agent runs.</p>
+    </div>
+    <div class="flex items-center gap-1 bg-subtle border border-line rounded-xl p-1 text-[12.5px] font-medium">
+        <a href="?period=7d" class="px-3 py-1 rounded-lg transition-colors {% if period == '7d' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">7 days</a>
+        <a href="?period=30d" class="px-3 py-1 rounded-lg transition-colors {% if period == '30d' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">30 days</a>
+        <a href="?period=90d" class="px-3 py-1 rounded-lg transition-colors {% if period == '90d' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">90 days</a>
+        <a href="?period=all" class="px-3 py-1 rounded-lg transition-colors {% if period == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All time</a>
+    </div>
+</header>
+
+<!-- Live System Health Strip -->
+<section class="card p-4 flex flex-wrap items-center gap-3">
+    <span class="caps mr-1">System Health</span>
+    <span class="pill {% if health.redis_ok %}bg-ok/15 text-ok{% else %}bg-bad/15 text-bad{% endif %}">
+        <i class="fa-solid fa-circle text-[7px]"></i>
+        Redis: {% if health.redis_ok %}Connected{% else %}Offline{% endif %}
+    </span>
+    <span class="pill {% if health.chat_model %}bg-ok/15 text-ok{% else %}bg-warn/15 text-warn{% endif %}">
+        <i class="fa-solid fa-microchip text-[10px]"></i>
+        Chat LLM: {% if health.chat_model %}{{ health.chat_model.name }} ({{ health.chat_model.model_id }}){% else %}Not configured{% endif %}
+    </span>
+    <span class="pill {% if health.embed_model %}bg-ok/15 text-ok{% else %}bg-subtle border border-line text-muted{% endif %}">
+        <i class="fa-solid fa-vector-square text-[10px]"></i>
+        Embed: {% if health.embed_model %}{{ health.embed_model.name }}{% else %}None{% endif %}
+    </span>
+    <span class="pill {% if health.active_runs %}bg-accent/15 text-accent{% else %}bg-subtle border border-line text-muted{% endif %}">
+        <i class="fa-solid fa-bolt text-[10px]"></i>
+        {{ health.active_runs }} active · {{ health.paused_runs }} paused
+    </span>
+</section>
+
+<!-- Top KPIs -->
+<section class="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="card p-5 flex flex-col gap-1.5">
+        <span class="caps">AI Runs</span>
+        <div class="flex items-baseline justify-between gap-2">
+            <span class="font-display text-2xl font-bold tabular-nums">{{ kpis.total_runs|intcomma }}</span>
+            {% if kpis.success_rate != None %}
+            <span class="pill {% if kpis.success_rate >= 90 %}bg-ok/15 text-ok{% elif kpis.success_rate >= 70 %}bg-warn/15 text-warn{% else %}bg-bad/15 text-bad{% endif %}">{{ kpis.success_rate }}% success</span>
+            {% endif %}
+        </div>
+        <p class="text-[12.5px] text-muted">{{ kpis.succeeded }} succeeded · {{ kpis.failed }} failed</p>
+    </div>
+
+    <div class="card p-5 flex flex-col gap-1.5">
+        <span class="caps">Tokens &amp; Cost</span>
+        <div class="flex items-baseline justify-between gap-2">
+            <span class="font-display text-2xl font-bold tabular-nums">{{ kpis.total_tokens|intcomma }}</span>
+            <span class="pill bg-accent/10 text-accent">${{ kpis.total_cost|floatformat:4 }}</span>
+        </div>
+        <p class="text-[12.5px] text-muted">{{ kpis.prompt_tokens|intcomma }} prompt · {{ kpis.completion_tokens|intcomma }} completion</p>
+    </div>
+
+    <div class="card p-5 flex flex-col gap-1.5">
+        <span class="caps">Conversations</span>
+        <div class="flex items-baseline justify-between gap-2">
+            <span class="font-display text-2xl font-bold tabular-nums">{{ kpis.threads|intcomma }}</span>
+            {% if kpis.needs_human %}
+            <span class="pill bg-warn/15 text-warn">{{ kpis.needs_human }} needs human</span>
+            {% endif %}
+        </div>
+        <p class="text-[12.5px] text-muted">{{ kpis.messages|intcomma }} messages · {{ kpis.human_mode }} human takeover</p>
+    </div>
+
+    <div class="card p-5 flex flex-col gap-1.5">
+        <span class="caps">User Feedback</span>
+        <div class="flex items-baseline justify-between gap-2">
+            <span class="font-display text-2xl font-bold tabular-nums">{% if kpis.fb_rate != None %}{{ kpis.fb_rate }}%{% else %}—{% endif %}</span>
+            <span class="pill bg-subtle border border-line text-muted">{{ kpis.fb_up }} 👍 · {{ kpis.fb_down }} 👎</span>
+        </div>
+        <p class="text-[12.5px] text-muted">Positive rating on runs</p>
+    </div>
+</section>
+
+<!-- Daily Trend + Run Status Breakdown -->
+<section class="grid lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-6">
+    <div class="card p-5 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="font-display text-[16px] font-semibold text-ink">Daily Run Activity (Last 14 Days)</h2>
+                <p class="text-[12.5px] text-muted">Total runs per day with failed highlights.</p>
+            </div>
+        </div>
+        <div class="h-40 flex items-end gap-1.5 pt-4 border-b border-line pb-2">
+            {% for day in daily_trend %}
+            <div class="flex-1 flex flex-col items-center justify-end gap-1 h-full group" title="{{ day.label }}: {{ day.total }} runs ({{ day.failed }} failed)">
+                <span class="text-[10px] text-muted tabular-nums opacity-0 group-hover:opacity-100 transition-opacity">{{ day.total }}</span>
+                <div class="w-full rounded-t-md bg-accent/80 hover:bg-accent transition-all relative overflow-hidden" style="height: {{ day.height_pct }}%;">
+                    {% if day.failed %}
+                    <div class="absolute inset-x-0 top-0 h-1.5 bg-bad"></div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="flex items-center justify-between text-[11px] text-muted tabular-nums">
+            <span>{{ daily_trend.0.label }}</span>
+            <span>{% with last_day=daily_trend|last %}{{ last_day.label }}{% endwith %}</span>
+        </div>
+    </div>
+
+    <div class="card p-5 flex flex-col gap-3">
+        <div>
+            <h2 class="font-display text-[16px] font-semibold text-ink">Run Status Breakdown</h2>
+            <p class="text-[12.5px] text-muted">Distribution across lifecycle states.</p>
+        </div>
+        <div class="flex flex-col gap-2.5">
+            {% for row in status_rows %}
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-[12.5px]">
+                    <span class="font-medium capitalize text-ink">{{ row.label }}</span>
+                    <span class="text-muted tabular-nums">{{ row.count }} ({{ row.pct }}%)</span>
+                </div>
+                <div class="h-2 rounded-full bg-subtle overflow-hidden">
+                    <div class="h-full rounded-full {% if row.value == 'succeeded' %}bg-ok{% elif row.value == 'failed' %}bg-bad{% elif row.value == 'paused' %}bg-warn{% else %}bg-accent{% endif %}" style="width: {{ row.pct }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- Models, Assistants, RAG & Automation -->
+<section class="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="card p-5 flex flex-col gap-3">
+        <h2 class="font-display text-[15px] font-semibold text-ink">Top Models</h2>
+        {% if model_rows %}
+        <ul class="divide-y divide-line text-[13px]">
+            {% for m in model_rows %}
+            <li class="py-2 flex items-center justify-between gap-2">
+                <span class="font-mono text-[12px] text-ink truncate" title="{{ m.model }}">{{ m.model }}</span>
+                <span class="text-muted tabular-nums shrink-0">{{ m.runs }} runs{% if m.failed %} · <span class="text-bad">{{ m.failed }} err</span>{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-[12.5px] text-muted">No model runs recorded yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="card p-5 flex flex-col gap-3">
+        <h2 class="font-display text-[15px] font-semibold text-ink">Top Assistants</h2>
+        {% if assistant_rows %}
+        <ul class="divide-y divide-line text-[13px]">
+            {% for a in assistant_rows %}
+            <li class="py-2 flex items-center justify-between gap-2">
+                <span class="font-medium text-ink truncate">{{ a.assistant_id }}</span>
+                <span class="text-muted tabular-nums shrink-0">{{ a.threads }} threads · {{ a.runs }} runs</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-[12.5px] text-muted">No assistant threads yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="card p-5 flex flex-col gap-3">
+        <h2 class="font-display text-[15px] font-semibold text-ink">Knowledge Base (RAG)</h2>
+        <div class="grid grid-cols-2 gap-2.5 text-[13px]">
+            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
+                <p class="caps">Active KBs</p>
+                <p class="font-display text-lg font-bold">{{ rag.kb_count }}</p>
+            </div>
+            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
+                <p class="caps">Chunks</p>
+                <p class="font-display text-lg font-bold">{{ rag.total_chunks|intcomma }}</p>
+            </div>
+            <div class="p-3 rounded-xl bg-ok/10 border border-ok/20">
+                <p class="caps text-ok">Docs Ready</p>
+                <p class="font-display text-lg font-bold text-ok">{{ rag.docs_ready }}</p>
+            </div>
+            <div class="p-3 rounded-xl {% if rag.docs_failed %}bg-bad/10 border border-bad/20{% else %}bg-subtle/50 border border-line{% endif %}">
+                <p class="caps {% if rag.docs_failed %}text-bad{% endif %}">Docs Failed</p>
+                <p class="font-display text-lg font-bold {% if rag.docs_failed %}text-bad{% endif %}">{{ rag.docs_failed }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-5 flex flex-col gap-3">
+        <h2 class="font-display text-[15px] font-semibold text-ink">Triggers &amp; Reminders</h2>
+        <div class="grid grid-cols-2 gap-2.5 text-[13px]">
+            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
+                <p class="caps">Triggers On</p>
+                <p class="font-display text-lg font-bold">{{ automation.triggers_enabled }} / {{ automation.triggers_total }}</p>
+            </div>
+            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
+                <p class="caps">Scheduled</p>
+                <p class="font-display text-lg font-bold">{{ automation.reminders_scheduled }}</p>
+            </div>
+            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
+                <p class="caps">Completed</p>
+                <p class="font-display text-lg font-bold">{{ automation.reminders_done }}</p>
+            </div>
+            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
+                <p class="caps">Unread Alerts</p>
+                <p class="font-display text-lg font-bold">{{ automation.unread_notifications }}</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Recent Runs & Errors -->
+<section class="card overflow-hidden">
+    <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+        <div>
+            <h2 class="font-display text-[16px] font-semibold text-ink">Recent AI Runs</h2>
+            <p class="text-[12.5px] text-muted">Latest executions with status, latency, tokens, cost, and error details.</p>
+        </div>
+    </div>
+    {% if recent_runs %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-[13px]">
+            <thead>
+                <tr class="table-head border-b border-line">
+                    <th>Status</th>
+                    <th>Assistant</th>
+                    <th>Model</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
+                    <th>Duration</th>
+                    <th>When</th>
+                    <th>Error / Feedback</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-line">
+                {% for r in recent_runs %}
+                <tr class="hover:bg-subtle/40">
+                    <td class="px-5 py-3">
+                        <span class="pill capitalize {% if r.status == 'succeeded' %}bg-ok/15 text-ok{% elif r.status == 'failed' %}bg-bad/15 text-bad{% elif r.status == 'paused' %}bg-warn/15 text-warn{% else %}bg-accent/15 text-accent{% endif %}">
+                            {{ r.status }}
+                        </span>
+                    </td>
+                    <td class="px-5 py-3 font-medium text-ink">{{ r.assistant_id }}</td>
+                    <td class="px-5 py-3 font-mono text-[12px] text-muted">{{ r.model }}</td>
+                    <td class="px-5 py-3 tabular-nums">{{ r.tokens|intcomma }}</td>
+                    <td class="px-5 py-3 tabular-nums">${{ r.cost|floatformat:4 }}</td>
+                    <td class="px-5 py-3 tabular-nums text-muted">{{ r.duration }}</td>
+                    <td class="px-5 py-3 text-muted">{{ r.created_at|naturaltime }}</td>
+                    <td class="px-5 py-3 max-w-xs truncate">
+                        {% if r.error %}
+                        <span class="text-bad text-[12px]" title="{{ r.error }}">{{ r.error }}</span>
+                        {% elif r.feedback %}
+                        <span class="pill bg-subtle border border-line text-[11px]">{{ r.feedback }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {% include "components/_empty_state.html" with icon="fa-chart-line" title="No AI runs yet" subtitle="Start chatting in AI Chat or Meta Inbox to see run analytics here." %}
+    {% endif %}
+</section>
+{% endblock %}

@@ -15,6 +15,7 @@ from django.http import Http404, HttpRequest, HttpResponse, StreamingHttpRespons
 from django.shortcuts import render
 from redis.exceptions import RedisError
 
+from hello_guy_ai.analytics import build_ai_analytics
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.core import events
 from hello_guy_ai.core.engine import public_questions
@@ -29,6 +30,16 @@ STREAM_ID = re.compile(r"^\d{1,20}-\d{1,20}$")
 @login_required
 def chat_page(request: HttpRequest) -> HttpResponse:
     return render(request, "hello_guy_ai/chat.html")
+
+
+@login_required
+def ai_analytics(request: HttpRequest) -> HttpResponse:
+    """Render the hello_guy_ai Analytics & System Health dashboard."""
+    if not (request.user.is_staff or request.user.is_superuser):
+        return render(request, "403.html", status=403)
+    period = request.GET.get("period", "30d")
+    ctx = build_ai_analytics(period=period)
+    return render(request, "hello_guy_ai/analytics.html", ctx)
 
 
 async def run_stream(request: HttpRequest, run_id: UUID) -> HttpResponse:
