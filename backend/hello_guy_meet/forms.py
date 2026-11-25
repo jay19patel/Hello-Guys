@@ -15,13 +15,17 @@ class MeetRoomForm(forms.ModelForm):
         widgets = {
             "scheduled_start": DATETIME_INPUT,
             "scheduled_end": DATETIME_INPUT,
-            "system_prompt": forms.Textarea(attrs={"rows": 2}),
+            "system_prompt": forms.Textarea(attrs={"rows": 2, "placeholder": "Meeting agenda / topics to cover…"}),
+        }
+        labels = {
+            "system_prompt": "Agenda",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["scheduled_start"].required = False
         self.fields["scheduled_end"].required = False
+        self.fields["bot_name"].required = False
         self.fields["scheduled_start"].input_formats = ["%Y-%m-%dT%H:%M"]
         self.fields["scheduled_end"].input_formats = ["%Y-%m-%dT%H:%M"]
 

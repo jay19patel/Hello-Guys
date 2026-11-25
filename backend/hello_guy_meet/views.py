@@ -43,7 +43,15 @@ class MeetDashboardView(MeetStaffView, ListView):
         cfg = MeetSettings.get_solo()
         initial = {"bot_name": cfg.default_bot_name, "ai_enabled": cfg.ai_auto_join_default}
         kwargs.setdefault("form", MeetRoomForm(initial=initial))
-        return super().get_context_data(meet_settings=cfg, **kwargs)
+        ctx = super().get_context_data(meet_settings=cfg, **kwargs)
+        try:
+            from hello_guy_meet.realtime_server import hub
+            for r in ctx.get("rooms", []):
+                r.live_participants = hub.get_participants(r.room_code)
+        except Exception:
+            for r in ctx.get("rooms", []):
+                r.live_participants = []
+        return ctx
 
     def post(self, request):
         form = MeetRoomForm(request.POST)
@@ -55,11 +63,13 @@ class MeetDashboardView(MeetStaffView, ListView):
             host=request.user,
             scheduled_start=form.cleaned_data.get("scheduled_start"),
             scheduled_end=form.cleaned_data.get("scheduled_end"),
-            ai_enabled=form.cleaned_data.get("ai_enabled", True),
+            ai_enabled=form.cleaned_data.get("ai_enabled", False),
             bot_name=form.cleaned_data.get("bot_name", ""),
             custom_prompt=form.cleaned_data.get("system_prompt", ""),
         )
         messages.success(request, f"Room '{room.title}' ({room.room_code}) created.")
+        if request.POST.get("submit_action") == "create":
+            return redirect("meet:dashboard")
         return redirect("meet:room", room_code=room.room_code)
 
 
@@ -172,12 +182,15 @@ class MeetRoomView(DetailView):
             self.request.GET.get("name")
             or ((self.request.user.get_full_name() or self.request.user.username) if self.request.user.is_authenticated else "Guest")
         )
+        is_ai_active_now = bool(room.ai_enabled) and (
+            room.scheduled_start is None or timezone.now() >= room.scheduled_start
+        )
         meet_config = {
             "roomCode": room.room_code,
             "displayName": display_name,
             "needsName": (not is_host) and (not bool(self.request.GET.get("name"))),
             "isHost": is_host,
-            "aiEnabled": bool(room.ai_enabled),
+            "aiEnabled": is_ai_active_now,
             "botName": room.bot_name,
             "wsSignalUrl": ws_signal_url,
             "wsAiUrl": ws_ai_url,
@@ -202,8 +215,18 @@ class MeetToggleAIView(MeetStaffView, View):
 
     def post(self, request, room_code: str):
         room = get_object_or_404(MeetRoom, room_code=room_code)
+        if room.status == MeetRoom.Status.ENDED:
+            messages.warning(request, f"'{room.title}' has already ended and cannot be reopened.")
+            return redirect("meet:dashboard")
         room.ai_enabled = not room.ai_enabled
         room.save(update_fields=["ai_enabled", "updated_at"])
+        try:
+            from asgiref.sync import async_to_sync
+            from hello_guy_meet.realtime_server import hub
+            if hub.rooms.get(room.room_code):
+                async_to_sync(hub.broadcast)(room.room_code, {"type": "ai-state", "enabled": room.ai_enabled})
+        except Exception:
+            pass
         state = "added to" if room.ai_enabled else "removed from"
         messages.success(request, f"AI Assistant {state} '{room.title}'.")
         return redirect("meet:dashboard")
@@ -224,6 +247,13 @@ class MeetEndAPIView(MeetStaffView, View):
             except json.JSONDecodeError:
                 pass
         minutes = services.finalize_room(room, transcript=transcript, user=request.user)
+        try:
+            from asgiref.sync import async_to_sync
+            from hello_guy_meet.realtime_server import hub
+            if hub.rooms.get(room.room_code):
+                async_to_sync(hub.broadcast)(room.room_code, {"type": "meeting-ended"})
+        except Exception:
+            pass
         is_json = "application/json" in (request.content_type or "") or "application/json" in request.headers.get("Accept", "")
         if not is_json:
             messages.success(request, f"Ended '{room.title}' and saved MoM to database.")

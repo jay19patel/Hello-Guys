@@ -13,9 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 def build_meet_prompt(*, custom_prompt: str = "") -> str:
-    """Build the AI Assistant system prompt from room override or global MeetSettings."""
+    """Build the AI Assistant prompt from global MeetSettings and the room's Agenda."""
     cfg = MeetSettings.get_solo()
-    return custom_prompt.strip() or cfg.default_system_prompt.strip()
+    base = cfg.default_system_prompt.strip()
+    agenda = custom_prompt.strip()
+    if agenda and base:
+        return f"{base}\n\nMeeting Agenda:\n{agenda}"
+    return agenda or base
 
 
 @transaction.atomic

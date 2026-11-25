@@ -94,6 +94,13 @@
                 <button type="button" @click="scheduleOpen = false" class="text-muted hover:text-ink p-1"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <form method="post" class="grid sm:grid-cols-2 gap-4"
+                  x-init="
+                      const cb = $el.querySelector('[name=ai_enabled]');
+                      const botField = $el.querySelector('[name=bot_name]')?.closest('.field');
+                      const sync = () => { if (botField && cb) botField.classList.toggle('hidden', !cb.checked); };
+                      sync();
+                      cb?.addEventListener('change', sync);
+                  "
                   x-effect="if (selectedDate) {
                       const s = $el.querySelector('[name=scheduled_start]');
                       const e = $el.querySelector('[name=scheduled_end]');

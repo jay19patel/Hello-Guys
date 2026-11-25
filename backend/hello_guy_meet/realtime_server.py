@@ -4,10 +4,12 @@ Run alongside Django:
     cd backend && ../.venv/bin/uvicorn hello_guy_meet.realtime_server:app --host 0.0.0.0 --port 8001
 """
 
+import asyncio
 import base64
 import io
 import json
 import logging
+import time
 import os
 import sys
 import uuid
@@ -87,8 +89,15 @@ class RoomHub:
             except Exception:
                 pass
 
+    def get_participants(self, room_code: str) -> list[dict[str, Any]]:
+        peers = self.rooms.get(room_code, {})
+        return [{"name": info["name"], "is_host": info["is_host"]} for info in peers.values()]
+
 
 hub = RoomHub()
+_room_ai_locks: dict[str, asyncio.Lock] = {}
+_room_last_ai_ts: dict[str, float] = {}
+_WHISPER_NOISE = {"thank you", "thank you.", "thanks", "thanks.", "you", "bye", "bye.", "you.", ""}
 
 
 @app.get("/health")
@@ -103,6 +112,12 @@ async def webrtc_signal(websocket: WebSocket, room_code: str) -> None:
     room = await sync_to_async(MeetRoom.objects.filter(room_code=room_code).first)()
     if room is None:
         await websocket.close(code=4004, reason="Room not found")
+        return
+    if room.status == MeetRoom.Status.ENDED:
+        await websocket.close(code=4003, reason="Meeting ended")
+        return
+    if room.status == MeetRoom.Status.ENDED:
+        await websocket.close(code=4003, reason="Meeting ended")
         return
 
     peer_id = str(uuid.uuid4())[:8]
@@ -205,10 +220,10 @@ async def _groq_chat_reply(cfg: MeetSettings, system_prompt: str, transcript: li
                 model=model,
                 api_key=api_key,
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    *[{"role": t["role"], "content": t["text"]} for t in transcript[-10:] if t.get("text")],
+                    {"role": "system", "content": system_prompt + " Keep your reply very brief (1-2 short sentences) for a live voice call."},
+                    *[{"role": t["role"], "content": t["text"]} for t in transcript[-8:] if t.get("text")],
                 ],
-                max_tokens=160,
+                max_tokens=90,
             )
             return resp.choices[0].message.content.strip()
         except Exception:
@@ -224,7 +239,7 @@ async def _edge_tts_b64(text: str, voice: str) -> str:
     try:
         import edge_tts
 
-        communicate = edge_tts.Communicate(text, voice or "en-IN-NeerjaNeural")
+        communicate = edge_tts.Communicate(text, voice or "en-IN-NeerjaNeural", rate="+18%")
         chunks = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -242,6 +257,12 @@ async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
     room = await sync_to_async(MeetRoom.objects.filter(room_code=room_code).first)()
     if room is None:
         await websocket.close(code=4004, reason="Room not found")
+        return
+    if room.status == MeetRoom.Status.ENDED:
+        await websocket.close(code=4003, reason="Meeting ended")
+        return
+    if room.status == MeetRoom.Status.ENDED:
+        await websocket.close(code=4003, reason="Meeting ended")
         return
 
     cfg = await sync_to_async(MeetSettings.get_solo)()
@@ -337,31 +358,66 @@ async def meet_ai_ws(websocket: WebSocket, room_code: str) -> None:
 
                 if data.get("type") == "audio-turn" and data.get("audio_b64"):
                     user_text = await _groq_transcribe(cfg, data["audio_b64"], data.get("mime", "audio/webm"))
+                    if user_text.strip().lower() in _WHISPER_NOISE or len(user_text.strip()) < 3:
+                        continue
                     if user_text:
-                        await websocket.send_json({"type": "user-transcript", "speaker": speaker, "text": user_text})
-                        await hub.broadcast(room_code, {"type": "transcript", "role": "user", "speaker": speaker, "text": user_text})
+                        t_payload = {"type": "transcript", "role": "user", "speaker": speaker, "text": user_text}
+                        if hub.rooms.get(room_code):
+                            await hub.broadcast(room_code, t_payload)
+                        else:
+                            await websocket.send_json({"type": "user-transcript", "speaker": speaker, "text": user_text})
 
                 if not user_text:
                     continue
 
-                transcript.append({"role": "user", "speaker": speaker, "text": user_text})
-                reply_text = await _groq_chat_reply(cfg, room.system_prompt or cfg.default_system_prompt, transcript)
-                transcript.append({"role": "assistant", "speaker": room.bot_name, "text": reply_text})
+                def _check_ai_active() -> bool:
+                    r = MeetRoom.objects.filter(pk=room.pk).only("ai_enabled", "scheduled_start").first()
+                    if not r or not r.ai_enabled:
+                        return False
+                    return r.scheduled_start is None or timezone.now() >= r.scheduled_start
 
-                audio_b64 = await _edge_tts_b64(reply_text, cfg.edge_voice)
+                is_ai_on = await sync_to_async(_check_ai_active)()
+                if data.get("transcribe_only") or not is_ai_on:
+                    transcript.append({"role": "user", "speaker": speaker, "text": user_text})
 
-                def _save_t() -> None:
-                    r = MeetRoom.objects.get(pk=room.pk)
-                    r.transcript = transcript
-                    r.save(update_fields=["transcript", "updated_at"])
+                    def _save_only() -> None:
+                        r = MeetRoom.objects.get(pk=room.pk)
+                        r.transcript = transcript
+                        r.save(update_fields=["transcript", "updated_at"])
 
-                await sync_to_async(_save_t)()
-                await websocket.send_json({
-                    "type": "ai-reply",
-                    "speaker": room.bot_name,
-                    "text": reply_text,
-                    "audio_b64": audio_b64,
-                })
+                    await sync_to_async(_save_only)()
+                    continue
+
+                lock = _room_ai_locks.setdefault(room_code, asyncio.Lock())
+                async with lock:
+                    now_ts = time.monotonic()
+                    if data.get("type") == "audio-turn" and (now_ts - _room_last_ai_ts.get(room_code, 0.0)) < 2.5:
+                        continue
+                    _room_last_ai_ts[room_code] = now_ts
+
+                    transcript.append({"role": "user", "speaker": speaker, "text": user_text})
+                    reply_text = await _groq_chat_reply(cfg, room.system_prompt or cfg.default_system_prompt, transcript)
+                    transcript.append({"role": "assistant", "speaker": room.bot_name, "text": reply_text})
+
+                    audio_b64 = await _edge_tts_b64(reply_text, cfg.edge_voice)
+
+                    def _save_t() -> None:
+                        r = MeetRoom.objects.get(pk=room.pk)
+                        r.transcript = transcript
+                        r.save(update_fields=["transcript", "updated_at"])
+
+                    await sync_to_async(_save_t)()
+                    _room_last_ai_ts[room_code] = time.monotonic()
+                    reply_payload = {
+                        "type": "ai-reply",
+                        "speaker": room.bot_name,
+                        "text": reply_text,
+                        "audio_b64": audio_b64,
+                    }
+                    if hub.rooms.get(room_code):
+                        await hub.broadcast(room_code, reply_payload)
+                    else:
+                        await websocket.send_json(reply_payload)
         except WebSocketDisconnect:
             pass
     except WebSocketDisconnect:

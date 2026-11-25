@@ -13,6 +13,16 @@ class HelloGuyMeetTests(TestCase):
         self.client.force_login(self.user)
 
     def test_create_room_guest_access_and_end_mom_table(self):
+        # Create without joining stays on dashboard
+        create_only = self.client.post(
+            reverse("meet:dashboard"),
+            data={"title": "Create Only Room", "bot_name": "Meet AI", "submit_action": "create"},
+        )
+        self.assertRedirects(create_only, reverse("meet:dashboard"))
+        create_only_room = MeetRoom.objects.get(title="Create Only Room")
+        self.assertFalse(create_only_room.ai_enabled)
+
+        # Create & Join redirects into the room
         resp = self.client.post(
             reverse("meet:dashboard"),
             data={
@@ -20,11 +30,13 @@ class HelloGuyMeetTests(TestCase):
                 "ai_enabled": True,
                 "bot_name": "Meet AI",
                 "system_prompt": "Focus on product demo.",
+                "submit_action": "create_join",
             },
         )
         self.assertEqual(resp.status_code, 302)
         room = MeetRoom.objects.get(title="Product Discovery Call")
-        self.assertEqual(room.system_prompt, "Focus on product demo.")
+        self.assertRedirects(resp, reverse("meet:room", args=[room.room_code]))
+        self.assertIn("Focus on product demo.", room.system_prompt)
 
         # Guest (logged out) can open the WebRTC room URL with no email/login, and cannot see host AI toggle
         self.client.logout()
@@ -68,6 +80,12 @@ class HelloGuyMeetTests(TestCase):
         mom_resp = self.client.get(reverse("meet:mom-list"))
         self.assertEqual(mom_resp.status_code, 200)
         self.assertContains(mom_resp, "Product Discovery Call")
+
+        # Ended meeting cannot be reopened
+        ended_resp = self.client.get(reverse("meet:room", args=[room.room_code]))
+        self.assertEqual(ended_resp.status_code, 200)
+        self.assertContains(ended_resp, "This meeting has ended and cannot be reopened.")
+        self.assertNotContains(ended_resp, 'id="meet-config"')
 
     def test_meet_settings_page(self):
         resp = self.client.get(reverse("meet:settings"))

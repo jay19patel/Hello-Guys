@@ -6,11 +6,35 @@
     <title>{{ room.title }} · Hello Guy Meet</title>
     {% include "components/_theme_head.html" %}
 </head>
-<body class="bg-bg text-ink min-h-screen flex flex-col antialiased"
-      x-data="helloGuyMeet()"
-      x-init="init()">
+<body class="bg-bg text-ink min-h-screen flex flex-col antialiased">
+{% if room.status == 'ended' %}
+    <main class="flex-1 flex items-center justify-center p-6">
+        <div class="card max-w-lg w-full p-6 flex flex-col gap-4 text-center">
+            <span class="w-12 h-12 rounded-2xl bg-bad/15 text-bad flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-phone-slash"></i>
+            </span>
+            <div>
+                <h1 class="font-display text-xl font-bold text-ink">{{ room.title }}</h1>
+            </div>
+            <p class="text-[14px] text-muted">This meeting has ended and cannot be reopened.</p>
+            {% if room.call_summary %}
+            <div class="text-left text-[13px] text-ink bg-subtle/60 border border-line rounded-xl p-4 whitespace-pre-line">{{ room.call_summary }}</div>
+            {% endif %}
+            {% if is_host %}
+            <div class="flex items-center justify-center gap-2 pt-2">
+                <a href="{% url 'meet:mom-list' %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-clipboard-list"></i> MoM Records</a>
+                <a href="{% url 'meet:dashboard' %}" class="btn btn-primary btn-sm">Back to Meet Rooms</a>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+{% else %}
+<div class="flex-1 flex flex-col min-h-screen"
+     x-data="helloGuyMeet()"
+     x-init="init()">
     {{ meet_config|json_script:"meet-config" }}
     <input type="hidden" id="meet-csrf" value="{{ csrf_token }}">
+    <audio id="aiVoicePlayer" playsinline class="hidden"></audio>
 
     <!-- Top Room Header -->
     <header class="h-14 border-b border-line bg-surface/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0">
@@ -24,6 +48,12 @@
         </div>
 
         <div class="flex items-center gap-2 shrink-0">
+            {% if not is_host %}
+            <button type="button" @click="changeGuestName()" class="btn btn-ghost btn-sm" title="Change your display name">
+                <i class="fa-solid fa-user-pen"></i>
+                <span class="hidden sm:inline" x-text="displayName"></span>
+            </button>
+            {% endif %}
             <button type="button" @click="copyInvite()" class="btn btn-ghost btn-sm">
                 <i class="fa-regular fa-copy"></i>
                 <span class="hidden sm:inline" x-text="copied ? 'Copied!' : 'Copy Invite'"></span>
@@ -67,7 +97,7 @@
                     </span>
                     <div>
                         <p class="font-display font-semibold text-white text-[14px]" x-text="botName"></p>
-                        <p class="text-[11.5px] text-slate-300" x-text="aiConnected ? 'Pipecat AI Listening' : 'Connecting AI…'"></p>
+                        <p class="text-[11.5px] text-slate-300" x-text="aiSpeaking ? 'Speaking…' : (aiConnected ? 'Listening (Auto Voice)' : 'Connecting AI…')"></p>
                     </div>
                 </div>
 
@@ -100,16 +130,10 @@
                     <i class="fa-solid fa-desktop"></i>
                     <span x-text="sharing ? 'Stop Share' : 'Share Screen'"></span>
                 </button>
-                {% if is_host %}
-                <button type="button" @click="toggleAI()" class="btn btn-sm" :class="aiActive ? 'bg-accent/15 text-accent border border-accent/30' : 'btn-ghost'">
-                    <i class="fa-solid fa-robot"></i>
-                    <span x-text="aiActive ? 'AI On' : 'Add AI'"></span>
+                <button type="button" @click="leaveMeeting()" class="btn btn-sm bg-bad text-white hover:bg-bad/90">
+                    <i class="fa-solid fa-phone-slash"></i>
+                    <span>Leave</span>
                 </button>
-                <button type="button" @click="endMeeting()" :disabled="ending" class="btn btn-sm bg-bad text-white hover:bg-bad/90">
-                    <i class="fa-solid" :class="ending ? 'fa-spinner fa-spin' : 'fa-phone-slash'"></i>
-                    <span x-text="ending ? 'Saving MoM…' : 'End & Save MoM'"></span>
-                </button>
-                {% endif %}
             </div>
         </div>
 
@@ -121,8 +145,8 @@
                         <i class="fa-solid fa-comments text-[11px]"></i> Chat
                         <span x-show="unreadChat > 0" x-text="unreadChat" class="pill bg-accent text-on-accent h-4 px-1.5 text-[10px]"></span>
                     </button>
-                    <button type="button" x-show="aiActive" x-cloak @click="sideTab = 'transcript'" class="h-7 rounded-lg flex items-center justify-center gap-1.5 transition-colors" :class="sideTab === 'transcript' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
-                        <i class="fa-solid fa-robot text-[11px]"></i> AI &amp; Transcript
+                    <button type="button" @click="sideTab = 'transcript'" class="h-7 rounded-lg flex items-center justify-center gap-1.5 transition-colors" :class="sideTab === 'transcript' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
+                        <i class="fa-solid fa-closed-captioning text-[11px]"></i> Transcript
                     </button>
                 </div>
             </div>
@@ -148,7 +172,7 @@
                 </form>
             </div>
 
-            <!-- Tab 2: AI & Live Transcript -->
+            <!-- Tab 2: Live Transcript -->
             <div x-show="sideTab === 'transcript'" x-cloak class="flex-1 flex flex-col min-h-0">
                 <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5 text-[13px]" id="transcriptFeed">
                     <template x-for="(t, i) in transcript" :key="i">
@@ -157,13 +181,13 @@
                             <p class="text-ink whitespace-pre-line" x-text="t.text"></p>
                         </div>
                     </template>
-                    <p x-show="!transcript.length" class="text-muted text-center py-8 text-[12.5px]">Speak or ask the AI assistant below.</p>
+                    <p x-show="!transcript.length" class="text-muted text-center py-8 text-[12.5px]">Live speech transcript will appear here as participants speak.</p>
                 </div>
                 <form @submit.prevent="sendTextTurn()" class="p-3 border-t border-line flex gap-2">
-                    <button type="button" @click="toggleAiMic()" class="btn btn-sm px-3" :class="aiRecording ? 'bg-bad text-white animate-pulse' : 'btn-ghost'" title="Speak to AI (Groq Whisper)">
+                    <button x-show="aiActive" type="button" @click="toggleAiMic()" class="btn btn-sm px-3" :class="aiRecording ? 'bg-bad text-white animate-pulse' : 'btn-ghost'" title="Speak to AI (Groq Whisper)">
                         <i class="fa-solid" :class="aiRecording ? 'fa-stop' : 'fa-microphone'"></i>
                     </button>
-                    <input type="text" x-model="chatInput" placeholder="Ask AI or add note…"
+                    <input type="text" x-model="chatInput" :placeholder="aiActive ? 'Ask AI or add note…' : 'Add note to transcript…'"
                            class="flex-1 rounded-xl border border-line bg-bg px-3 py-2 text-[13px] focus:outline-none focus:border-accent">
                     <button type="submit" class="btn btn-primary btn-sm px-3"><i class="fa-solid fa-paper-plane"></i></button>
                 </form>
@@ -238,9 +262,15 @@ function helloGuyMeet() {
         copied: false,
         ending: false,
         audioBlocked: false,
+        aiSpeaking: false,
+        aiAudioQueue: [],
+        aiCooldownUntil: 0,
         aiRecording: false,
         aiRecorder: null,
         aiAudioChunks: [],
+        vadTimer: null,
+        vadCtx: null,
+        speechRec: null,
         mediaWarning: '',
         sideTab: 'chat',
         unreadChat: 0,
@@ -280,9 +310,17 @@ function helloGuyMeet() {
                 this.aiWs?.close();
                 Object.values(this.peers).forEach(({ pc }) => pc.close());
             });
+            if (!this.joined && this.guestNameInput.trim()) {
+                this.displayName = this.guestNameInput.trim().slice(0, 60);
+                this.joined = true;
+            }
             if (this.joined) {
                 await this.startRoom();
             }
+        },
+
+        changeGuestName() {
+            this.joined = false;
         },
 
         async joinAsGuest() {
@@ -315,7 +353,7 @@ function helloGuyMeet() {
                 }
             }
             this.connectSignal();
-            if (this.aiActive) this.connectAI();
+            this.connectAI();
         },
 
         connectSignal() {
@@ -328,6 +366,7 @@ function helloGuyMeet() {
             this.signalWs.onopen = () => { this.signalConnected = true; };
             this.signalWs.onclose = () => {
                 this.signalConnected = false;
+                Object.keys(this.peers).forEach(id => this.removePeer(id));
                 if (!this.ending && !this.momSummary) {
                     setTimeout(() => this.connectSignal(), 3000);
                 }
@@ -365,7 +404,19 @@ function helloGuyMeet() {
                     }
                 } else if (msg.type === 'ai-state') {
                     this.aiActive = !!msg.enabled;
-                    if (!this.aiActive && this.sideTab === 'transcript') this.sideTab = 'chat';
+                    if (!this.aiActive) {
+                        this.stopAiPlayback();
+                    }
+                } else if (msg.type === 'meeting-ended') {
+                    this.ending = true;
+                    this.stopAutoVad();
+                    this.stopAiClip();
+                    this.signalWs?.close();
+                    this.aiWs?.close();
+                    this.localStream?.getTracks().forEach(t => t.stop());
+                    window.location.reload();
+                } else if (msg.type === 'ai-reply') {
+                    this.playAiReply(msg);
                 } else if (msg.type === 'transcript') {
                     this.transcript.push({ role: msg.role || 'user', speaker: msg.speaker, text: msg.text });
                 } else if (msg.type === 'chat') {
@@ -394,6 +445,11 @@ function helloGuyMeet() {
 
         unlockAudio() {
             this.audioBlocked = false;
+            const aiEl = document.getElementById('aiVoicePlayer');
+            if (aiEl && aiEl.src && aiEl.paused) {
+                aiEl.muted = false;
+                aiEl.play().catch(() => { this.audioBlocked = true; });
+            }
             this.remotePeers.forEach(p => {
                 const aud = document.getElementById('remote-audio-' + p.peer_id);
                 const vid = document.getElementById('remote-video-' + p.peer_id);
@@ -493,31 +549,144 @@ function helloGuyMeet() {
         connectAI() {
             if (this.aiWs && this.aiWs.readyState === WebSocket.OPEN) return;
             this.aiWs = new WebSocket(this.resolveWsUrl(this.wsAiUrl));
-            this.aiWs.onopen = () => { this.aiConnected = true; };
-            this.aiWs.onclose = () => { this.aiConnected = false; };
+            this.aiWs.onopen = () => {
+                this.aiConnected = true;
+                this.startAutoVad();
+            };
+            this.aiWs.onclose = () => {
+                this.aiConnected = false;
+                this.stopAutoVad();
+            };
             this.aiWs.onmessage = (ev) => {
                 if (typeof ev.data === 'string') {
                     const data = JSON.parse(ev.data);
                     if (data.type === 'user-transcript') {
                         this.transcript.push({ role: 'user', speaker: data.speaker || this.displayName, text: data.text });
                     } else if (data.type === 'ai-reply') {
-                        this.transcript.push({ role: 'assistant', speaker: data.speaker || this.botName, text: data.text });
-                        if (data.audio_b64) {
-                            const audio = new Audio('data:audio/mp3;base64,' + data.audio_b64);
-                            audio.play().catch(() => {});
-                        }
+                        this.playAiReply(data);
                     }
                 }
             };
         },
 
-        toggleAiMic() {
-            if (!this.aiActive || this.aiWs?.readyState !== WebSocket.OPEN) return;
-            if (this.aiRecording && this.aiRecorder) {
-                this.aiRecorder.stop();
-                this.aiRecording = false;
+        stopAiPlayback() {
+            this.aiSpeaking = false;
+            this.aiAudioQueue = [];
+            const aiEl = document.getElementById('aiVoicePlayer');
+            if (aiEl) {
+                try {
+                    aiEl.pause();
+                    aiEl.currentTime = 0;
+                    aiEl.removeAttribute('src');
+                    aiEl.load();
+                } catch (e) {}
+            }
+            if (window.speechSynthesis) {
+                try { window.speechSynthesis.cancel(); } catch (e) {}
+            }
+        },
+
+        playNextAiAudio() {
+            if (!this.aiActive || this.aiSpeaking || !this.aiAudioQueue.length) return;
+            const nextItem = this.aiAudioQueue.shift();
+            const aiEl = document.getElementById('aiVoicePlayer');
+            if (nextItem.audio_b64 && aiEl) {
+                this.aiSpeaking = true;
+                aiEl.src = 'data:audio/mp3;base64,' + nextItem.audio_b64;
+                aiEl.muted = false;
+                aiEl.onended = () => {
+                    this.aiSpeaking = false;
+                    this.aiCooldownUntil = Date.now() + 1500;
+                    this.playNextAiAudio();
+                };
+                aiEl.onerror = () => {
+                    this.aiSpeaking = false;
+                    this.playNextAiAudio();
+                };
+                aiEl.play().catch(() => {
+                    this.aiSpeaking = false;
+                    this.audioBlocked = true;
+                });
                 return;
             }
+            if (nextItem.text && window.speechSynthesis) {
+                try {
+                    const u = new SpeechSynthesisUtterance(nextItem.text);
+                    u.onend = () => {
+                        this.aiSpeaking = false;
+                        this.aiCooldownUntil = Date.now() + 1500;
+                        this.playNextAiAudio();
+                    };
+                    this.aiSpeaking = true;
+                    window.speechSynthesis.speak(u);
+                } catch (e) {
+                    this.aiSpeaking = false;
+                }
+            }
+        },
+
+        playAiReply(data) {
+            if (!this.aiActive) return;
+            this.transcript.push({ role: 'assistant', speaker: data.speaker || this.botName, text: data.text });
+            this.aiAudioQueue.push({ audio_b64: data.audio_b64 || '', text: data.text || '' });
+            this.playNextAiAudio();
+        },
+
+        startAutoVad() {
+            this.stopAutoVad();
+            const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
+            if (!audioTracks.length || !window.AudioContext) return;
+            try {
+                const ctx = new AudioContext();
+                const src = ctx.createMediaStreamSource(new MediaStream([audioTracks[0]]));
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 512;
+                src.connect(analyser);
+                const buf = new Uint8Array(analyser.frequencyBinCount);
+                this.vadCtx = ctx;
+
+                let speaking = false;
+                let silenceTicks = 0;
+                let speechTicks = 0;
+
+                this.vadTimer = setInterval(() => {
+                    if (!this.aiConnected || this.micMuted || this.aiSpeaking || Date.now() < this.aiCooldownUntil) return;
+                    analyser.getByteTimeDomainData(buf);
+                    let sum = 0;
+                    for (let i = 0; i < buf.length; i++) {
+                        const v = (buf[i] - 128) / 128;
+                        sum += v * v;
+                    }
+                    const rms = Math.sqrt(sum / buf.length);
+                    if (rms > 0.03) {
+                        speechTicks++;
+                        silenceTicks = 0;
+                        if (!speaking && speechTicks >= 3 && !this.aiRecording) {
+                            speaking = true;
+                            this.startAiClip();
+                        }
+                    } else if (speaking) {
+                        silenceTicks++;
+                        if (silenceTicks >= 6) {
+                            speaking = false;
+                            speechTicks = 0;
+                            silenceTicks = 0;
+                            this.stopAiClip();
+                        }
+                    } else {
+                        speechTicks = 0;
+                    }
+                }, 100);
+            } catch (e) {}
+        },
+
+        stopAutoVad() {
+            if (this.vadTimer) { clearInterval(this.vadTimer); this.vadTimer = null; }
+            if (this.vadCtx) { try { this.vadCtx.close(); } catch (e) {} this.vadCtx = null; }
+        },
+
+        startAiClip() {
+            if (this.aiRecording || this.aiWs?.readyState !== WebSocket.OPEN) return;
             const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
             if (!audioTracks.length) return;
             const stream = new MediaStream([audioTracks[0]]);
@@ -526,6 +695,7 @@ function helloGuyMeet() {
             recorder.ondataavailable = (e) => { if (e.data.size > 0) this.aiAudioChunks.push(e.data); };
             recorder.onstop = () => {
                 const blob = new Blob(this.aiAudioChunks, { type: recorder.mimeType || 'audio/webm' });
+                if (blob.size < 4000) return;
                 const reader = new FileReader();
                 reader.onloadend = () => {
                     const res = String(reader.result || '');
@@ -536,6 +706,7 @@ function helloGuyMeet() {
                             speaker: this.displayName,
                             audio_b64: b64,
                             mime: blob.type || 'audio/webm',
+                            transcribe_only: !this.aiActive,
                         }));
                     }
                 };
@@ -546,13 +717,64 @@ function helloGuyMeet() {
             recorder.start();
         },
 
+        stopAiClip() {
+            if (this.aiRecording && this.aiRecorder) {
+                try { this.aiRecorder.stop(); } catch (e) {}
+                this.aiRecording = false;
+            }
+        },
+
+        toggleAiMic() {
+            if (!this.aiActive || this.aiWs?.readyState !== WebSocket.OPEN) return;
+            if (this.aiRecording) this.stopAiClip();
+            else this.startAiClip();
+        },
+
+        startBrowserSpeech() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR || this.speechRec || !this.localStream || !this.localStream.getAudioTracks().length) return;
+            try {
+                const rec = new SR();
+                rec.continuous = true;
+                rec.interimResults = false;
+                rec.onresult = (ev) => {
+                    if (this.micMuted || this.aiActive) return;
+                    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+                        if (ev.results[i].isFinal) {
+                            const text = (ev.results[i][0]?.transcript || '').trim();
+                            if (text) {
+                                this.transcript.push({ role: 'user', speaker: this.displayName, text });
+                                if (this.signalWs?.readyState === WebSocket.OPEN) {
+                                    this.signalWs.send(JSON.stringify({ type: 'transcript', speaker: this.displayName, text }));
+                                }
+                            }
+                        }
+                    }
+                };
+                rec.onend = () => {
+                    if (this.speechRec && !this.aiActive && !this.ending) {
+                        try { rec.start(); } catch (e) {}
+                    }
+                };
+                this.speechRec = rec;
+                rec.start();
+            } catch (e) {}
+        },
+
+        stopBrowserSpeech() {
+            if (this.speechRec) {
+                const rec = this.speechRec;
+                this.speechRec = null;
+                try { rec.stop(); } catch (e) {}
+            }
+        },
+
         toggleAI() {
             this.aiActive = !this.aiActive;
-            if (this.aiActive) this.connectAI();
-            else {
-                this.aiWs?.close();
-                this.aiConnected = false;
-                if (this.sideTab === 'transcript') this.sideTab = 'chat';
+            if (this.aiActive) {
+                this.connectAI();
+            } else {
+                this.aiSpeaking = false;
             }
             if (this.signalWs?.readyState === WebSocket.OPEN) {
                 this.signalWs.send(JSON.stringify({ type: 'ai-state', enabled: this.aiActive }));
@@ -637,6 +859,21 @@ function helloGuyMeet() {
             setTimeout(() => { this.copied = false; }, 1800);
         },
 
+        leaveMeeting() {
+            this.ending = true;
+            this.stopAutoVad();
+            this.stopAiClip();
+            this.signalWs?.close();
+            this.aiWs?.close();
+            Object.values(this.peers).forEach(({ pc }) => pc.close());
+            this.localStream?.getTracks().forEach(t => t.stop());
+            if (this.isHost) {
+                window.location.href = "{% url 'meet:dashboard' %}";
+            } else {
+                this.momSummary = 'You left the meeting. You can close this tab or refresh to rejoin while the meeting is still live.';
+            }
+        },
+
         async endMeeting() {
             this.ending = true;
             try {
@@ -660,5 +897,7 @@ function helloGuyMeet() {
     };
 }
 </script>
+</div>
+{% endif %}
 </body>
 </html>

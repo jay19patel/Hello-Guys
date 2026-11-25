@@ -89,7 +89,7 @@ class MeetSettings(models.Model):
     openai_api_key_enc = models.TextField(blank=True, default="")
     deepgram_api_key_enc = models.TextField(blank=True, default="")
     cartesia_api_key_enc = models.TextField(blank=True, default="")
-    ai_auto_join_default = models.BooleanField(default=False, help_text="Enable AI Voice Assistant in new rooms by default.")
+    ai_auto_join_default = models.BooleanField(default=True, help_text="Enable AI Voice Assistant in new rooms by default.")
     allow_interruptions = models.BooleanField(default=True, help_text="Allow speakers to interrupt the AI mid-sentence (Silero VAD).")
     default_system_prompt = models.TextField(
         blank=True,
@@ -153,7 +153,7 @@ class MeetRoom(models.Model):
     scheduled_start = models.DateTimeField(null=True, blank=True, db_index=True)
     scheduled_end = models.DateTimeField(null=True, blank=True)
     timezone = models.CharField(max_length=64, default="Asia/Kolkata")
-    ai_enabled = models.BooleanField(default=False)
+    ai_enabled = models.BooleanField(default=True)
     bot_name = models.CharField(max_length=120, default="Hello Guys AI Assistant")
     system_prompt = models.TextField(blank=True, default="")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SCHEDULED, db_index=True)
