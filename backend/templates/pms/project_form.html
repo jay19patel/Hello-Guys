@@ -1,0 +1,20 @@
+{% extends "pms/base.html" %}
+{% block page_title %}{{ title|default:"New project" }}{% endblock %}
+
+{% block content %}
+<header class="flex items-center gap-3">
+    <a href="{{ back }}" class="btn btn-ghost btn-sm" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></a>
+    <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight">{{ title|default:"New project" }}</h1>
+</header>
+
+<form method="post" class="card p-6 flex flex-col gap-5 max-w-3xl">
+    {% csrf_token %}
+    <div class="grid sm:grid-cols-2 gap-4">
+        {% include "components/_fields.html" %}
+    </div>
+    <div class="flex items-center gap-2.5 pt-2 border-t border-line">
+        <button type="submit" class="btn btn-primary">Save project</button>
+        <a href="{{ back }}" class="btn btn-ghost">Cancel</a>
+    </div>
+</form>
+{% endblock %}

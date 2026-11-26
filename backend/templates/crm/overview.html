@@ -159,7 +159,7 @@
                 <h2 class="font-display text-[16px] font-semibold text-ink">Do Next</h2>
                 <p class="text-[12.5px] text-muted">Scheduled follow-ups &amp; callbacks needing action.</p>
             </div>
-            <a href="{% url 'crm:follow-ups' %}" class="text-[13px] font-medium text-accent hover:underline">Scheduler →</a>
+            <a href="{% url 'core:follow-ups' %}" class="text-[13px] font-medium text-accent hover:underline">Follow-ups →</a>
         </div>
         <ul class="divide-y divide-line">
             {% for fu in do_next_followups %}

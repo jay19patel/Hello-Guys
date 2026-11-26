@@ -1,0 +1,413 @@
+{% extends "pms/base.html" %}
+{% block page_title %}{{ project.name }}{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex items-start gap-3">
+        <a href="{% url 'pms:projects' %}" class="btn btn-ghost btn-sm mt-1" aria-label="Back to projects"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight text-ink">{{ project.name }}</h1>
+                {% include "pms/_status.html" with status=project.status label=project.get_status_display %}
+            </div>
+            <p class="text-[13px] text-muted mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>Owner: <strong class="text-ink">{% include "pms/_user.html" with u=project.owner %}</strong></span>
+                {% if project.start_date or project.due_date %}
+                <span class="tabular-nums">
+                    {{ project.start_date|date:"d M Y"|default:"—" }} → {{ project.due_date|date:"d M Y"|default:"—" }}
+                </span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    {% if can_edit %}
+    <div class="flex items-center gap-2">
+        <a href="{% url 'pms:task-create' project.pk %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-plus"></i> Single task</a>
+    </div>
+    {% endif %}
+</header>
+
+{% if project.description %}
+<section class="card p-5">
+    <h2 class="caps mb-1.5">Description</h2>
+    <p class="text-[14px] text-ink whitespace-pre-line">{{ project.description }}</p>
+</section>
+{% endif %}
+
+{{ slots|json_script:"pms-slots-data" }}
+{{ group_ids|json_script:"pms-group-ids" }}
+{{ parent_options|json_script:"pms-parent-options" }}
+{{ users|json_script:"pms-users-data" }}
+{{ bulk_draft|json_script:"pms-bulk-draft" }}
+
+<!-- Task Tree + Inline Bulk Builder -->
+<section class="card p-5 flex flex-col gap-4" x-data="pmsTree()" x-init="init()">
+    <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-line">
+        <div class="flex items-center gap-4 flex-wrap">
+            <h2 class="font-display font-semibold text-[16px]">Tasks ({{ total_tasks }})</h2>
+            {% if total_tasks %}
+            <div class="flex items-center gap-3 text-[12.5px] text-muted">
+                <div class="w-28 h-2 rounded-full bg-subtle overflow-hidden">
+                    <div class="h-full rounded-full bg-ok" style="width: {{ project_progress }}%"></div>
+                </div>
+                <span class="tabular-nums">{{ done_tasks }}/{{ total_tasks }} ({{ project_progress }}%)</span>
+                <span class="pill bg-subtle border border-line tabular-nums" title="Hours spent / Estimated hours">
+                    <i class="fa-regular fa-clock text-[11px]"></i> {{ total_actual_hours|floatformat:1 }} / {{ total_expected_hours|floatformat:1 }} h
+                </span>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+            <a href="{% url 'pms:project' project.pk %}" class="btn btn-ghost btn-sm" aria-label="Refresh tasks" title="Refresh">
+                <i class="fa-solid fa-arrows-rotate"></i>
+            </a>
+            {% if group_ids %}
+            <button type="button" @click="toggleAll()" class="btn btn-ghost btn-sm">
+                <i class="fa-solid" :class="allCollapsed ? 'fa-angles-down' : 'fa-angles-up'"></i>
+                <span x-text="allCollapsed ? 'Expand all' : 'Collapse all'"></span>
+            </button>
+            {% endif %}
+            {% if can_edit %}
+            <button type="button" @click="openBuilder('')" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-plus"></i> Add tasks
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if bulk_error %}
+    <div role="alert" class="rounded-xl border border-bad/35 bg-bad/5 px-4 py-3 text-[13.5px] text-bad">
+        <i class="fa-solid fa-circle-exclamation mr-1.5"></i> {{ bulk_error }}
+    </div>
+    {% endif %}
+
+    <div class="flex flex-col gap-2" style="display:flex; flex-direction:column;">
+        {% for r in rows %}
+        <div id="task-{{ r.task.pk }}"
+             style="order: {{ r.order }}; margin-left: {{ r.indent }}px;"
+             x-show="!isHidden({{ r.ancestors|safe }})"
+             class="rounded-xl border border-line bg-surface hover:bg-subtle/40 transition-colors px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                {% if r.child_count %}
+                <button type="button"
+                        @click="toggleCollapse({{ r.task.pk }})"
+                        :aria-expanded="!c[{{ r.task.pk }}]"
+                        aria-label="Toggle subtasks for {{ r.task.title }}"
+                        class="w-6 h-6 rounded-md hover:bg-subtle flex items-center justify-center text-muted shrink-0">
+                    <i class="fa-solid fa-chevron-down text-[11px] transition-transform" :class="c[{{ r.task.pk }}] ? '-rotate-90' : ''"></i>
+                </button>
+                {% else %}
+                <span class="w-6 shrink-0 text-center text-muted/60"><i class="fa-solid {% if r.task.is_group %}fa-folder{% else %}fa-circle text-[5px]{% endif %}"></i></span>
+                {% endif %}
+
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <a href="{% url 'pms:task' r.task.pk %}"
+                           class="font-medium text-[14px] hover:text-accent truncate {% if r.task.status == 'done' or r.task.status == 'cancelled' %}line-through text-muted{% else %}text-ink{% endif %}">
+                            {{ r.task.title }}
+                        </a>
+                        <span class="text-[11.5px] font-mono text-muted">({{ r.task.code }})</span>
+                        <span class="pill bg-subtle border border-line text-[10.5px]">
+                            {% if r.task.parent_id %}SUB-TASK{% else %}TASK{% endif %}
+                        </span>
+                        {% include "pms/_status.html" with status=r.task.status label=r.task.get_status_display %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 shrink-0 text-[12.5px]">
+                {% if r.people %}
+                <div class="flex -space-x-1.5">
+                    {% for u in r.people %}
+                    <span title="{{ u.get_full_name|default:u.get_username }}"
+                          class="w-6 h-6 rounded-full bg-accent/15 text-accent border border-surface flex items-center justify-center text-[10px] font-bold">
+                        {{ u.get_username|slice:":2"|upper }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <span class="tabular-nums text-muted" title="Subtree progress">{{ r.progress }}%</span>
+                <span class="tabular-nums text-muted hidden sm:inline" title="Hours spent / estimated">{{ r.actual_hours }}/{{ r.expected_hours }}h</span>
+                <span class="hidden md:inline">{% include "pms/_due.html" with due=r.task.due_date status=r.task.status today=today %}</span>
+
+                <a href="{% url 'pms:task' r.task.pk %}" class="btn btn-ghost btn-sm px-2 text-muted hover:text-ink" aria-label="Open {{ r.task.title }}" title="Open task">
+                    <i class="fa-regular fa-eye"></i>
+                </a>
+                {% if can_edit %}
+                <button type="button" @click="openBuilder('{{ r.task.pk }}')" class="btn btn-ghost btn-sm px-2 text-accent hover:bg-accent/10" aria-label="Add subtasks under {{ r.task.title }}" title="Add subtasks">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p x-show="!builderOpen" class="py-6 text-center text-[13.5px] text-muted">No tasks yet.{% if can_edit %} Click <b>Add tasks</b> to build your task tree.{% endif %}</p>
+        {% endfor %}
+
+        {% if can_edit %}
+        <!-- Inline Bulk Tree Builder -->
+        <form x-show="builderOpen" x-cloak method="post" @submit="prepareSubmit($event)"
+              :style="`order: ${slot.order}; margin-left: ${slot.indent}px;`"
+              class="rounded-xl border-2 border-accent/40 bg-subtle/40 p-4 flex flex-col gap-3 mt-1">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk">
+            <input type="hidden" name="tree" x-ref="treeInput">
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-line">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="caps text-accent">Bulk Tree Builder</span>
+                    <label for="bulk-parent" class="text-[12px] text-muted">Under:</label>
+                    <select id="bulk-parent" name="parent" x-model="anchor" class="rounded-lg border border-line bg-surface px-2.5 py-1 text-[12.5px]">
+                        <option value="">— Top level —</option>
+                        <template x-for="opt in parentOptions" :key="opt.id">
+                            <option :value="opt.id" x-text="opt.label"></option>
+                        </template>
+                    </select>
+                </div>
+                <span class="text-[11.5px] text-muted hidden sm:inline">Enter: new row · Tab: indent · Shift+Tab: outdent · Backspace (empty): remove</span>
+            </div>
+
+            <div x-show="clientError" x-cloak role="alert" class="text-[12.5px] text-bad font-medium" x-text="clientError"></div>
+
+            <div class="flex flex-col gap-2">
+                <template x-for="(row, i) in bulkRows" :key="row.key">
+                    <div :style="`margin-left: ${row.level * 24}px;`"
+                         class="flex flex-wrap items-center gap-2 rounded-lg border bg-surface px-2.5 py-2"
+                         :class="row.bad ? 'border-bad' : 'border-line'">
+                        <span x-show="isGroupRow(i)" class="pill bg-accent/10 text-accent text-[10.5px] shrink-0">Group</span>
+                        <input type="text"
+                               x-model="row.title"
+                               :data-row-key="row.key"
+                               @keydown.enter.prevent="addRowAfter(i)"
+                               @keydown.tab.prevent="onTab($event, i)"
+                               @keydown.backspace="onBackspace($event, i)"
+                               placeholder="Task title…"
+                               class="flex-1 min-w-[160px] bg-transparent text-[13.5px] text-ink focus:outline-none">
+
+                        <select x-model="row.assignee" aria-label="Assignee" class="rounded-md border border-line bg-subtle/50 px-2 py-1 text-[12px] max-w-[130px]">
+                            <option value="">Unassigned</option>
+                            <template x-for="u in users" :key="u.id">
+                                <option :value="u.id" x-text="u.name"></option>
+                            </template>
+                        </select>
+
+                        <input type="date" x-model="row.due_date" aria-label="Due date" class="rounded-md border border-line bg-subtle/50 px-2 py-1 text-[12px]">
+                        <input type="number" step="0.5" min="0" x-model="row.hours" placeholder="Hrs" aria-label="Estimated hours" class="w-16 rounded-md border border-line bg-subtle/50 px-2 py-1 text-[12px]">
+
+                        <div class="flex items-center gap-0.5 shrink-0">
+                            <button type="button" @click="outdent(i)" class="btn btn-ghost btn-sm px-1.5" aria-label="Outdent" title="Outdent (Shift+Tab)"><i class="fa-solid fa-outdent text-[11px]"></i></button>
+                            <button type="button" @click="indent(i)" class="btn btn-ghost btn-sm px-1.5" aria-label="Indent" title="Indent (Tab)"><i class="fa-solid fa-indent text-[11px]"></i></button>
+                            <button type="button" @click="removeRow(i)" class="btn btn-ghost btn-sm px-1.5 text-bad" aria-label="Remove row" title="Remove"><i class="fa-solid fa-xmark text-[11px]"></i></button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-line">
+                <button type="button" @click="addRowAfter(bulkRows.length - 1)" class="btn btn-ghost btn-sm"><i class="fa-solid fa-plus"></i> Add row</button>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="cancelBuilder()" class="btn btn-ghost btn-sm">Cancel</button>
+                    <button type="submit" :disabled="validCount === 0" class="btn btn-primary btn-sm">
+                        <i class="fa-solid fa-check"></i> Save <span x-text="validCount"></span> task<span x-show="validCount !== 1">s</span>
+                    </button>
+                </div>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</section>
+
+<div class="grid lg:grid-cols-3 gap-6 items-start">
+    <section class="card p-5">
+        <h2 class="caps mb-3">Members ({{ project.members.count }})</h2>
+        <ul class="flex flex-col gap-2 text-[13.5px]">
+            {% for m in project.members.all %}
+            <li class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-full bg-accent/10 text-accent flex items-center justify-center text-[11px] font-bold">{{ m.get_username|slice:":2"|upper }}</span>
+                <span>{% include "pms/_user.html" with u=m %}</span>
+            </li>
+            {% empty %}
+            <li class="text-muted">Only the owner so far.</li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    {% if can_edit %}
+    <section class="lg:col-span-2 card p-5" x-data="{ editOpen: {% if form.errors %}true{% else %}false{% endif %} }">
+        <button type="button" @click="editOpen = !editOpen" class="w-full flex items-center justify-between font-display font-semibold text-[16px]">
+            <span>Edit project</span>
+            <i class="fa-solid fa-chevron-down text-[12px] text-muted transition-transform" :class="editOpen ? 'rotate-180' : ''"></i>
+        </button>
+        <div x-show="editOpen" x-transition x-cloak class="mt-4 flex flex-col gap-4">
+            <form method="post" class="flex flex-col gap-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                <div class="grid sm:grid-cols-2 gap-4">
+                    {% include "components/_fields.html" %}
+                </div>
+                <div><button type="submit" class="btn btn-primary">Save project</button></div>
+            </form>
+            {% if can_delete %}
+            <form method="post" onsubmit="return confirm('Delete this project and all its tasks? This cannot be undone.')" class="pt-3 border-t border-line">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="btn btn-ghost text-bad"><i class="fa-solid fa-trash"></i> Delete project</button>
+            </form>
+            {% endif %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pmsTree() {
+    const slots = JSON.parse(document.getElementById('pms-slots-data').textContent);
+    const groupIds = JSON.parse(document.getElementById('pms-group-ids').textContent);
+    const parentOptions = JSON.parse(document.getElementById('pms-parent-options').textContent);
+    const users = JSON.parse(document.getElementById('pms-users-data').textContent);
+    const draft = JSON.parse(document.getElementById('pms-bulk-draft').textContent);
+
+    let seq = 1;
+    const makeRow = (level = 0, data = {}) => ({
+        key: seq++,
+        level: Number.isInteger(level) ? level : 0,
+        title: data.title || '',
+        assignee: data.assignee || '',
+        due_date: data.due_date || '',
+        hours: data.hours || '',
+        bad: false,
+    });
+
+    return {
+        c: {},
+        allCollapsed: false,
+        builderOpen: false,
+        anchor: draft.anchor || '',
+        bulkRows: [],
+        parentOptions,
+        users,
+        clientError: '',
+        init() {
+            if (draft.rows && draft.rows.length) {
+                this.bulkRows = draft.rows.map(r => makeRow(r.level || 0, r));
+                this.builderOpen = true;
+            }
+        },
+        get slot() {
+            return slots[this.anchor] || slots[''] || { order: 1, indent: 0 };
+        },
+        get validCount() {
+            return this.bulkRows.filter(r => r.title.trim().length > 0).length;
+        },
+        isHidden(ancestors) {
+            return ancestors.some(id => !!this.c[id]);
+        },
+        toggleCollapse(id) {
+            this.c[id] = !this.c[id];
+        },
+        toggleAll() {
+            this.allCollapsed = !this.allCollapsed;
+            groupIds.forEach(id => { this.c[id] = this.allCollapsed; });
+        },
+        openBuilder(anchorId) {
+            this.anchor = anchorId || '';
+            if (anchorId && this.c[anchorId]) this.c[anchorId] = false;
+            if (!this.bulkRows.length) this.bulkRows = [makeRow(0)];
+            this.builderOpen = true;
+            this.clientError = '';
+            this.$nextTick(() => this.focusRow(this.bulkRows[0].key));
+        },
+        cancelBuilder() {
+            if (this.validCount > 0 && !confirm('Discard unsaved task rows?')) return;
+            this.builderOpen = false;
+            this.bulkRows = [];
+            this.clientError = '';
+        },
+        focusRow(key) {
+            const el = document.querySelector(`[data-row-key="${key}"]`);
+            if (el) el.focus();
+        },
+        isGroupRow(i) {
+            return i + 1 < this.bulkRows.length && this.bulkRows[i + 1].level > this.bulkRows[i].level;
+        },
+        subtreeEnd(i) {
+            const lvl = this.bulkRows[i].level;
+            let end = i;
+            while (end + 1 < this.bulkRows.length && this.bulkRows[end + 1].level > lvl) end++;
+            return end;
+        },
+        addRowAfter(i) {
+            const lvl = i >= 0 && this.bulkRows[i] ? this.bulkRows[i].level : 0;
+            const row = makeRow(lvl);
+            this.bulkRows.splice(i + 1, 0, row);
+            this.$nextTick(() => this.focusRow(row.key));
+        },
+        indent(i) {
+            if (i <= 0) return;
+            const prev = this.bulkRows[i - 1];
+            if (this.bulkRows[i].level > prev.level) return;
+            const end = this.subtreeEnd(i);
+            for (let k = i; k <= end; k++) this.bulkRows[k].level += 1;
+        },
+        outdent(i) {
+            if (this.bulkRows[i].level <= 0) return;
+            const end = this.subtreeEnd(i);
+            for (let k = i; k <= end; k++) this.bulkRows[k].level = Math.max(0, this.bulkRows[k].level - 1);
+        },
+        removeRow(i) {
+            const end = this.subtreeEnd(i);
+            for (let k = i + 1; k <= end; k++) this.bulkRows[k].level = Math.max(0, this.bulkRows[k].level - 1);
+            this.bulkRows.splice(i, 1);
+            if (!this.bulkRows.length) this.bulkRows.push(makeRow(0));
+        },
+        onTab(e, i) {
+            if (e.shiftKey) this.outdent(i);
+            else this.indent(i);
+        },
+        onBackspace(e, i) {
+            if (this.bulkRows[i].title === '' && this.bulkRows.length > 1) {
+                e.preventDefault();
+                const prevKey = i > 0 ? this.bulkRows[i - 1].key : null;
+                this.removeRow(i);
+                if (prevKey) this.$nextTick(() => this.focusRow(prevKey));
+            }
+        },
+        prepareSubmit(e) {
+            this.clientError = '';
+            const cleaned = [];
+            for (let i = 0; i < this.bulkRows.length; i++) {
+                const r = this.bulkRows[i];
+                r.bad = false;
+                const hasTitle = r.title.trim().length > 0;
+                const hasSubtasks = this.isGroupRow(i);
+                if (!hasTitle && hasSubtasks) {
+                    r.bad = true;
+                    this.clientError = 'A group row with subtasks cannot have an empty title.';
+                    e.preventDefault();
+                    return;
+                }
+                if (hasTitle) {
+                    cleaned.push({
+                        level: r.level,
+                        title: r.title.trim(),
+                        assignee: r.assignee || '',
+                        due_date: r.due_date || '',
+                        hours: r.hours || '',
+                    });
+                }
+            }
+            if (!cleaned.length) {
+                this.clientError = 'Enter at least one task title.';
+                e.preventDefault();
+                return;
+            }
+            this.$refs.treeInput.value = JSON.stringify(cleaned);
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "pms/base.html" %}
+{% block page_title %}Projects{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight text-ink">Projects</h1>
+        <p class="text-muted text-[13.5px] mt-0.5">Track projects, task hierarchies, and team progress.</p>
+    </div>
+    {% if can_edit %}
+    <a href="{% url 'pms:project-create' %}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> New project</a>
+    {% endif %}
+</header>
+
+<form method="get" class="card p-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="relative flex-1 min-w-[220px] max-w-md">
+        <i class="fa-solid fa-magnifying-glass text-muted text-[12.5px] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        <input type="text" name="q" value="{{ q }}" placeholder="Search projects by name…"
+               class="w-full h-9 pl-9 pr-3 rounded-xl border border-line bg-subtle/40 text-[13px] text-ink placeholder:text-muted focus:outline-none focus:border-accent transition-colors">
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+        <select name="status" onchange="this.form.submit()" aria-label="Filter by status"
+                class="h-9 px-3 rounded-xl border border-line bg-subtle/40 text-[13px] text-ink focus:outline-none focus:border-accent">
+            <option value="">All statuses</option>
+            {% for val, label in status_choices %}
+            <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm h-9 px-3.5"><i class="fa-solid fa-filter text-[11px]"></i> Filter</button>
+        {% if q or status_filter %}
+        <a href="{% url 'pms:projects' %}" class="btn btn-ghost btn-sm h-9">Clear</a>
+        {% endif %}
+    </div>
+</form>
+
+<section class="card overflow-hidden">
+    {% if projects %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-left">
+            <thead>
+                <tr class="table-head border-b border-line">
+                    <th>Project</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Hours</th>
+                    <th>Owner</th>
+                    <th>Due date</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-line text-[13.5px]">
+                {% for p in projects %}
+                <tr class="hover:bg-subtle/50 transition-colors">
+                    <td class="cell px-5 max-w-md">
+                        <a href="{% url 'pms:project' p.pk %}" class="font-semibold text-ink hover:text-accent block">{{ p.name }}</a>
+                        {% if p.description %}
+                        <p class="text-[12.5px] text-muted truncate mt-0.5">{{ p.description|truncatechars:90 }}</p>
+                        {% endif %}
+                    </td>
+                    <td class="cell px-5">{% include "pms/_status.html" with status=p.status label=p.get_status_display %}</td>
+                    <td class="cell px-5 min-w-[160px]">
+                        {% if p.total_tasks %}
+                        <div class="flex items-center gap-2.5">
+                            <div class="flex-1 h-2 rounded-full bg-subtle overflow-hidden">
+                                <div class="h-full rounded-full bg-accent" style="width: {% widthratio p.done_tasks p.total_tasks 100 %}%"></div>
+                            </div>
+                            <span class="text-[12px] text-muted tabular-nums whitespace-nowrap">{{ p.done_tasks }}/{{ p.total_tasks }}</span>
+                        </div>
+                        {% else %}
+                        <span class="text-[12.5px] text-muted">No tasks</span>
+                        {% endif %}
+                    </td>
+                    <td class="cell px-5 text-[12.5px] text-muted tabular-nums whitespace-nowrap">
+                        {{ p.total_actual_hours|floatformat:1 }} / {{ p.total_expected_hours|floatformat:1 }} h
+                    </td>
+                    <td class="cell px-5 text-muted">{% include "pms/_user.html" with u=p.owner %}</td>
+                    <td class="cell px-5">{% include "pms/_due.html" with due=p.due_date status=p.status today=today %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {% if can_edit %}
+    {% include "components/_empty_state.html" with icon="fa-folder-tree" title="No projects yet" subtitle="Create your first project to organize tasks and subtasks." %}
+    {% else %}
+    {% include "components/_empty_state.html" with icon="fa-folder-tree" title="No projects available" subtitle="Ask an Admin or Agent to add you to a project." %}
+    {% endif %}
+    {% endif %}
+</section>
+{% include "pms/_pagination.html" %}
+{% endblock %}

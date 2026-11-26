@@ -1,0 +1,13 @@
+{% if is_paginated %}
+<nav class="flex items-center justify-between gap-2 text-[13px] text-muted" aria-label="Pagination">
+    <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    <div class="flex items-center gap-1.5">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter|urlencode }}{% endif %}" class="btn btn-ghost btn-sm">Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter|urlencode }}{% endif %}" class="btn btn-ghost btn-sm">Next</a>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}

@@ -217,12 +217,13 @@ def _extract_attendee_data(event: dict) -> tuple[dict[str, str], list[dict]]:
 
 
 def _proposals_from_details(details: list[dict], prev_comments: dict[str, str] | None = None) -> list[dict]:
-    """Build pending proposal records for any guest with a new RSVP comment indicating a proposed time or decline."""
+    """Build pending proposal records for any guest with a new RSVP comment (Google Calendar API sends
+    proposed-time notes in attendee.comment even when responseStatus is 'accepted')."""
     prev = prev_comments or {}
     new_proposals: list[dict] = []
     for d in details:
-        email, answer, comment = d["email"], d["status"], d["comment"]
-        if comment and comment != prev.get(email, "") and ("propose" in comment.lower() or answer in ("declined", "tentative")):
+        email, comment = d["email"], d["comment"]
+        if comment and comment != prev.get(email, ""):
             new_proposals.append({
                 "id": uuid.uuid4().hex[:10],
                 "email": email,

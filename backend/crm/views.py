@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.core import signing
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponseBadRequest, JsonResponse
@@ -803,6 +804,14 @@ class MeetingListView(CRMView, ListView):
     context_object_name = "meetings"
     paginate_by = PAGE_SIZE
 
+    def get(self, request, *args, **kwargs):
+        if GoogleAccount.get_solo().is_connected and cache.add("crm_meetings_auto_sync", 1, timeout=300):
+            try:
+                google.import_calendar_events()
+            except google.GoogleError:
+                pass
+        return super().get(request, *args, **kwargs)
+
     def get_queryset(self):
         tab = self.request.GET.get("tab", "upcoming")
         q = self.request.GET.get("q", "").strip()
@@ -811,6 +820,10 @@ class MeetingListView(CRMView, ListView):
 
         if tab == "upcoming":
             qs = qs.filter(status=Meeting.Status.SCHEDULED, end_at__gte=now - timedelta(hours=2)).order_by("start_at")
+        elif tab == "today":
+            today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            qs = qs.filter(status=Meeting.Status.SCHEDULED, start_at__gte=today_start, start_at__lt=today_end).order_by("start_at")
         elif tab == "past":
             qs = qs.filter(Q(status=Meeting.Status.DONE) | Q(end_at__lt=now)).exclude(status=Meeting.Status.CANCELLED).order_by("-start_at")
         elif tab == "cancelled":
@@ -871,6 +884,9 @@ class MeetingListView(CRMView, ListView):
                 "today": Meeting.objects.filter(status=Meeting.Status.SCHEDULED, start_at__gte=today_start, start_at__lt=today_end).count(),
                 "proposals": proposals_count,
                 "transcripts": MeetingTranscript.objects.count(),
+                "past": Meeting.objects.filter(Q(status=Meeting.Status.DONE) | Q(end_at__lt=now)).exclude(status=Meeting.Status.CANCELLED).count(),
+                "cancelled": Meeting.objects.filter(status=Meeting.Status.CANCELLED).count(),
+                "all": Meeting.objects.count(),
                 "synced": Meeting.objects.exclude(google_event_id="").count(),
             },
             **kwargs,

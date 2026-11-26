@@ -1,0 +1,4 @@
+{# Priority pill: pass `priority` and `label` #}
+<span class="pill {% if priority == 'urgent' %}bg-bad/10 text-bad border border-bad/20{% elif priority == 'high' %}bg-warn/10 text-warn border border-warn/20{% elif priority == 'medium' %}bg-accent/10 text-accent border border-accent/20{% else %}bg-subtle text-muted border border-line{% endif %}">
+    <i class="fa-solid fa-flag text-[10px]"></i> {{ label }}
+</span>

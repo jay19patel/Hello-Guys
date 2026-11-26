@@ -1,0 +1,8 @@
+{# Due date: pass `due`, `status`, `today` #}
+{% if due %}
+<span class="tabular-nums {% if due < today and status != 'done' and status != 'completed' and status != 'cancelled' %}text-bad font-bold{% else %}text-muted{% endif %}">
+    {{ due|date:"d M Y" }}
+</span>
+{% else %}
+<span class="text-muted">—</span>
+{% endif %}

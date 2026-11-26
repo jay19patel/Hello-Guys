@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'meta_connector.apps.MetaConnectorConfig',
     'cms.apps.CmsConfig',
     'crm.apps.CrmConfig',
+    'pms.apps.PmsConfig',
 ]
 
 MIDDLEWARE = [

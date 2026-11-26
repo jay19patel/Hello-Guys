@@ -1,0 +1,4 @@
+{# Status pill: pass `status` and `label` #}
+<span class="pill {% if status == 'done' or status == 'completed' %}bg-ok/10 text-ok border border-ok/20{% elif status == 'cancelled' %}bg-bad/10 text-bad border border-bad/20{% elif status == 'review' or status == 'on_hold' %}bg-warn/10 text-warn border border-warn/20{% elif status == 'working' or status == 'active' %}bg-accent/10 text-accent border border-accent/20{% else %}bg-subtle text-muted border border-line{% endif %}">
+    {{ label }}
+</span>

@@ -1,0 +1,44 @@
+{% extends "pms/base.html" %}
+{% block page_title %}My tasks{% endblock %}
+
+{% block content %}
+<header>
+    <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight text-ink">My tasks</h1>
+    <p class="text-muted text-[13.5px] mt-0.5">Open tasks assigned to you, ordered by earliest due date.</p>
+</header>
+
+<section class="card overflow-hidden">
+    {% if tasks %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-left">
+            <thead>
+                <tr class="table-head border-b border-line">
+                    <th>Task</th>
+                    <th>Project</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Due date</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-line text-[13.5px]">
+                {% for t in tasks %}
+                <tr class="hover:bg-subtle/50 transition-colors">
+                    <td class="cell px-5">
+                        <a href="{% url 'pms:task' t.pk %}" class="font-semibold text-ink hover:text-accent">{{ t.title }}</a>
+                        <div class="text-[12px] font-mono text-muted">{{ t.code }}{% if t.parent %} · under {{ t.parent.title }}{% endif %}</div>
+                    </td>
+                    <td class="cell px-5"><a href="{% url 'pms:project' t.project.pk %}" class="text-accent hover:underline">{{ t.project.name }}</a></td>
+                    <td class="cell px-5">{% include "pms/_status.html" with status=t.status label=t.get_status_display %}</td>
+                    <td class="cell px-5">{% include "pms/_priority.html" with priority=t.priority label=t.get_priority_display %}</td>
+                    <td class="cell px-5">{% include "pms/_due.html" with due=t.due_date status=t.status today=today %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {% include "components/_empty_state.html" with icon="fa-list-check" title="No open tasks assigned to you" subtitle="You're all caught up across your projects." %}
+    {% endif %}
+</section>
+{% include "pms/_pagination.html" %}
+{% endblock %}

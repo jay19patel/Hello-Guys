@@ -1,0 +1,130 @@
+{% extends "pms/base.html" %}
+{% block page_title %}{{ task.title }}{% endblock %}
+
+{% block content %}
+<nav class="flex flex-wrap items-center gap-1.5 text-[13px] text-muted" aria-label="Breadcrumb">
+    <a href="{% url 'pms:projects' %}" class="hover:text-accent">Projects</a>
+    <span>/</span>
+    <a href="{% url 'pms:project' project.pk %}" class="hover:text-accent">{{ project.name }}</a>
+    {% for anc in ancestors %}
+    <span>/</span>
+    <a href="{% url 'pms:task' anc.pk %}" class="hover:text-accent">{{ anc.title }}</a>
+    {% endfor %}
+    <span>/</span>
+    <span class="text-ink font-medium">{{ task.code }}</span>
+</nav>
+
+<header class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex items-start gap-3">
+        <span class="w-10 h-10 rounded-xl bg-subtle border border-line flex items-center justify-center text-accent shrink-0 mt-0.5">
+            <i class="fa-solid {% if task.is_group %}fa-folder-open{% else %}fa-file-lines{% endif %}"></i>
+        </span>
+        <div>
+            <div class="flex items-center gap-2 flex-wrap">
+                <h1 class="font-display text-[22px] leading-[28px] font-bold tracking-tight {% if task.status == 'done' or task.status == 'cancelled' %}line-through text-muted{% else %}text-ink{% endif %}">
+                    {{ task.title }}
+                </h1>
+                <span class="text-[12px] font-mono text-muted">({{ task.code }})</span>
+                {% include "pms/_status.html" with status=task.status label=task.get_status_display %}
+                {% include "pms/_priority.html" with priority=task.priority label=task.get_priority_display %}
+            </div>
+            {% if task.description %}
+            <p class="text-[13.5px] text-muted mt-1.5 whitespace-pre-line">{{ task.description }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if can_edit %}
+    <div class="flex flex-wrap items-center gap-2">
+        {% if task.is_group %}
+        <a href="{% url 'pms:task-create' project.pk %}?parent={{ task.pk }}" class="btn btn-ghost btn-sm">
+            <i class="fa-solid fa-plus"></i> Add subtask
+        </a>
+        {% endif %}
+        {% if task.status != 'done' %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="status">
+            <input type="hidden" name="status" value="done">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-check"></i> Mark complete</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+</header>
+
+<div class="grid lg:grid-cols-3 gap-6 items-start">
+    <div class="lg:col-span-2 flex flex-col gap-6">
+        {% if task.is_group %}
+        <section class="card p-5">
+            <div class="flex items-center justify-between gap-2">
+                <h2 class="font-display font-semibold text-[16px]">Subtasks ({{ subtasks|length }})</h2>
+                {% if can_edit %}
+                <a href="{% url 'pms:task-create' project.pk %}?parent={{ task.pk }}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-plus"></i> Add subtask</a>
+                {% endif %}
+            </div>
+            {% if subtasks %}
+            <ul class="mt-3 divide-y divide-line">
+                {% for st in subtasks %}
+                <li class="py-2.5 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <i class="fa-solid {% if st.is_group %}fa-folder text-accent{% else %}fa-file-lines text-muted{% endif %} text-[12px]"></i>
+                        <a href="{% url 'pms:task' st.pk %}" class="font-medium hover:text-accent truncate {% if st.status == 'done' or st.status == 'cancelled' %}line-through text-muted{% endif %}">{{ st.title }}</a>
+                        <span class="text-[11.5px] font-mono text-muted">{{ st.code }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        {% include "pms/_status.html" with status=st.status label=st.get_status_display %}
+                        {% include "pms/_due.html" with due=st.due_date status=st.status today=today %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mt-3 text-[13.5px] text-muted">No subtasks yet.</p>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if can_edit %}
+        <section class="card p-5">
+            <h2 class="font-display font-semibold text-[16px]">Edit task</h2>
+            <form method="post" class="mt-4 flex flex-col gap-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                <div class="grid sm:grid-cols-2 gap-4">
+                    {% include "components/_fields.html" %}
+                </div>
+                <div><button type="submit" class="btn btn-primary">Save changes</button></div>
+            </form>
+        </section>
+        {% endif %}
+    </div>
+
+    <aside class="flex flex-col gap-5">
+        <section class="card p-5 text-[13.5px] flex flex-col gap-2.5">
+            <h2 class="caps">Details</h2>
+            <div class="flex justify-between gap-2"><span class="text-muted">Project</span><a href="{% url 'pms:project' project.pk %}" class="font-medium text-accent hover:underline">{{ project.name }}</a></div>
+            <div class="flex justify-between gap-2"><span class="text-muted">Parent</span><span>{% if task.parent %}<a href="{% url 'pms:task' task.parent.pk %}" class="text-accent hover:underline">{{ task.parent.title }}</a>{% else %}Top level{% endif %}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-muted">Assignee</span><span>{% include "pms/_user.html" with u=task.assignee %}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-muted">Due date</span><span>{% include "pms/_due.html" with due=task.due_date status=task.status today=today %}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-muted">Hours</span><span class="tabular-nums">{{ task.actual_hours }} / {{ task.expected_hours }} h</span></div>
+            <div class="flex justify-between gap-2"><span class="text-muted">Created</span><span class="text-muted">{{ task.created_at|date:"d M Y" }}</span></div>
+        </section>
+
+        {% if can_edit %}
+        <section class="card p-5">
+            <form method="post" onsubmit="return confirm('Delete this task?')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="btn btn-ghost text-bad w-full {% if has_children %}opacity-50 cursor-not-allowed{% endif %}" {% if has_children %}disabled{% endif %}>
+                    <i class="fa-solid fa-trash"></i> Delete task
+                </button>
+            </form>
+            {% if has_children %}
+            <p class="text-[12px] text-muted mt-2">Remove or move subtasks before deleting this group task.</p>
+            {% endif %}
+        </section>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

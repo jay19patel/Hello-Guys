@@ -46,58 +46,56 @@
         </div>
     </header>
 
-    <!-- KPI Strip -->
+    <!-- KPI Strip (clickable & highlights active tab) -->
     <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5" aria-label="Meeting metrics">
-        <div class="card p-4 flex flex-col gap-1">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Upcoming</span>
+        <a href="?tab=upcoming{% if q %}&q={{ q|urlencode }}{% endif %}"
+           class="card p-4 flex flex-col gap-1 transition-all hover:border-accent/50 {% if tab == 'upcoming' %}border-accent ring-2 ring-accent/20 bg-accent/5{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold {% if tab == 'upcoming' %}text-accent{% else %}text-muted{% endif %}"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Upcoming</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.upcoming }}</span>
             <span class="text-[11.5px] text-muted">Scheduled calls</span>
-        </div>
-        <div class="card p-4 flex flex-col gap-1">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Today</span>
+        </a>
+        <a href="?tab=today{% if q %}&q={{ q|urlencode }}{% endif %}"
+           class="card p-4 flex flex-col gap-1 transition-all hover:border-accent/50 {% if tab == 'today' %}border-accent ring-2 ring-accent/20 bg-accent/5{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold {% if tab == 'today' %}text-accent{% else %}text-muted{% endif %}"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Today</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.today }}</span>
             <span class="text-[11.5px] text-muted">On today's agenda</span>
-        </div>
-        <div class="card p-4 flex flex-col gap-1 {% if stats.proposals %}border-warn/40 bg-warn/5{% endif %}">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Proposed Times</span>
+        </a>
+        <a href="?tab=proposals{% if q %}&q={{ q|urlencode }}{% endif %}"
+           class="card p-4 flex flex-col gap-1 transition-all hover:border-warn/50 {% if tab == 'proposals' %}border-warn ring-2 ring-warn/20 bg-warn/5{% elif stats.proposals %}border-warn/40 bg-warn/5{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold {% if tab == 'proposals' %}text-warn{% else %}text-muted{% endif %}"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Proposed Times</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums {% if stats.proposals %}text-warn{% else %}text-ink{% endif %}">{{ stats.proposals }}</span>
             <span class="text-[11.5px] text-muted">Awaiting your decision</span>
-        </div>
-        <div class="card p-4 flex flex-col gap-1">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Google Synced</span>
-            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.synced }}</span>
-            <span class="text-[11.5px] text-muted">Linked calendar events</span>
-        </div>
-        <div class="card p-4 flex flex-col gap-1 col-span-2 sm:col-span-1">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-violet-500"></span> Transcripts</span>
+        </a>
+        <a href="?tab=all{% if q %}&q={{ q|urlencode }}{% endif %}"
+           class="card p-4 flex flex-col gap-1 transition-all hover:border-accent/50 {% if tab == 'all' %}border-accent ring-2 ring-accent/20 bg-accent/5{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold {% if tab == 'all' %}text-accent{% else %}text-muted{% endif %}"><span class="w-2 h-2 rounded-full bg-blue-500"></span> All</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.all }}</span>
+            <span class="text-[11.5px] text-muted">{{ stats.synced }} Google synced</span>
+        </a>
+        <a href="?tab=transcripts{% if q %}&q={{ q|urlencode }}{% endif %}"
+           class="card p-4 flex flex-col gap-1 col-span-2 sm:col-span-1 transition-all hover:border-accent/50 {% if tab == 'transcripts' %}border-accent ring-2 ring-accent/20 bg-accent/5{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold {% if tab == 'transcripts' %}text-accent{% else %}text-muted{% endif %}"><span class="w-2 h-2 rounded-full bg-violet-500"></span> Transcripts</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.transcripts }}</span>
             <span class="text-[11.5px] text-muted">Stored in table</span>
-        </div>
+        </a>
     </section>
 
-    <!-- Tabs & Search -->
+    <!-- Tabs & Search (exact same sequence as cards) -->
     <div class="flex flex-wrap items-center justify-between gap-3">
         <nav class="flex flex-wrap gap-1 bg-subtle border border-line rounded-xl p-1 text-[13px] font-medium" aria-label="Meeting views">
-            <a href="?tab=upcoming{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if tab == 'upcoming' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
-                Upcoming
-            </a>
-            <a href="?tab=proposals{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if tab == 'proposals' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
-                Proposed Times
-                {% if stats.proposals %}<span class="pill bg-warn/15 text-warn text-[11px] px-1.5 py-0">{{ stats.proposals }}</span>{% endif %}
-            </a>
-            <a href="?tab=transcripts{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if tab == 'transcripts' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
-                <i class="fa-solid fa-file-lines text-[11px]"></i> Transcripts Table
-                {% if stats.transcripts %}<span class="pill bg-accent/10 text-accent text-[11px] px-1.5 py-0">{{ stats.transcripts }}</span>{% endif %}
-            </a>
-            <a href="?tab=past{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'past' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Past</a>
-            <a href="?tab=cancelled{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'cancelled' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Cancelled</a>
+            <a href="?tab=upcoming{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'upcoming' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Upcoming</a>
+            <a href="?tab=today{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'today' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Today</a>
+            <a href="?tab=proposals{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'proposals' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Proposed Times</a>
             <a href="?tab=all{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
+            <a href="?tab=transcripts{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if tab == 'transcripts' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}"><i class="fa-solid fa-file-lines text-[11px]"></i> Transcripts</a>
         </nav>
 
         <form method="get" class="flex items-center gap-2">
             <input type="hidden" name="tab" value="{{ tab }}">
-            <div class="field w-64">
-                <input type="search" name="q" value="{{ q }}" placeholder="Search meetings, guests, transcripts…" class="!py-1.5 !text-[13px]">
+            <div class="relative w-72">
+                <i class="fa-solid fa-magnifying-glass text-muted text-[12px] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search meetings, guests, transcripts…"
+                       class="w-full h-9 pl-8 pr-3 rounded-xl border border-line bg-surface text-[13px] text-ink placeholder:text-muted focus:outline-none focus:border-accent">
             </div>
             {% if q %}
             <a href="?tab={{ tab }}" class="btn btn-ghost btn-sm">Clear</a>

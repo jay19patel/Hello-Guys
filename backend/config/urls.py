@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/meta/', include('meta_connector.urls', namespace='meta_connector')),
     path('api/cms/', include('cms.urls', namespace='cms')),
     path('crm/', include('crm.urls', namespace='crm')),
+    path('pms/', include('pms.urls', namespace='pms')),
 
     # Hello Guy AI — chat UI + REST API + SSE stream
     path('', include('hello_guy_ai.urls')),

@@ -28,9 +28,13 @@ class Command(BaseCommand):
         while True:
             try:
                 if GoogleAccount.get_solo().is_connected:
-                    meetings, files = google.pull_meetings(), google.pull_files()
-                    if meetings or files:
-                        logger.info("From Google: %s meeting(s), %s Drive item(s) updated", meetings, files)
+                    cal = google.import_calendar_events()
+                    files = google.pull_files()
+                    if cal["created"] or cal["updated"] or files:
+                        logger.info(
+                            "From Google: %s imported, %s updated meeting(s), %s Drive item(s) updated",
+                            cal["created"], cal["updated"], files,
+                        )
             except Exception:  # Google/DB blip: log and try again next pass, never exit
                 logger.exception("Google pull failed")
             if once:

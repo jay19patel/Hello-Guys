@@ -35,7 +35,7 @@
 
         {% block sidebar_system %}{% endblock %}
 
-        <div class="border-t border-line p-3 flex items-center gap-3 bg-subtle/30">
+        <div class="border-t border-line p-3 flex items-center gap-2.5 bg-subtle/30 relative" x-data="{ displayOpen: false }" @click.outside="displayOpen = false">
             {% block sidebar_footer %}
             <span class="w-8 h-8 rounded-full bg-accent/10 text-accent border border-accent/20 flex items-center justify-center font-semibold text-[12px] shrink-0">
                 {{ request.user.username|slice:":2"|upper }}
@@ -44,6 +44,29 @@
                 <span class="truncate text-[13px] font-semibold text-ink">{{ request.user.get_full_name|default:request.user.username }}</span>
                 <span class="text-[11.5px] text-muted truncate">{% block user_role_label %}Member{% endblock %}</span>
             </span>
+
+            <!-- Display Preferences (aligned inside sidebar footer) -->
+            <button type="button" @click="displayOpen = !displayOpen" class="btn btn-ghost btn-sm px-2 text-muted hover:text-accent" title="Display settings" aria-label="Display settings" :aria-expanded="displayOpen">
+                <i class="fa-solid fa-palette"></i>
+            </button>
+            <div x-show="displayOpen" x-transition x-cloak class="absolute bottom-full left-3 right-3 mb-2 bg-surface border border-line rounded-2xl shadow-card p-3.5 flex flex-col gap-3.5 z-50">
+                <div class="flex flex-col gap-1.5">
+                    <span class="caps">Theme</span>
+                    <div class="grid grid-cols-3 gap-1 bg-subtle rounded-lg p-1" role="group" data-tweak="theme">
+                        <button type="button" data-value="light" class="h-8 rounded-md text-[12px] font-medium transition-colors">Light</button>
+                        <button type="button" data-value="dark" class="h-8 rounded-md text-[12px] font-medium transition-colors">Dark</button>
+                        <button type="button" data-value="system" class="h-8 rounded-md text-[12px] font-medium transition-colors">System</button>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <span class="caps">Density</span>
+                    <div class="grid grid-cols-2 gap-1 bg-subtle rounded-lg p-1" role="group" data-tweak="density">
+                        <button type="button" data-value="comfortable" class="h-8 rounded-md text-[12px] font-medium transition-colors">Comfortable</button>
+                        <button type="button" data-value="compact" class="h-8 rounded-md text-[12px] font-medium transition-colors">Compact</button>
+                    </div>
+                </div>
+            </div>
+
             <form method="post" action="{% url 'dashboard-logout' %}">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-ghost btn-sm px-2 text-muted hover:text-bad" title="Log out">
@@ -66,6 +89,7 @@
                 <div class="hidden sm:flex items-center gap-1 bg-subtle border border-line rounded-xl p-1 text-[12.5px] font-medium">
                     <a href="{% url 'dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/meta' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meta Inbox</a>
                     <a href="{% url 'crm:overview' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/crm' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">CRM</a>
+                    <a href="{% url 'pms:projects' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/pms' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Projects</a>
                     <a href="{% url 'core:follow-ups' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':11' == '/follow-ups' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Follow-ups</a>
                     <a href="{% url 'hello_guy_ai_analytics' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':13' == '/ai/analytics' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Analytics</a>
                     <a href="{% url 'hello_guy_ai_chat' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/chat' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Chat</a>
@@ -77,12 +101,6 @@
                 <a href="{% url 'dashboard-approvals' %}" class="pill bg-warn/15 text-warn border border-warn/30 hover:bg-warn/25 transition-colors" title="AI replies awaiting approval">
                     <i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>
                     <span>{{ approvals_pending }} <span class="hidden md:inline">approval{{ approvals_pending|pluralize }}</span></span>
-                </a>
-                {% endif %}
-                {% if followups_due %}
-                <a href="{% url 'crm:follow-ups' %}" class="pill bg-bad/10 text-bad border border-bad/25 hover:bg-bad/20 transition-colors" title="Follow-ups due">
-                    <i class="fa-regular fa-clock text-[11px]"></i>
-                    <span>{{ followups_due }} <span class="hidden md:inline">due</span></span>
                 </a>
                 {% endif %}
 
@@ -194,6 +212,7 @@
                     <div x-show="open" x-transition x-cloak class="absolute right-0 mt-2 w-52 bg-surface border border-line rounded-xl shadow-card py-1.5 z-50 text-[13px]">
                         <a href="{% url 'crm:customer-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-user-plus w-4 text-accent"></i> New Customer</a>
                         <a href="{% url 'crm:opportunity-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-filter w-4 text-ok"></i> New Opportunity</a>
+                        <a href="{% url 'pms:project-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-diagram-project w-4 text-accent"></i> New Project</a>
                         <a href="{% url 'crm:meeting-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-calendar-plus w-4 text-accent"></i> Schedule Meeting</a>
                         <a href="{% url 'core:follow-ups' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> Follow-ups</a>
                     </div>
@@ -212,30 +231,79 @@
     </div>
 </div>
 
-<!-- Display Preferences Floating Button -->
-<div class="fixed bottom-4 right-4 z-30" x-data="{ open: false }" @click.outside="open = false">
-    <button type="button" @click="open = !open" class="btn btn-ghost btn-sm bg-surface shadow-card" aria-label="Display settings" :aria-expanded="open">
-        <i class="fa-solid fa-palette text-accent"></i>
-        <span class="hidden sm:inline">Display</span>
-    </button>
-    <div x-show="open" x-transition x-cloak class="absolute bottom-11 right-0 w-64 bg-surface border border-line rounded-2xl shadow-card p-4 flex flex-col gap-4">
-        <div class="flex flex-col gap-2">
-            <span class="caps">Theme</span>
-            <div class="grid grid-cols-3 gap-1 bg-subtle rounded-lg p-1" role="group" data-tweak="theme">
-                <button type="button" data-value="light" class="h-8 rounded-md text-[12.5px] font-medium transition-colors">Light</button>
-                <button type="button" data-value="dark" class="h-8 rounded-md text-[12.5px] font-medium transition-colors">Dark</button>
-                <button type="button" data-value="system" class="h-8 rounded-md text-[12.5px] font-medium transition-colors">System</button>
+{% if request.path|slice:':5' != '/chat' %}
+<!-- Floating AI Chat Widget -->
+<div class="fixed bottom-5 right-5 z-40" x-data="floatingAiChat()" x-init="init()" @keydown.escape.window="open = false">
+    <!-- Popup Window -->
+    <div x-show="open" x-transition x-cloak
+         class="mb-3 w-[calc(100vw-2.5rem)] sm:w-[400px] h-[520px] max-h-[75vh] bg-surface border border-line rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <!-- Header -->
+        <div class="px-4 py-3 border-b border-line bg-subtle/40 flex items-center justify-between gap-2 shrink-0">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="w-7 h-7 rounded-lg bg-accent text-on-accent flex items-center justify-center text-[12px] shrink-0">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                </span>
+                <div class="min-w-0">
+                    <div class="font-display font-semibold text-[13.5px] text-ink leading-tight">AI Assistant</div>
+                    <select x-model="assistantId" @change="threadId = null; messages = []"
+                            aria-label="Select AI assistant"
+                            class="text-[11.5px] text-muted bg-transparent border-0 p-0 focus:outline-none truncate max-w-[180px]">
+                        <template x-for="a in assistants" :key="a.id">
+                            <option :value="a.id" x-text="a.name"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+                <a :href="fullPageUrl()" class="btn btn-ghost btn-sm px-2 text-muted hover:text-accent" title="Open full page AI Chat" aria-label="Open full page AI Chat">
+                    <i class="fa-solid fa-up-right-and-down-left-from-center text-[12px]"></i>
+                </a>
+                <button type="button" @click="open = false" class="btn btn-ghost btn-sm px-2 text-muted hover:text-ink" title="Close" aria-label="Close AI Chat">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
             </div>
         </div>
-        <div class="flex flex-col gap-2">
-            <span class="caps">Density</span>
-            <div class="grid grid-cols-2 gap-1 bg-subtle rounded-lg p-1" role="group" data-tweak="density">
-                <button type="button" data-value="comfortable" class="h-8 rounded-md text-[12.5px] font-medium transition-colors">Comfortable</button>
-                <button type="button" data-value="compact" class="h-8 rounded-md text-[12.5px] font-medium transition-colors">Compact</button>
-            </div>
+
+        <!-- Messages -->
+        <div x-ref="msgBox" class="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5 text-[13px]">
+            <template x-if="messages.length === 0">
+                <div class="m-auto text-center px-4 py-6">
+                    <div class="w-10 h-10 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mx-auto mb-2.5">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <p class="font-semibold text-ink">How can I help?</p>
+                    <p class="text-[12px] text-muted mt-1">Ask anything or open the full chat workspace using the expand icon above.</p>
+                </div>
+            </template>
+            <template x-for="(m, idx) in messages" :key="idx">
+                <div class="flex" :class="m.role === 'user' ? 'justify-end' : 'justify-start'">
+                    <div class="max-w-[85%] rounded-2xl px-3.5 py-2 whitespace-pre-wrap break-words"
+                         :class="m.role === 'user' ? 'bg-accent text-on-accent rounded-br-sm' : 'bg-subtle text-ink border border-line rounded-bl-sm'"
+                         x-text="m.text || (m.streaming ? 'Thinking…' : '')"></div>
+                </div>
+            </template>
         </div>
+
+        <!-- Composer -->
+        <form @submit.prevent="send()" class="p-3 border-t border-line bg-surface flex items-end gap-2 shrink-0">
+            <textarea x-model="draft" rows="1" placeholder="Ask AI anything…"
+                      @keydown.enter.prevent="if (!$event.shiftKey) send()"
+                      class="flex-1 resize-none rounded-xl border border-line bg-subtle/40 px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent max-h-24"></textarea>
+            <button type="submit" :disabled="busy || !draft.trim()" class="btn btn-primary btn-sm h-[36px] px-3 shrink-0" aria-label="Send">
+                <i class="fa-solid fa-paper-plane text-[12px]"></i>
+            </button>
+        </form>
     </div>
+
+    <!-- Launcher Button -->
+    <button type="button" @click="toggle()"
+            class="btn btn-primary rounded-full shadow-card px-4 h-11 flex items-center gap-2 ml-auto"
+            aria-label="Open AI Chat" :aria-expanded="open">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        <span class="font-semibold text-[13px]">AI Chat</span>
+    </button>
 </div>
+{% endif %}
 
 <script>
     (function () {
@@ -391,6 +459,104 @@
                 if (s < 3600) return Math.floor(s / 60) + 'm ago';
                 if (s < 86400) return Math.floor(s / 3600) + 'h ago';
                 return Math.floor(s / 86400) + 'd ago';
+            },
+        };
+    }
+
+    function floatingAiChat() {
+        return {
+            open: false,
+            busy: false,
+            draft: '',
+            assistants: [],
+            assistantId: '',
+            threadId: null,
+            messages: [],
+            init() {},
+            async toggle() {
+                this.open = !this.open;
+                if (this.open && this.assistants.length === 0) {
+                    try {
+                        const res = await fetch('/api/ai/assistants', { credentials: 'same-origin' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.assistants = data.items || data || [];
+                            if (this.assistants.length && !this.assistantId) {
+                                this.assistantId = this.assistants[0].id;
+                            }
+                        }
+                    } catch (_) {}
+                }
+            },
+            fullPageUrl() {
+                const base = "{% url 'hello_guy_ai_chat' %}";
+                return this.threadId ? `${base}?thread=${this.threadId}` : base;
+            },
+            scrollBottom() {
+                this.$nextTick(() => {
+                    if (this.$refs.msgBox) this.$refs.msgBox.scrollTop = this.$refs.msgBox.scrollHeight;
+                });
+            },
+            async send() {
+                const text = this.draft.trim();
+                if (!text || this.busy || !this.assistantId) return;
+                this.draft = '';
+                this.busy = true;
+                this.messages.push({ role: 'user', text });
+                const reply = { role: 'assistant', text: '', streaming: true };
+                this.messages.push(reply);
+                this.scrollBottom();
+
+                try {
+                    const headers = { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') };
+                    if (!this.threadId) {
+                        const tRes = await fetch('/api/ai/threads', {
+                            method: 'POST', credentials: 'same-origin', headers,
+                            body: JSON.stringify({ assistant_id: this.assistantId }),
+                        });
+                        if (!tRes.ok) throw new Error('Could not start chat');
+                        this.threadId = (await tRes.json()).id;
+                    }
+                    const mRes = await fetch(`/api/ai/threads/${this.threadId}/messages`, {
+                        method: 'POST', credentials: 'same-origin', headers,
+                        body: JSON.stringify({
+                            content: text,
+                            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+                        }),
+                    });
+                    if (!mRes.ok) throw new Error('Failed to send message');
+                    const run = await mRes.json();
+                    const streamUrl = run.stream_url || `/api/ai/runs/${run.run_id || run.id}/stream`;
+                    const src = new EventSource(streamUrl, { withCredentials: true });
+                    let seg = '';
+                    src.addEventListener('token', e => {
+                        try { seg += JSON.parse(e.data).text || ''; } catch (_) {}
+                        reply.text = seg;
+                        this.scrollBottom();
+                    });
+                    src.addEventListener('tool_start', () => { seg = ''; });
+                    src.addEventListener('tool_end', () => { seg = ''; });
+                    src.addEventListener('done', e => {
+                        try {
+                            const d = JSON.parse(e.data);
+                            if (d.content) reply.text = d.content;
+                        } catch (_) {}
+                        reply.streaming = false;
+                        this.busy = false;
+                        src.close();
+                        this.scrollBottom();
+                    });
+                    src.addEventListener('error', () => {
+                        reply.streaming = false;
+                        if (!reply.text) reply.text = 'Something went wrong. Please try again.';
+                        this.busy = false;
+                        src.close();
+                    });
+                } catch (err) {
+                    reply.text = err.message || 'Error sending message.';
+                    reply.streaming = false;
+                    this.busy = false;
+                }
             },
         };
     }
