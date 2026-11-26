@@ -41,6 +41,40 @@
 
         <section class="card p-5">
             <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-solid fa-calendar-days text-accent"></i> Meetings</h2>
+                {% if can_edit %}<a href="{% url 'crm:meeting-create' %}?customer={{ customer.pk }}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-plus"></i> Schedule Meeting</a>{% endif %}
+            </div>
+            {% if meetings %}
+            <ul class="mt-3 divide-y divide-line">
+                {% for m in meetings %}
+                <li class="py-3 flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <a href="{% url 'crm:meeting' m.pk %}" class="font-semibold text-ink hover:text-accent">{{ m.title }}</a>
+                            <span class="pill {% if m.status == 'done' %}bg-ok/10 text-ok{% elif m.status == 'cancelled' %}bg-bad/10 text-bad{% else %}bg-accent/10 text-accent{% endif %}">{{ m.get_status_display }}</span>
+                            {% if m.pending_proposals %}<span class="pill bg-warn/15 text-warn">{{ m.pending_proposals|length }} proposed</span>{% endif %}
+                        </div>
+                        <p class="text-[12.5px] text-muted mt-0.5 tabular-nums">
+                            {{ m.start_at|date:"D, d M Y · H:i" }} – {{ m.end_at|date:"H:i" }}
+                            {% with rsvp=m.rsvp_summary %}
+                            {% if rsvp.total %} · {{ rsvp.accepted }} Yes, {{ rsvp.tentative }} Maybe, {{ rsvp.declined }} No{% endif %}
+                            {% endwith %}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        {% if m.meet_url and m.status == 'scheduled' %}<a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="fa-solid fa-video"></i> Join</a>{% endif %}
+                        <a href="{% url 'crm:meeting' m.pk %}" class="btn btn-ghost btn-sm">Open</a>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mt-3 text-[13.5px] text-muted">No meetings scheduled with this customer yet.</p>
+            {% endif %}
+        </section>
+
+        <section class="card p-5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
                 <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-brands fa-google-drive text-accent"></i> Google Drive</h2>
                 {% if customer.drive_folder_url %}<a href="{{ customer.drive_folder_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-solid fa-folder-open"></i> Open folder</a>{% endif %}
             </div>

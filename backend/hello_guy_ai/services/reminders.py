@@ -147,6 +147,11 @@ def mark_read(user: Any, ids: list[int] | None = None) -> int:
 def notify(user: Any, title: str, body: str = "", url: str = "", reminder: Reminder | None = None) -> Notification:
     notification = Notification.objects.create(user=user, title=title[:200], body=body, url=url, reminder=reminder)
     transaction.on_commit(lambda: notification_created.send(sender=Notification, notification=notification))
+    try:
+        from core.notifications import notify as push_global
+        push_global(user=user, title=title, body=body, url=url, category="ai", level="info")
+    except Exception:
+        logger.debug("Could not mirror AI notification to global notifications", exc_info=True)
     return notification
 
 

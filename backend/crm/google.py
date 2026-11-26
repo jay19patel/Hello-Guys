@@ -138,7 +138,7 @@ def _execute(request, missing_ok: bool = False) -> dict:
 
 
 def _event_body(meeting: Meeting) -> dict:
-    who = meeting.customer or meeting.lead
+    who = meeting.customer
     body = {
         "summary": meeting.title,
         "description": f"{meeting.description}\n\nCRM: {who}".strip() if who else meeting.description,
@@ -180,7 +180,10 @@ def sync_meeting(meeting: Meeting) -> Meeting:
     meeting.google_event_url = event.get("htmlLink", meeting.google_event_url)
     meeting.meet_url = event.get("hangoutLink") or meeting.meet_url
     meeting.sync_error = ""
-    meeting.save(update_fields=["google_event_id", "google_event_url", "meet_url", "sync_error", "updated_at"])
+    meeting.last_synced_at = timezone.now()
+    meeting.save(
+        update_fields=["google_event_id", "google_event_url", "meet_url", "sync_error", "last_synced_at", "updated_at"]
+    )
     return meeting
 
 
@@ -192,51 +195,121 @@ def _event_time(value: dict) -> datetime | None:
     return datetime.fromisoformat(value["dateTime"]) if value.get("dateTime") else None  # all-day: None
 
 
-def pull_meeting(meeting: Meeting, events=None, calendar_id: str | None = None) -> list[str]:
-    """Copy what changed in Google Calendar (cancelled, rescheduled, renamed, moved, guests' RSVPs) into the CRM
-    meeting and log it. Returns the changes. Google wins only when its copy is newer than the CRM's, so a CRM
-    edit that is still being pushed is never overwritten."""
+def _extract_attendee_data(event: dict) -> tuple[dict[str, str], list[dict]]:
+    """Extract {email: status} and rich attendee_details list from a Google Calendar event."""
+    guests: dict[str, str] = {}
+    details: list[dict] = []
+    for a in event.get("attendees", []):
+        if not a.get("email") or a.get("self") or a.get("resource"):
+            continue
+        email = a["email"].lower()
+        status = a.get("responseStatus", "needsAction")
+        guests[email] = status
+        details.append({
+            "email": email,
+            "name": a.get("displayName", ""),
+            "status": status,
+            "comment": a.get("comment", ""),
+            "optional": bool(a.get("optional", False)),
+            "is_organizer": bool(a.get("organizer", False)),
+        })
+    return guests, details
+
+
+def _proposals_from_details(details: list[dict], prev_comments: dict[str, str] | None = None) -> list[dict]:
+    """Build pending proposal records for any guest with a new RSVP comment indicating a proposed time or decline."""
+    prev = prev_comments or {}
+    new_proposals: list[dict] = []
+    for d in details:
+        email, answer, comment = d["email"], d["status"], d["comment"]
+        if comment and comment != prev.get(email, "") and ("propose" in comment.lower() or answer in ("declined", "tentative")):
+            new_proposals.append({
+                "id": uuid.uuid4().hex[:10],
+                "email": email,
+                "name": d.get("name", ""),
+                "proposed_start": "",
+                "proposed_end": "",
+                "note": comment[:500],
+                "status": "pending",
+                "created_at": timezone.now().isoformat(timespec="seconds"),
+            })
+    return new_proposals
+
+
+def _apply_event_to_meeting(meeting: Meeting, event: dict) -> tuple[list[str], bool]:
+    """Apply a Google Calendar event payload onto a CRM Meeting instance. Returns (changes, dirty)."""
+    changes: list[str] = []
+    dirty = False
+
+    start, end = _event_time(event.get("start", {})), _event_time(event.get("end", {}))
+    if start and end and (start, end) != (meeting.start_at, meeting.end_at) and end > start:
+        meeting.start_at, meeting.end_at = start, end
+        meeting.timezone = event["start"].get("timeZone") or meeting.timezone
+        changes.append(f"rescheduled to {timezone.localtime(start):%d %b %Y, %H:%M}")
+    if event.get("summary") and event["summary"][:200] != meeting.title:
+        meeting.title = event["summary"][:200]
+        changes.append(f"renamed to \"{meeting.title}\"")
+    if event.get("location", "")[:255] != meeting.location:
+        meeting.location = event.get("location", "")[:255]
+        changes.append(f"location: {meeting.location or 'none'}")
+    if event.get("hangoutLink") and event["hangoutLink"] != meeting.meet_url:
+        meeting.meet_url = event["hangoutLink"]
+        dirty = True
+    if event.get("htmlLink") and event["htmlLink"] != meeting.google_event_url:
+        meeting.google_event_url = event["htmlLink"]
+        dirty = True
+
+    guests, details = _extract_attendee_data(event)
+    prev_comments = {d.get("email", "").lower(): d.get("comment", "") for d in (meeting.attendee_details or [])}
+    for d in details:
+        email, answer, comment = d["email"], d["status"], d["comment"]
+        if answer != meeting.guest_responses.get(email) and answer in RSVP:
+            changes.append(f"{email} {RSVP[answer]} the invite")
+        if comment and comment != prev_comments.get(email, ""):
+            changes.append(f"{email} left a note: \"{comment[:120]}\"")
+    if new_props := _proposals_from_details(details, prev_comments):
+        meeting.proposed_times = [*new_props, *(meeting.proposed_times or [])]
+        dirty = True
+
+    known = {email.lower() for email in meeting.attendees}
+    if added := sorted(set(guests) - known):
+        changes.append(f"guests added: {', '.join(added)}")
+    if removed := sorted(known - set(guests)):
+        changes.append(f"guests removed: {', '.join(removed)}")
+    if guests != meeting.guest_responses or set(guests) != known or details != (meeting.attendee_details or []):
+        meeting.attendees = list(guests)
+        meeting.guest_responses = guests
+        meeting.attendee_details = details
+        dirty = True
+    return changes, dirty
+
+
+def pull_meeting(meeting: Meeting, events=None, calendar_id: str | None = None, event: dict | None = None) -> list[str]:
+    """Copy what changed in Google Calendar (cancelled, rescheduled, renamed, moved, guests' RSVPs & comments)
+    into the CRM meeting and log it. Returns the changes. Google wins only when its copy is newer than the CRM's,
+    so a CRM edit that is still being pushed is never overwritten."""
     from crm import services  # crm.services imports meta_connector; not needed when google.py loads
 
-    if events is None:
-        events = _service("calendar", "v3").events()
-    if calendar_id is None:
-        calendar_id = GoogleAccount.get_solo().calendar_id
-    event = _execute(events.get(calendarId=calendar_id, eventId=meeting.google_event_id), missing_ok=True)
+    if event is None:
+        if events is None:
+            events = _service("calendar", "v3").events()
+        if calendar_id is None:
+            calendar_id = GoogleAccount.get_solo().calendar_id
+        event = _execute(events.get(calendarId=calendar_id, eventId=meeting.google_event_id), missing_ok=True)
+
     changes, dirty = [], False
     if not event or event.get("status") == "cancelled":
         meeting.status = Meeting.Status.CANCELLED
         changes.append("cancelled in Google Calendar")
     else:
-        if datetime.fromisoformat(event["updated"]) <= meeting.updated_at:
+        if event.get("updated") and datetime.fromisoformat(event["updated"]) <= meeting.updated_at:
             return []
-        start, end = _event_time(event.get("start", {})), _event_time(event.get("end", {}))
-        if start and end and (start, end) != (meeting.start_at, meeting.end_at) and end > start:
-            meeting.start_at, meeting.end_at = start, end
-            meeting.timezone = event["start"].get("timeZone") or meeting.timezone
-            changes.append(f"rescheduled to {timezone.localtime(start):%d %b %Y, %H:%M}")
-        if event.get("summary") and event["summary"][:200] != meeting.title:
-            meeting.title = event["summary"][:200]
-            changes.append(f"renamed to \"{meeting.title}\"")
-        if event.get("location", "")[:255] != meeting.location:
-            meeting.location = event.get("location", "")[:255]
-            changes.append(f"location: {meeting.location or 'none'}")
-        meeting.meet_url = event.get("hangoutLink") or meeting.meet_url
-        guests = {a["email"].lower(): a.get("responseStatus", "needsAction") for a in event.get("attendees", [])
-                  if a.get("email") and not a.get("self") and not a.get("resource")}
-        for email, answer in guests.items():
-            if answer != meeting.guest_responses.get(email) and answer in RSVP:
-                changes.append(f"{email} {RSVP[answer]} the invite")
-        known = {email.lower() for email in meeting.attendees}
-        if added := sorted(set(guests) - known):
-            changes.append(f"guests added: {', '.join(added)}")
-        if removed := sorted(known - set(guests)):
-            changes.append(f"guests removed: {', '.join(removed)}")
-        if guests != meeting.guest_responses or set(guests) != known:  # "needsAction" is saved but not logged
-            meeting.attendees, meeting.guest_responses, dirty = list(guests), guests, True
+        changes, dirty = _apply_event_to_meeting(meeting, event)
+
     if changes or dirty:
+        meeting.last_synced_at = timezone.now()
         meeting.save()
-    if changes:
+    if changes and meeting.customer_id:
         services.add_note(user=None, customer=meeting.customer, opportunity=meeting.opportunity,
                           kind=Activity.Kind.MEETING,
                           body=f"Meeting {meeting.title}: " + "; ".join(changes))
@@ -245,7 +318,6 @@ def pull_meeting(meeting: Meeting, events=None, calendar_id: str | None = None) 
 
 def pull_meetings() -> int:
     """Pull Google Calendar changes into every upcoming synced CRM meeting. Returns how many changed."""
-    # shortcut: one events.get per meeting; fine for tens of meetings, switch to events.list + syncToken for hundreds
     meetings = Meeting.objects.select_related("customer", "opportunity").filter(
         status=Meeting.Status.SCHEDULED, sync_error="", end_at__gte=timezone.now() - PULL_FROM,
     ).exclude(google_event_id="")
@@ -259,6 +331,82 @@ def pull_meetings() -> int:
         except GoogleError as exc:
             logger.warning("Could not pull meeting %s from Google Calendar: %s", meeting.pk, exc)
     return changed
+
+
+def import_calendar_events(days_back: int = 1, days_ahead: int = 30) -> dict[str, int]:
+    """Full two-way pull from Google Calendar: updates existing CRM meetings and imports new Google Calendar events."""
+    from crm import services
+
+    events_api = _service("calendar", "v3").events()
+    calendar_id = GoogleAccount.get_solo().calendar_id
+    now = timezone.now()
+    time_min = (now - timedelta(days=days_back)).isoformat()
+    time_max = (now + timedelta(days=days_ahead)).isoformat()
+
+    payload = _execute(events_api.list(
+        calendarId=calendar_id,
+        timeMin=time_min,
+        timeMax=time_max,
+        singleEvents=True,
+        orderBy="startTime",
+        maxResults=100,
+    ))
+    items = payload.get("items", [])
+    existing_by_id = {
+        m.google_event_id: m
+        for m in Meeting.objects.select_related("customer", "opportunity").exclude(google_event_id="")
+    }
+    created = 0
+    updated = 0
+
+    for event in items:
+        event_id = event.get("id")
+        if not event_id:
+            continue
+        if event_id in existing_by_id:
+            if pull_meeting(existing_by_id[event_id], event=event):
+                updated += 1
+            continue
+        if event.get("status") == "cancelled":
+            continue
+        start, end = _event_time(event.get("start", {})), _event_time(event.get("end", {}))
+        if not start or not end or end <= start:
+            continue
+
+        guests, details = _extract_attendee_data(event)
+        matched_customer = None
+        for email in guests:
+            matched_customer = services.match_customer(email=email)
+            if matched_customer:
+                break
+
+        meeting = Meeting.objects.create(
+            title=(event.get("summary") or "Untitled meeting")[:200],
+            description=(event.get("description") or "")[:5000],
+            customer=matched_customer,
+            start_at=start,
+            end_at=end,
+            timezone=event.get("start", {}).get("timeZone") or "Asia/Kolkata",
+            location=(event.get("location") or "")[:255],
+            attendees=list(guests),
+            guest_responses=guests,
+            attendee_details=details,
+            proposed_times=_proposals_from_details(details),
+            google_event_id=event_id,
+            google_event_url=event.get("htmlLink", ""),
+            meet_url=event.get("hangoutLink", ""),
+            last_synced_at=now,
+        )
+        created += 1
+        if matched_customer:
+            services.add_note(
+                user=None,
+                customer=matched_customer,
+                kind=Activity.Kind.MEETING,
+                body=f"Meeting \"{meeting.title}\" synced from Google Calendar ({timezone.localtime(start):%d %b %Y, %H:%M}).",
+            )
+
+    return {"created": created, "updated": updated}
 
 
 # ---- Drive ---------------------------------------------------------------------------------

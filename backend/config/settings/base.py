@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
 
     # Local apps
+    'core.apps.CoreConfig',
     'meta_connector.apps.MetaConnectorConfig',
     'cms.apps.CmsConfig',
     'crm.apps.CrmConfig',

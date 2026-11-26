@@ -44,4 +44,6 @@ urlpatterns = [
 
     # Hello Guy AI — chat UI + REST API + SSE stream
     path('', include('hello_guy_ai.urls')),
+    # Core portal + global notifications
+    path('', include('core.urls', namespace='core')),
 ]

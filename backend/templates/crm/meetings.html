@@ -1,0 +1,296 @@
+{% extends "crm/base.html" %}
+{% load humanize %}
+{% block title %}Meetings · CRM{% endblock %}
+
+{% block content %}
+<div x-data="{ scheduleOpen: false }" @keydown.escape.window="scheduleOpen = false" class="flex flex-col gap-6">
+    <!-- Header -->
+    <header class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight text-ink">Meetings &amp; Calendar</h1>
+                {% if google_connected %}
+                <span class="pill bg-ok/10 text-ok border border-ok/25">
+                    <i class="fa-brands fa-google text-[11px]"></i> {{ google_account.email|default:"Calendar connected" }}
+                </span>
+                {% else %}
+                <span class="pill bg-subtle text-muted border border-line">
+                    <i class="fa-regular fa-calendar"></i> CRM only
+                </span>
+                {% endif %}
+            </div>
+            <p class="text-[13.5px] text-muted mt-1">
+                Schedule Google Meet calls, track Yes / Maybe / No RSVPs, handle proposed times, and store meeting transcripts.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-2.5 flex-wrap">
+            {% if can_edit and google_connected %}
+            <form method="post" action="{% url 'crm:meetings-sync' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" class="btn btn-ghost">
+                    <i class="fa-solid fa-arrows-rotate"></i> Sync Google Calendar
+                </button>
+            </form>
+            {% elif not google_connected and is_admin %}
+            <a href="{% url 'crm:settings' %}" class="btn btn-ghost">
+                <i class="fa-brands fa-google"></i> Connect Google Calendar
+            </a>
+            {% endif %}
+            {% if can_edit %}
+            <button type="button" @click="scheduleOpen = true" class="btn btn-primary">
+                <i class="fa-solid fa-plus"></i> Schedule Meeting
+            </button>
+            {% endif %}
+        </div>
+    </header>
+
+    <!-- KPI Strip -->
+    <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5" aria-label="Meeting metrics">
+        <div class="card p-4 flex flex-col gap-1">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Upcoming</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.upcoming }}</span>
+            <span class="text-[11.5px] text-muted">Scheduled calls</span>
+        </div>
+        <div class="card p-4 flex flex-col gap-1">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Today</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.today }}</span>
+            <span class="text-[11.5px] text-muted">On today's agenda</span>
+        </div>
+        <div class="card p-4 flex flex-col gap-1 {% if stats.proposals %}border-warn/40 bg-warn/5{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Proposed Times</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums {% if stats.proposals %}text-warn{% else %}text-ink{% endif %}">{{ stats.proposals }}</span>
+            <span class="text-[11.5px] text-muted">Awaiting your decision</span>
+        </div>
+        <div class="card p-4 flex flex-col gap-1">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Google Synced</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.synced }}</span>
+            <span class="text-[11.5px] text-muted">Linked calendar events</span>
+        </div>
+        <div class="card p-4 flex flex-col gap-1 col-span-2 sm:col-span-1">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-violet-500"></span> Transcripts</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.transcripts }}</span>
+            <span class="text-[11.5px] text-muted">Stored in table</span>
+        </div>
+    </section>
+
+    <!-- Tabs & Search -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <nav class="flex flex-wrap gap-1 bg-subtle border border-line rounded-xl p-1 text-[13px] font-medium" aria-label="Meeting views">
+            <a href="?tab=upcoming{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if tab == 'upcoming' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
+                Upcoming
+            </a>
+            <a href="?tab=proposals{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if tab == 'proposals' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
+                Proposed Times
+                {% if stats.proposals %}<span class="pill bg-warn/15 text-warn text-[11px] px-1.5 py-0">{{ stats.proposals }}</span>{% endif %}
+            </a>
+            <a href="?tab=transcripts{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if tab == 'transcripts' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
+                <i class="fa-solid fa-file-lines text-[11px]"></i> Transcripts Table
+                {% if stats.transcripts %}<span class="pill bg-accent/10 text-accent text-[11px] px-1.5 py-0">{{ stats.transcripts }}</span>{% endif %}
+            </a>
+            <a href="?tab=past{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'past' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Past</a>
+            <a href="?tab=cancelled{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'cancelled' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Cancelled</a>
+            <a href="?tab=all{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if tab == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
+        </nav>
+
+        <form method="get" class="flex items-center gap-2">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <div class="field w-64">
+                <input type="search" name="q" value="{{ q }}" placeholder="Search meetings, guests, transcripts…" class="!py-1.5 !text-[13px]">
+            </div>
+            {% if q %}
+            <a href="?tab={{ tab }}" class="btn btn-ghost btn-sm">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+
+    {% if tab == 'transcripts' %}
+    <!-- Stored Transcripts Table -->
+    <section class="card overflow-hidden">
+        <div class="px-5 py-4 border-b border-line flex items-center justify-between gap-3">
+            <div>
+                <h2 class="font-display font-semibold text-[16px]">Meeting Transcripts</h2>
+                <p class="text-[12.5px] text-muted">All post-meeting transcripts stored in the CRM table, searchable and exportable to Google Drive.</p>
+            </div>
+        </div>
+        {% if transcript_rows %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="table-head border-b border-line">
+                        <th>Meeting &amp; Customer</th>
+                        <th>Title</th>
+                        <th>Source</th>
+                        <th>Speakers &amp; Length</th>
+                        <th>Summary Preview</th>
+                        <th>Drive Doc</th>
+                        <th>Saved</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-line text-[13.5px]">
+                    {% for tr in transcript_rows %}
+                    <tr class="hover:bg-subtle/50 transition-colors">
+                        <td class="cell px-5">
+                            <a href="{% url 'crm:meeting' tr.meeting.pk %}" class="font-semibold text-ink hover:text-accent block">{{ tr.meeting.title }}</a>
+                            <span class="text-[12px] text-muted">
+                                {% if tr.meeting.customer %}{{ tr.meeting.customer.name }} · {% endif %}{{ tr.meeting.start_at|date:"d M Y, H:i" }}
+                            </span>
+                        </td>
+                        <td class="cell px-5 font-medium">{{ tr.title|default:"Transcript" }}</td>
+                        <td class="cell px-5"><span class="pill bg-subtle border border-line">{{ tr.get_source_display }}</span></td>
+                        <td class="cell px-5 text-[12.5px] text-muted">
+                            <div>{{ tr.word_count }} words</div>
+                            {% if tr.speaker_names %}<div>{{ tr.speaker_names|length }} speaker{{ tr.speaker_names|length|pluralize }}</div>{% endif %}
+                        </td>
+                        <td class="cell px-5 max-w-xs">
+                            <p class="text-[12.5px] text-muted line-clamp-2">{{ tr.summary|default:tr.raw_text|truncatechars:110 }}</p>
+                        </td>
+                        <td class="cell px-5">
+                            {% if tr.google_doc_url %}
+                            <a href="{{ tr.google_doc_url }}" target="_blank" rel="noopener" class="pill bg-accent/10 text-accent hover:bg-accent/20">
+                                <i class="fa-solid fa-file-lines text-[11px]"></i> Google Doc
+                            </a>
+                            {% else %}
+                            <span class="text-[12px] text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="cell px-5 text-[12.5px] text-muted whitespace-nowrap">{{ tr.created_at|date:"d M Y" }}</td>
+                        <td class="cell px-5 text-right">
+                            <a href="{% url 'crm:meeting' tr.meeting.pk %}#transcripts" class="btn btn-ghost btn-sm">Open</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        {% include "components/_empty_state.html" with icon="fa-file-lines" title="No transcripts stored yet" subtitle="Open any meeting to paste or upload a transcript at the end of a call, or send one via the transcript API." %}
+        {% endif %}
+    </section>
+
+    {% else %}
+    <!-- Meetings List -->
+    <section class="card overflow-hidden">
+        {% if meetings %}
+        <ul class="divide-y divide-line">
+            {% for m in meetings %}
+            <li class="p-5 hover:bg-subtle/40 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div class="flex items-start gap-4 min-w-0 flex-1">
+                    <!-- Date Tile -->
+                    <div class="w-14 h-14 rounded-2xl border border-line bg-subtle/60 flex flex-col items-center justify-center shrink-0 text-center">
+                        <span class="text-[10.5px] font-bold uppercase tracking-wider text-accent">{{ m.start_at|date:"M" }}</span>
+                        <span class="font-display text-[20px] leading-tight font-bold text-ink tabular-nums">{{ m.start_at|date:"d" }}</span>
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <a href="{% url 'crm:meeting' m.pk %}" class="font-display font-semibold text-[16px] text-ink hover:text-accent transition-colors">
+                                {{ m.title }}
+                            </a>
+                            <span class="pill {% if m.status == 'done' %}bg-ok/10 text-ok border border-ok/20{% elif m.status == 'cancelled' %}bg-bad/10 text-bad border border-bad/20{% else %}bg-accent/10 text-accent border border-accent/20{% endif %}">
+                                {{ m.get_status_display }}
+                            </span>
+                            {% if m.pending_proposals %}
+                            <span class="pill bg-warn/15 text-warn border border-warn/30">
+                                <i class="fa-regular fa-calendar-xmark text-[11px]"></i> {{ m.pending_proposals|length }} proposed time{{ m.pending_proposals|length|pluralize }}
+                            </span>
+                            {% endif %}
+                            {% if m.transcripts.all %}
+                            <span class="pill bg-violet-500/10 text-violet-600 dark:text-violet-300 border border-violet-500/20">
+                                <i class="fa-solid fa-file-lines text-[11px]"></i> {{ m.transcripts.all|length }} transcript{{ m.transcripts.all|length|pluralize }}
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
+                            <span class="tabular-nums font-medium text-ink/80">
+                                <i class="fa-regular fa-clock mr-1 text-muted"></i>{{ m.start_at|date:"D, H:i" }} – {{ m.end_at|date:"H:i" }} ({{ m.duration_minutes }}m)
+                            </span>
+                            {% if m.customer %}
+                            <a href="{% url 'crm:customer' m.customer.pk %}" class="hover:text-accent font-medium">
+                                <i class="fa-solid fa-user-tie mr-1 text-muted"></i>{{ m.customer.name }}
+                            </a>
+                            {% endif %}
+                            {% if m.location %}
+                            <span><i class="fa-solid fa-location-dot mr-1 text-muted"></i>{{ m.location }}</span>
+                            {% endif %}
+                            {% if m.google_event_id %}
+                            <span class="text-ok text-[12px]"><i class="fa-brands fa-google mr-1"></i>Synced</span>
+                            {% elif m.sync_error %}
+                            <span class="text-bad text-[12px]" title="{{ m.sync_error }}"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Sync error</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Attendees RSVP Summary Strip -->
+                        {% with rsvp=m.rsvp_summary %}
+                        <div class="mt-2.5 flex flex-wrap items-center gap-1.5 text-[12px]">
+                            {% if rsvp.total %}
+                            <span class="text-muted mr-1">{{ rsvp.total }} guest{{ rsvp.total|pluralize }}:</span>
+                            {% if rsvp.accepted %}<span class="pill bg-ok/10 text-ok border border-ok/20"><i class="fa-solid fa-check text-[10px]"></i> {{ rsvp.accepted }} Yes</span>{% endif %}
+                            {% if rsvp.tentative %}<span class="pill bg-warn/10 text-warn border border-warn/20"><i class="fa-solid fa-question text-[10px]"></i> {{ rsvp.tentative }} Maybe</span>{% endif %}
+                            {% if rsvp.declined %}<span class="pill bg-bad/10 text-bad border border-bad/20"><i class="fa-solid fa-xmark text-[10px]"></i> {{ rsvp.declined }} No</span>{% endif %}
+                            {% if rsvp.pending %}<span class="pill bg-subtle text-muted border border-line"><i class="fa-regular fa-clock text-[10px]"></i> {{ rsvp.pending }} Pending</span>{% endif %}
+                            {% else %}
+                            <span class="text-muted">No external guests invited</span>
+                            {% endif %}
+                        </div>
+                        {% endwith %}
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                    {% if m.meet_url and m.status == 'scheduled' %}
+                    <a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
+                        <i class="fa-solid fa-video"></i> Join Meet
+                    </a>
+                    {% endif %}
+                    <a href="{% url 'crm:meeting' m.pk %}" class="btn btn-ghost btn-sm">
+                        Details <i class="fa-solid fa-arrow-right text-[11px]"></i>
+                    </a>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        {% include "components/_empty_state.html" with icon="fa-calendar-days" title="No meetings found" subtitle="Schedule a new meeting or sync your Google Calendar to see upcoming calls here." %}
+        {% endif %}
+    </section>
+    {% include "crm/_pagination.html" %}
+    {% endif %}
+
+    <!-- Quick Schedule Meeting Modal -->
+    {% if can_edit %}
+    <div x-show="scheduleOpen" x-transition.opacity x-cloak class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div @click.outside="scheduleOpen = false" class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-line pb-3">
+                <div>
+                    <h2 class="font-display text-[18px] font-bold text-ink">Schedule Meeting</h2>
+                    <p class="text-[12.5px] text-muted">{% if google_connected %}Automatically creates a Google Calendar event + Google Meet link and emails guests.{% else %}Saves in CRM (connect Google in Settings to auto-sync Calendar &amp; Meet).{% endif %}</p>
+                </div>
+                <button type="button" @click="scheduleOpen = false" class="btn btn-ghost btn-sm px-2" aria-label="Close modal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form method="post" action="{% url 'crm:meeting-create' %}" class="flex flex-col gap-4">
+                {% csrf_token %}
+                <div class="grid sm:grid-cols-2 gap-4">
+                    {% for field in quick_form %}
+                    <div class="field flex flex-col gap-1 {% if field.name == 'title' or field.name == 'description' or field.name == 'attendees' %}sm:col-span-2{% endif %}">
+                        <label for="{{ field.id_for_label }}" class="caps">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}<span class="text-[11.5px] text-muted">{{ field.help_text }}</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-2 border-t border-line">
+                    <button type="button" @click="scheduleOpen = false" class="btn btn-ghost">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-calendar-plus"></i> Schedule Meeting</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

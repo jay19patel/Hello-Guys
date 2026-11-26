@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, Opportunity, Service
+from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, MeetingTranscript, Opportunity, Service
 
 
 class ActivityInline(admin.TabularInline):
@@ -54,7 +54,16 @@ class MeetingAdmin(admin.ModelAdmin):
     list_filter = ("status", "start_at")
     search_fields = ("title", "description", "customer__name")
     list_select_related = ("customer", "opportunity", "organizer")
-    readonly_fields = ("google_event_id", "google_event_url", "meet_url", "sync_error")
+    readonly_fields = ("google_event_id", "google_event_url", "meet_url", "sync_error", "last_synced_at")
+
+
+@admin.register(MeetingTranscript)
+class MeetingTranscriptAdmin(admin.ModelAdmin):
+    list_display = ("title", "meeting", "source", "language", "created_by", "created_at")
+    list_filter = ("source", "language", "created_at")
+    search_fields = ("title", "raw_text", "summary", "meeting__title")
+    list_select_related = ("meeting", "created_by")
+    readonly_fields = ("google_doc_id", "google_doc_url", "created_at", "updated_at")
 
 
 @admin.register(GoogleFile)

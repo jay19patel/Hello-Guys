@@ -163,7 +163,7 @@ class Meeting(TimeStamped):
 
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True, max_length=5000)
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="meetings")
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, null=True, blank=True, related_name="meetings")
     opportunity = models.ForeignKey(
         Opportunity, on_delete=models.SET_NULL, null=True, blank=True, related_name="meetings"
     )
@@ -173,6 +173,16 @@ class Meeting(TimeStamped):
     location = models.CharField(max_length=255, blank=True, help_text="Blank: Google Meet link is created")
     attendees = models.JSONField(default=list, blank=True, help_text="Guest emails (invited by Google Calendar)")
     guest_responses = models.JSONField(default=dict, blank=True, help_text="{email: accepted|declined|tentative|needsAction}, from Google")
+    attendee_details = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="[{email, name, status, comment, optional, is_organizer}] synced from Google Calendar",
+    )
+    proposed_times = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="[{id, email, name, proposed_start, proposed_end, note, status, created_at}]",
+    )
     organizer = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="crm_meetings"
     )
@@ -183,6 +193,7 @@ class Meeting(TimeStamped):
     google_event_url = models.URLField(blank=True, max_length=500)
     meet_url = models.URLField(blank=True)
     sync_error = models.TextField(blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ("start_at",)
@@ -197,6 +208,34 @@ class Meeting(TimeStamped):
         return [(email, self.guest_responses.get(email.lower(), "")) for email in self.attendees or []]
 
     @property
+    def detailed_guests(self) -> list[dict]:
+        """Rich guest list combining attendee_details, attendees, and guest_responses."""
+        by_email: dict[str, dict] = {}
+        for item in self.attendee_details or []:
+            email = (item.get("email") or "").strip().lower()
+            if email:
+                by_email[email] = {
+                    "email": email,
+                    "name": item.get("name", ""),
+                    "status": item.get("status") or self.guest_responses.get(email, "needsAction"),
+                    "comment": item.get("comment", ""),
+                    "optional": bool(item.get("optional", False)),
+                    "is_organizer": bool(item.get("is_organizer", False)),
+                }
+        for raw_email in self.attendees or []:
+            email = raw_email.strip().lower()
+            if email and email not in by_email:
+                by_email[email] = {
+                    "email": email,
+                    "name": "",
+                    "status": self.guest_responses.get(email, "needsAction") or "needsAction",
+                    "comment": "",
+                    "optional": False,
+                    "is_organizer": False,
+                }
+        return list(by_email.values())
+
+    @property
     def rsvp_summary(self) -> dict[str, int]:
         """Counts of invited, accepted, declined, tentative (maybe), and pending RSVPs."""
         guests = self.guests
@@ -208,6 +247,17 @@ class Meeting(TimeStamped):
                 counts["pending"] += 1
         return counts
 
+    @property
+    def pending_proposals(self) -> list[dict]:
+        """Time-change proposals waiting for team decision."""
+        return [p for p in (self.proposed_times or []) if p.get("status", "pending") == "pending"]
+
+    @property
+    def duration_minutes(self) -> int:
+        if self.start_at and self.end_at:
+            return max(0, int((self.end_at - self.start_at).total_seconds() // 60))
+        return 0
+
     def clean(self) -> None:
         if self.start_at and self.end_at and self.end_at <= self.start_at:
             raise ValidationError({"end_at": "The meeting must end after it starts."})
@@ -218,6 +268,59 @@ class Meeting(TimeStamped):
                 validate_email(email)
             except Exception:
                 raise ValidationError({"attendees": f"{email!r} is not a valid email."}) from None
+
+
+class MeetingTranscript(TimeStamped):
+    """Structured transcript stored at the end of a meeting (from Google Meet, upload, AI agent, or manual paste)."""
+
+    class Source(models.TextChoices):
+        GOOGLE_MEET = "google_meet", "Google Meet"
+        UPLOAD = "upload", "Uploaded file"
+        MANUAL = "manual", "Pasted / Manual"
+        AI_AGENT = "ai_agent", "AI / Voice Agent"
+
+    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name="transcripts")
+    title = models.CharField(max_length=255, blank=True)
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.MANUAL, db_index=True)
+    raw_text = models.TextField()
+    segments = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="[{speaker, timestamp, text}] speaker-diarized transcript lines",
+    )
+    summary = models.TextField(blank=True)
+    action_items = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="[{task, owner, done}] extracted or manual action items",
+    )
+    key_decisions = models.JSONField(default=list, blank=True)
+    language = models.CharField(max_length=20, default="en", blank=True)
+    duration_seconds = models.PositiveIntegerField(null=True, blank=True)
+    google_doc_id = models.CharField(max_length=128, blank=True)
+    google_doc_url = models.URLField(max_length=500, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="meeting_transcripts"
+    )
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return self.title or f"Transcript for {self.meeting.title}"
+
+    @property
+    def word_count(self) -> int:
+        return len((self.raw_text or "").split())
+
+    @property
+    def speaker_names(self) -> list[str]:
+        seen: list[str] = []
+        for seg in self.segments or []:
+            speaker = (seg.get("speaker") or "").strip()
+            if speaker and speaker not in seen:
+                seen.append(speaker)
+        return seen
 
 
 class GoogleFile(models.Model):

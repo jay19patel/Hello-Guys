@@ -1,0 +1,438 @@
+{% extends "crm/base.html" %}
+{% load humanize %}
+{% block title %}{{ meeting.title }} · Meetings · CRM{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex items-start gap-3">
+        <a href="{% url 'crm:meetings' %}" class="btn btn-ghost btn-sm mt-1" aria-label="Back to meetings"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight text-ink">{{ meeting.title }}</h1>
+                <span class="pill {% if meeting.status == 'done' %}bg-ok/10 text-ok border border-ok/20{% elif meeting.status == 'cancelled' %}bg-bad/10 text-bad border border-bad/20{% else %}bg-accent/10 text-accent border border-accent/20{% endif %}">
+                    {{ meeting.get_status_display }}
+                </span>
+                {% if meeting.google_event_id %}
+                <span class="pill bg-ok/10 text-ok border border-ok/20"><i class="fa-brands fa-google text-[11px]"></i> Google Synced</span>
+                {% endif %}
+            </div>
+            <p class="text-muted text-[13.5px] mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span class="font-medium text-ink/90 tabular-nums">
+                    <i class="fa-regular fa-calendar mr-1 text-muted"></i>{{ meeting.start_at|date:"D, d M Y · H:i" }} – {{ meeting.end_at|date:"H:i" }} ({{ meeting.duration_minutes }} min · {{ meeting.timezone }})
+                </span>
+                {% if meeting.customer %}
+                <a href="{% url 'crm:customer' meeting.customer.pk %}" class="text-accent font-medium hover:underline">
+                    <i class="fa-solid fa-user-tie mr-1"></i>{{ meeting.customer.name }}
+                </a>
+                {% endif %}
+                {% if meeting.opportunity %}
+                <a href="{% url 'crm:opportunity' meeting.opportunity.pk %}" class="text-accent hover:underline">
+                    <i class="fa-solid fa-filter mr-1"></i>{{ meeting.opportunity.title }}
+                </a>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+        {% if meeting.meet_url %}
+        <a href="{{ meeting.meet_url }}" target="_blank" rel="noopener" class="btn btn-primary">
+            <i class="fa-solid fa-video"></i> Join Google Meet
+        </a>
+        {% endif %}
+        {% if meeting.google_event_url %}
+        <a href="{{ meeting.google_event_url }}" target="_blank" rel="noopener" class="btn btn-ghost">
+            <i class="fa-brands fa-google"></i> Open in Calendar
+        </a>
+        {% endif %}
+        {% if can_edit and google_connected %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="sync">
+            <button type="submit" class="btn btn-ghost"><i class="fa-solid fa-arrows-rotate"></i> Sync Now</button>
+        </form>
+        {% endif %}
+        {% if can_edit and meeting.status == 'scheduled' %}
+        <form method="post" onsubmit="return confirm('Cancel this meeting? Google Calendar guests will be notified.')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="cancel">
+            <button type="submit" class="btn btn-ghost text-bad"><i class="fa-solid fa-ban"></i> Cancel</button>
+        </form>
+        {% endif %}
+    </div>
+</header>
+
+{% if meeting.sync_error %}
+<div class="card p-4 border-bad/35 bg-bad/5 flex items-center justify-between gap-3 text-[13.5px] text-bad">
+    <span><i class="fa-solid fa-circle-exclamation mr-1.5"></i> <strong>Google Sync Error:</strong> {{ meeting.sync_error }}</span>
+    {% if can_edit and google_connected %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync"><button class="btn btn-ghost btn-sm text-bad">Retry Sync</button></form>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="grid lg:grid-cols-3 gap-6 items-start">
+    <!-- Main Column -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+
+        <!-- Proposed New Times Card -->
+        {% if proposals or can_edit %}
+        <section class="card p-5 {% if pending_proposals %}border-warn/40 bg-warn/5{% endif %}" x-data="{ showProposeForm: false }">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="font-display font-semibold text-[16px] flex items-center gap-2">
+                        <i class="fa-regular fa-calendar-check text-warn"></i> Proposed Time Requests
+                        {% if pending_proposals %}
+                        <span class="pill bg-warn/15 text-warn border border-warn/30">{{ pending_proposals|length }} pending</span>
+                        {% endif %}
+                    </h2>
+                    <p class="text-[12.5px] text-muted mt-0.5">When a guest proposes a different time via Google Calendar or chat, accept it in one click to reschedule &amp; re-sync.</p>
+                </div>
+                {% if can_edit %}
+                <button type="button" @click="showProposeForm = !showProposeForm" class="btn btn-ghost btn-sm">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Log Proposed Time
+                </button>
+                {% endif %}
+            </div>
+
+            {% if proposals %}
+            <ul class="mt-4 flex flex-col gap-2.5">
+                {% for p in proposals %}
+                <li class="rounded-xl border border-line bg-surface p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-semibold text-[13.5px] text-ink">{{ p.name|default:p.email }}</span>
+                            <span class="text-[12px] text-muted">({{ p.email }})</span>
+                            <span class="pill {% if p.status == 'accepted' %}bg-ok/10 text-ok{% elif p.status == 'declined' %}bg-bad/10 text-bad{% else %}bg-warn/15 text-warn{% endif %}">
+                                {{ p.status|title }}
+                            </span>
+                        </div>
+                        {% if p.proposed_start %}
+                        <p class="text-[13px] font-medium text-accent mt-1 tabular-nums">
+                            <i class="fa-regular fa-clock mr-1"></i>Proposed: {{ p.proposed_start|slice:":16" }}{% if p.proposed_end %} → {{ p.proposed_end|slice:"11:16" }}{% endif %}
+                        </p>
+                        {% endif %}
+                        {% if p.note %}
+                        <p class="text-[13px] text-muted mt-1">"{{ p.note }}"</p>
+                        {% endif %}
+                    </div>
+                    {% if can_edit and p.status == 'pending' %}
+                    <form method="post" class="flex items-center gap-2 shrink-0">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="resolve-proposal">
+                        <input type="hidden" name="proposal_id" value="{{ p.id }}">
+                        {% if p.proposed_start and p.proposed_end %}
+                        <button type="submit" name="decision" value="accepted" class="btn btn-primary btn-sm">
+                            <i class="fa-solid fa-check"></i> Accept &amp; Reschedule
+                        </button>
+                        {% endif %}
+                        <button type="submit" name="decision" value="declined" class="btn btn-ghost btn-sm text-bad">
+                            <i class="fa-solid fa-xmark"></i> Decline
+                        </button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if can_edit %}
+            <form x-show="showProposeForm" x-transition x-cloak method="post" class="mt-4 pt-4 border-t border-line grid sm:grid-cols-2 gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="propose-time">
+                {% for field in propose_form %}
+                <div class="field flex flex-col gap-1 {% if field.name == 'note' %}sm:col-span-2{% endif %}">
+                    <label for="{{ field.id_for_label }}" class="caps">{{ field.label }}</label>
+                    {{ field }}
+                    {% for e in field.errors %}<p class="text-[12px] text-bad">{{ e }}</p>{% endfor %}
+                </div>
+                {% endfor %}
+                <div class="sm:col-span-2 flex justify-end">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Save Proposed Time</button>
+                </div>
+            </form>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        <!-- Attendees & RSVP Breakdown Card -->
+        <section class="card p-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="font-display font-semibold text-[16px]">Attendees &amp; RSVP Status</h2>
+                    <p class="text-[12.5px] text-muted">Live attendance responses synced from Google Calendar.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5 text-[12px]">
+                    <span class="pill bg-ok/10 text-ok border border-ok/20"><i class="fa-solid fa-check text-[10px]"></i> {{ rsvp.accepted }} Yes</span>
+                    <span class="pill bg-warn/10 text-warn border border-warn/20"><i class="fa-solid fa-question text-[10px]"></i> {{ rsvp.tentative }} Maybe</span>
+                    <span class="pill bg-bad/10 text-bad border border-bad/20"><i class="fa-solid fa-xmark text-[10px]"></i> {{ rsvp.declined }} No</span>
+                    <span class="pill bg-subtle text-muted border border-line"><i class="fa-regular fa-clock text-[10px]"></i> {{ rsvp.pending }} Pending</span>
+                </div>
+            </div>
+
+            {% if guests %}
+            <div class="mt-4 divide-y divide-line border border-line rounded-xl overflow-hidden">
+                {% for g in guests %}
+                <div class="px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-surface hover:bg-subtle/40 transition-colors">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="w-9 h-9 rounded-full bg-accent/10 text-accent border border-accent/20 flex items-center justify-center font-semibold text-[12px] shrink-0">
+                            {{ g.name|default:g.email|slice:":2"|upper }}
+                        </span>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-semibold text-[13.5px] text-ink truncate">{{ g.name|default:g.email }}</span>
+                                {% if g.is_organizer %}<span class="pill bg-subtle border border-line text-[11px]">Organizer</span>{% endif %}
+                                {% if g.optional %}<span class="pill bg-subtle border border-line text-[11px]">Optional</span>{% endif %}
+                            </div>
+                            <p class="text-[12.5px] text-muted truncate">{{ g.email }}</p>
+                            {% if g.comment %}
+                            <p class="text-[12.5px] text-ink/80 mt-1 bg-subtle/70 px-2.5 py-1 rounded-lg border border-line/70">
+                                <i class="fa-regular fa-comment-dots mr-1 text-muted"></i>{{ g.comment }}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="shrink-0">
+                        {% if g.status == 'accepted' %}
+                        <span class="pill bg-ok/10 text-ok border border-ok/25"><i class="fa-solid fa-circle-check text-[11px]"></i> Yes (Going)</span>
+                        {% elif g.status == 'tentative' %}
+                        <span class="pill bg-warn/10 text-warn border border-warn/25"><i class="fa-solid fa-circle-question text-[11px]"></i> Maybe</span>
+                        {% elif g.status == 'declined' %}
+                        <span class="pill bg-bad/10 text-bad border border-bad/25"><i class="fa-solid fa-circle-xmark text-[11px]"></i> No (Declined)</span>
+                        {% else %}
+                        <span class="pill bg-subtle text-muted border border-line"><i class="fa-regular fa-clock text-[11px]"></i> Awaiting Reply</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="mt-4 text-[13.5px] text-muted">No guests invited yet. Edit the meeting details on the right to add guest emails.</p>
+            {% endif %}
+        </section>
+
+        <!-- Meeting Transcripts Table & Reader -->
+        <section id="transcripts" class="card p-5" x-data="{ addOpen: {% if transcript_form.errors %}true{% else %}false{% endif %}, activeTranscript: {% if transcripts %}{{ transcripts.0.pk }}{% else %}null{% endif %} }">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="font-display font-semibold text-[16px] flex items-center gap-2">
+                        <i class="fa-solid fa-file-lines text-accent"></i> Meeting Transcripts
+                    </h2>
+                    <p class="text-[12.5px] text-muted">Stored in the <code class="text-[11.5px] bg-subtle px-1.5 py-0.5 rounded">MeetingTranscript</code> table at the end of the meeting.</p>
+                </div>
+                {% if can_edit %}
+                <button type="button" @click="addOpen = !addOpen" class="btn btn-primary btn-sm">
+                    <i class="fa-solid fa-plus"></i> Add / Upload Transcript
+                </button>
+                {% endif %}
+            </div>
+
+            {% if can_edit %}
+            <form x-show="addOpen" x-transition x-cloak method="post" enctype="multipart/form-data" class="mt-4 rounded-xl border border-line bg-subtle/40 p-4 flex flex-col gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add-transcript">
+                {% if transcript_form.non_field_errors %}
+                <div class="text-[13px] text-bad">{{ transcript_form.non_field_errors }}</div>
+                {% endif %}
+                <div class="grid sm:grid-cols-3 gap-3">
+                    <div class="field flex flex-col gap-1 sm:col-span-2">
+                        <label for="{{ transcript_form.title.id_for_label }}" class="caps">{{ transcript_form.title.label }}</label>
+                        {{ transcript_form.title }}
+                    </div>
+                    <div class="field flex flex-col gap-1">
+                        <label for="{{ transcript_form.source.id_for_label }}" class="caps">{{ transcript_form.source.label }}</label>
+                        {{ transcript_form.source }}
+                    </div>
+                </div>
+                <div class="field flex flex-col gap-1">
+                    <label for="{{ transcript_form.raw_text.id_for_label }}" class="caps">{{ transcript_form.raw_text.label }}</label>
+                    {{ transcript_form.raw_text }}
+                </div>
+                <div class="grid sm:grid-cols-2 gap-3">
+                    <div class="field flex flex-col gap-1">
+                        <label for="{{ transcript_form.transcript_file.id_for_label }}" class="caps">{{ transcript_form.transcript_file.label }}</label>
+                        {{ transcript_form.transcript_file }}
+                    </div>
+                    <div class="field flex flex-col gap-1">
+                        <label for="{{ transcript_form.language.id_for_label }}" class="caps">{{ transcript_form.language.label }}</label>
+                        {{ transcript_form.language }}
+                    </div>
+                </div>
+                <div class="field flex flex-col gap-1">
+                    <label for="{{ transcript_form.summary.id_for_label }}" class="caps">{{ transcript_form.summary.label }}</label>
+                    {{ transcript_form.summary }}
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" @click="addOpen = false" class="btn btn-ghost btn-sm">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-floppy-disk"></i> Save Transcript</button>
+                </div>
+            </form>
+            {% endif %}
+
+            {% if transcripts %}
+            <!-- Transcripts Table -->
+            <div class="mt-4 overflow-x-auto border border-line rounded-xl">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="table-head border-b border-line">
+                            <th>Title</th>
+                            <th>Source</th>
+                            <th>Words</th>
+                            <th>Speakers</th>
+                            <th>Drive Doc</th>
+                            <th>Saved</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-line text-[13px]">
+                        {% for tr in transcripts %}
+                        <tr class="hover:bg-subtle/50 transition-colors cursor-pointer" @click="activeTranscript = {{ tr.pk }}" :class="activeTranscript === {{ tr.pk }} ? 'bg-accent/5' : ''">
+                            <td class="cell px-4 font-semibold text-ink">{{ tr.title|default:"Transcript" }}</td>
+                            <td class="cell px-4"><span class="pill bg-subtle border border-line">{{ tr.get_source_display }}</span></td>
+                            <td class="cell px-4 tabular-nums text-muted">{{ tr.word_count }}</td>
+                            <td class="cell px-4 text-muted">{{ tr.speaker_names|join:", "|default:"—" }}</td>
+                            <td class="cell px-4" @click.stop>
+                                {% if tr.google_doc_url %}
+                                <a href="{{ tr.google_doc_url }}" target="_blank" rel="noopener" class="text-accent hover:underline font-medium">Open Doc</a>
+                                {% elif can_edit and google_connected and meeting.customer %}
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="save-transcript-doc">
+                                    <input type="hidden" name="transcript_id" value="{{ tr.pk }}">
+                                    <button type="submit" class="text-[12px] text-accent hover:underline font-medium">Save to Drive</button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="cell px-4 text-muted whitespace-nowrap">{{ tr.created_at|date:"d M, H:i" }}</td>
+                            <td class="cell px-4 text-right" @click.stop>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" @click="activeTranscript = {{ tr.pk }}" class="btn btn-ghost btn-sm">Read</button>
+                                    {% if is_admin %}
+                                    <form method="post" onsubmit="return confirm('Delete this transcript?')">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete-transcript">
+                                        <input type="hidden" name="transcript_id" value="{{ tr.pk }}">
+                                        <button type="submit" class="btn btn-ghost btn-sm text-bad px-2" aria-label="Delete transcript"><i class="fa-solid fa-trash"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Selected Transcript Reader -->
+            {% for tr in transcripts %}
+            <div x-show="activeTranscript === {{ tr.pk }}" x-cloak class="mt-4 rounded-xl border border-line bg-subtle/20 p-4 flex flex-col gap-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2.5">
+                    <div>
+                        <h3 class="font-semibold text-[14.5px] text-ink">{{ tr.title|default:"Transcript" }}</h3>
+                        <p class="text-[12px] text-muted">{{ tr.get_source_display }} · {{ tr.language|upper }} · {{ tr.word_count }} words · saved {{ tr.created_at|naturaltime }}</p>
+                    </div>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="navigator.clipboard?.writeText(document.getElementById('tr-raw-{{ tr.pk }}').value)">
+                        <i class="fa-regular fa-copy"></i> Copy Text
+                    </button>
+                    <textarea id="tr-raw-{{ tr.pk }}" class="sr-only" readonly>{{ tr.raw_text }}</textarea>
+                </div>
+
+                {% if tr.summary %}
+                <div class="rounded-lg bg-accent/5 border border-accent/20 p-3">
+                    <div class="caps text-accent mb-1">Summary</div>
+                    <p class="text-[13.5px] text-ink whitespace-pre-line">{{ tr.summary }}</p>
+                </div>
+                {% endif %}
+
+                {% if tr.segments %}
+                <div class="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1">
+                    {% for seg in tr.segments %}
+                    <div class="flex items-start gap-2.5 text-[13.5px] bg-surface border border-line/70 rounded-lg px-3 py-2">
+                        <span class="pill bg-accent/10 text-accent shrink-0 mt-0.5 font-semibold">{{ seg.speaker|default:"Speaker" }}</span>
+                        <div class="min-w-0 flex-1">
+                            {% if seg.timestamp %}<span class="text-[11px] font-mono text-muted mr-1.5">{{ seg.timestamp }}</span>{% endif %}
+                            <span class="text-ink">{{ seg.text }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <pre class="text-[13px] text-ink whitespace-pre-wrap font-sans max-h-96 overflow-y-auto bg-surface border border-line rounded-lg p-3">{{ tr.raw_text }}</pre>
+                {% endif %}
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="mt-4 text-[13.5px] text-muted">No transcript saved for this meeting yet. Click <b>Add / Upload Transcript</b> after the meeting ends.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <!-- Right Sidebar -->
+    <aside class="flex flex-col gap-6">
+        <!-- Info & Google Sync Metadata -->
+        <section class="card p-5 text-[13.5px] flex flex-col gap-2.5">
+            <h2 class="caps">Meeting Info</h2>
+            {% if meeting.location %}
+            <div class="flex items-center gap-2"><i class="fa-solid fa-location-dot w-4 text-muted"></i> <span>{{ meeting.location }}</span></div>
+            {% endif %}
+            <div class="flex items-center gap-2"><i class="fa-solid fa-user w-4 text-muted"></i> <span>Organizer: {% include "crm/_user.html" with u=meeting.organizer empty="Team" %}</span></div>
+            {% if meeting.last_synced_at %}
+            <div class="flex items-center gap-2 text-muted"><i class="fa-solid fa-arrows-rotate w-4"></i> <span>Last synced {{ meeting.last_synced_at|naturaltime }}</span></div>
+            {% endif %}
+            {% if meeting.description %}
+            <div class="mt-2 pt-2 border-t border-line">
+                <div class="caps mb-1">Agenda / Notes</div>
+                <p class="whitespace-pre-line text-muted">{{ meeting.description }}</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Post-Meeting Outcome -->
+        {% if can_edit %}
+        <section class="card p-5">
+            <h2 class="font-display font-semibold text-[15px]">Meeting Outcome</h2>
+            <p class="text-[12px] text-muted mt-0.5">Record key outcomes &amp; mark the meeting complete.</p>
+            <form method="post" class="mt-3 flex flex-col gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="complete">
+                <div class="field">{{ outcome_form.outcome }}</div>
+                <button type="submit" class="btn btn-primary btn-sm self-start">
+                    <i class="fa-solid fa-check"></i> {% if meeting.status == 'done' %}Update Outcome{% else %}Save Outcome &amp; Mark Done{% endif %}
+                </button>
+            </form>
+        </section>
+
+        <!-- Edit Meeting Details -->
+        <section class="card p-5" x-data="{ editOpen: {% if form.errors %}true{% else %}false{% endif %} }">
+            <button type="button" @click="editOpen = !editOpen" class="w-full flex items-center justify-between font-display font-semibold text-[15px]">
+                <span>Edit Meeting &amp; Guests</span>
+                <i class="fa-solid fa-chevron-down text-[12px] text-muted transition-transform" :class="editOpen ? 'rotate-180' : ''"></i>
+            </button>
+            <form x-show="editOpen" x-transition x-cloak method="post" class="mt-4 flex flex-col gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                {% for field in form %}
+                <div class="field flex flex-col gap-1">
+                    <label for="{{ field.id_for_label }}" class="caps">{{ field.label }}</label>
+                    {{ field }}
+                    {% for e in field.errors %}<p class="text-[12px] text-bad">{{ e }}</p>{% endfor %}
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary btn-sm self-start"><i class="fa-solid fa-floppy-disk"></i> Save &amp; Sync</button>
+            </form>
+        </section>
+        {% endif %}
+
+        {% if is_admin %}
+        <form method="post" onsubmit="return confirm('Delete this meeting and all its transcripts?')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <button type="submit" class="btn btn-ghost text-bad w-full"><i class="fa-solid fa-trash"></i> Delete Meeting</button>
+        </form>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

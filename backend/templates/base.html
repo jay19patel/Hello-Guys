@@ -66,6 +66,7 @@
                 <div class="hidden sm:flex items-center gap-1 bg-subtle border border-line rounded-xl p-1 text-[12.5px] font-medium">
                     <a href="{% url 'dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/meta' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meta Inbox</a>
                     <a href="{% url 'crm:overview' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/crm' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">CRM</a>
+                    <a href="{% url 'core:follow-ups' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':11' == '/follow-ups' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Follow-ups</a>
                     <a href="{% url 'hello_guy_ai_analytics' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':13' == '/ai/analytics' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Analytics</a>
                     <a href="{% url 'hello_guy_ai_chat' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/chat' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Chat</a>
                 </div>
@@ -85,6 +86,104 @@
                 </a>
                 {% endif %}
 
+                <!-- Global Notifications & Follow-ups Bell -->
+                <div class="relative" x-data="globalNotifications()" x-init="init()" @click.outside="open = false" @keydown.escape.window="open = false">
+                    <button type="button" @click="toggle()" class="relative btn btn-ghost btn-sm px-2.5" aria-label="Notifications" :aria-expanded="open">
+                        <i class="fa-regular fa-bell text-[15px]"></i>
+                        <span x-show="(unreadCount + followupsDueCount) > 0" x-cloak x-text="(unreadCount + followupsDueCount) > 99 ? '99+' : (unreadCount + followupsDueCount)"
+                              class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-bad text-white text-[10px] font-bold flex items-center justify-center shadow-soft"></span>
+                    </button>
+
+                    <div x-show="open" x-transition x-cloak class="absolute right-0 mt-2 w-80 sm:w-96 bg-surface border border-line rounded-2xl shadow-card z-50 overflow-hidden">
+                        <div class="px-3 pt-2.5 pb-2 border-b border-line flex items-center justify-between gap-2 bg-subtle/40">
+                            <div class="flex items-center gap-1 bg-subtle border border-line rounded-lg p-0.5 text-[12px] font-medium">
+                                <button type="button" @click="tab = 'notifications'" class="px-2.5 py-1 rounded-md transition-colors"
+                                        :class="tab === 'notifications' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
+                                    Notifications <span x-show="unreadCount > 0" x-text="'(' + unreadCount + ')'" class="text-accent"></span>
+                                </button>
+                                <button type="button" @click="tab = 'followups'" class="px-2.5 py-1 rounded-md transition-colors"
+                                        :class="tab === 'followups' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
+                                    Follow-ups <span x-show="followupsDueCount > 0" x-text="'(' + followupsDueCount + ')'" class="text-bad"></span>
+                                </button>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <button type="button" x-show="tab === 'notifications' && unreadCount > 0" @click="markAllRead()" class="text-[11.5px] text-accent hover:underline font-medium px-1">
+                                    Mark read
+                                </button>
+                                <a x-show="tab === 'followups'" href="{% url 'core:follow-ups' %}" class="text-[11.5px] text-accent hover:underline font-medium px-1">
+                                    Open all →
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Notifications Tab -->
+                        <div x-show="tab === 'notifications'" class="max-h-96 overflow-y-auto divide-y divide-line">
+                            <template x-if="loading && items.length === 0">
+                                <div class="p-6 text-center text-[13px] text-muted">Loading notifications…</div>
+                            </template>
+                            <template x-if="!loading && items.length === 0">
+                                <div class="p-6 text-center">
+                                    <i class="fa-regular fa-bell-slash text-muted text-lg mb-1.5"></i>
+                                    <p class="text-[13px] font-medium text-ink">You're all caught up</p>
+                                    <p class="text-[12px] text-muted mt-0.5">Notifications from Follow-ups, CRM, Meetings &amp; AI appear here.</p>
+                                </div>
+                            </template>
+                            <template x-for="item in items" :key="item.id">
+                                <a :href="item.url || '#'" @click="onItemClick($event, item)"
+                                   class="flex items-start gap-3 px-4 py-3 hover:bg-subtle/60 transition-colors"
+                                   :class="!item.is_read ? 'bg-accent/5' : ''">
+                                    <span class="w-8 h-8 rounded-xl border border-line bg-surface flex items-center justify-center shrink-0 mt-0.5 text-[12px]"
+                                          :class="levelColor(item.level)">
+                                        <i :class="categoryIcon(item.category)"></i>
+                                    </span>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="font-semibold text-[13px] text-ink truncate" x-text="item.title"></span>
+                                            <span x-show="!item.is_read" class="w-2 h-2 rounded-full bg-accent shrink-0"></span>
+                                        </div>
+                                        <p x-show="item.body" class="text-[12.5px] text-muted mt-0.5 line-clamp-2" x-text="item.body"></p>
+                                        <div class="flex items-center gap-2 mt-1 text-[11px] text-muted">
+                                            <span class="uppercase tracking-wider font-semibold" x-text="item.category"></span>
+                                            <span>·</span>
+                                            <span x-text="timeAgo(item.created_at)"></span>
+                                        </div>
+                                    </div>
+                                </a>
+                            </template>
+                        </div>
+
+                        <!-- Follow-ups Tab -->
+                        <div x-show="tab === 'followups'" x-cloak class="max-h-96 overflow-y-auto divide-y divide-line">
+                            <template x-if="followups.length === 0">
+                                <div class="p-6 text-center">
+                                    <i class="fa-regular fa-circle-check text-ok text-lg mb-1.5"></i>
+                                    <p class="text-[13px] font-medium text-ink">No pending follow-ups</p>
+                                    <a href="{% url 'core:follow-ups' %}" class="inline-block mt-2 text-[12.5px] text-accent font-medium hover:underline">+ Add a follow-up</a>
+                                </div>
+                            </template>
+                            <template x-for="fu in followups" :key="fu.id">
+                                <div class="px-4 py-3 hover:bg-subtle/40 transition-colors flex items-start justify-between gap-2.5">
+                                    <a :href="fu.related_url || '/follow-ups/'" class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <span class="font-semibold text-[13px] text-ink truncate" x-text="fu.title"></span>
+                                            <span x-show="fu.is_overdue" class="pill bg-bad/10 text-bad text-[10px] px-1.5 py-0">Overdue</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5 text-[11.5px] text-muted mt-0.5">
+                                            <i :class="fu.channel_icon + ' text-[10px]'"></i>
+                                            <span x-text="fu.channel"></span>
+                                            <span x-show="fu.related_label" x-text="'· ' + fu.related_label"></span>
+                                        </div>
+                                    </a>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <button type="button" @click="followUpAction(fu.id, 'snooze')" class="btn btn-ghost btn-sm px-2 text-[11px]" title="Snooze 24h">+24h</button>
+                                        <button type="button" @click="followUpAction(fu.id, 'done')" class="btn btn-primary btn-sm px-2 text-[11px]" title="Mark done"><i class="fa-solid fa-check"></i></button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Quick Create Menu -->
                 <div class="relative" x-data="{ open: false }" @click.outside="open = false">
                     <button type="button" @click="open = !open" class="btn btn-primary btn-sm">
@@ -95,7 +194,8 @@
                     <div x-show="open" x-transition x-cloak class="absolute right-0 mt-2 w-52 bg-surface border border-line rounded-xl shadow-card py-1.5 z-50 text-[13px]">
                         <a href="{% url 'crm:customer-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-user-plus w-4 text-accent"></i> New Customer</a>
                         <a href="{% url 'crm:opportunity-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-filter w-4 text-ok"></i> New Opportunity</a>
-                        <a href="{% url 'crm:follow-ups' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> Schedule Follow-up</a>
+                        <a href="{% url 'crm:meeting-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-calendar-plus w-4 text-accent"></i> Schedule Meeting</a>
+                        <a href="{% url 'core:follow-ups' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> Follow-ups</a>
                     </div>
                 </div>
             </div>
@@ -173,6 +273,126 @@
             btn.innerHTML = '<i class="fa-solid fa-check text-ok"></i>';
             setTimeout(() => { btn.innerHTML = old; }, 1500);
         });
+    }
+
+    function getCookie(name) {
+        const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+        return m ? decodeURIComponent(m[1]) : '';
+    }
+
+    function globalNotifications() {
+        return {
+            open: false,
+            tab: 'notifications',
+            loading: false,
+            filterUnread: false,
+            items: [],
+            followups: [],
+            unreadCount: 0,
+            followupsDueCount: 0,
+            init() {
+                this.refreshCount();
+                setInterval(() => this.refreshCount(), 45000);
+                window.addEventListener('notifications:refresh', () => {
+                    this.refreshCount();
+                    if (this.open) this.load();
+                });
+            },
+            async refreshCount() {
+                try {
+                    const res = await fetch('/notifications/unread-count/', { credentials: 'same-origin' });
+                    if (res.ok) {
+                        const data = await res.json();
+                        this.unreadCount = data.count || 0;
+                        this.followupsDueCount = data.followups_due || 0;
+                    }
+                } catch (_) {}
+            },
+            async toggle() {
+                this.open = !this.open;
+                if (this.open) await this.load();
+            },
+            async load() {
+                this.loading = true;
+                try {
+                    const q = this.filterUnread ? '?unread_only=1' : '';
+                    const res = await fetch('/notifications/' + q, { credentials: 'same-origin' });
+                    if (res.ok) {
+                        const data = await res.json();
+                        this.items = data.items || [];
+                        this.followups = data.followups || [];
+                        this.unreadCount = data.unread_count || 0;
+                        this.followupsDueCount = data.followups_due_count || 0;
+                    }
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async followUpAction(id, action) {
+                try {
+                    const res = await fetch(`/follow-ups/${id}/action/`, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken'),
+                        },
+                        body: JSON.stringify({ action }),
+                    });
+                    if (res.ok) await this.load();
+                } catch (_) {}
+            },
+            async markRead(ids) {
+                try {
+                    const res = await fetch('/notifications/read/', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+                        body: JSON.stringify({ ids }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        this.unreadCount = data.unread_count || 0;
+                    }
+                } catch (_) {}
+            },
+            async markAllRead() {
+                await this.markRead(null);
+                this.items = this.items.map(i => ({ ...i, is_read: true }));
+            },
+            async onItemClick(e, item) {
+                if (!item.is_read) {
+                    item.is_read = true;
+                    this.unreadCount = Math.max(0, this.unreadCount - 1);
+                    await this.markRead([item.id]);
+                }
+                if (!item.url) e.preventDefault();
+            },
+            categoryIcon(cat) {
+                return {
+                    meeting: 'fa-solid fa-calendar-days',
+                    crm: 'fa-solid fa-address-book',
+                    ai: 'fa-solid fa-wand-magic-sparkles',
+                    meta: 'fa-solid fa-comments',
+                    followup: 'fa-regular fa-clock',
+                }[cat] || 'fa-solid fa-bell';
+            },
+            levelColor(lvl) {
+                return {
+                    success: 'text-ok',
+                    warning: 'text-warn',
+                    error: 'text-bad',
+                }[lvl] || 'text-accent';
+            },
+            timeAgo(iso) {
+                const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+                if (s < 60) return 'just now';
+                if (s < 3600) return Math.floor(s / 60) + 'm ago';
+                if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+                return Math.floor(s / 86400) + 'd ago';
+            },
+        };
     }
 </script>
 {% block extra_scripts %}{% endblock %}

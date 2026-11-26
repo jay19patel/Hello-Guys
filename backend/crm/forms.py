@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.validators import validate_email
 
 from crm.google import MAX_UPLOAD_BYTES, SHARE_ROLES
-from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, Opportunity, Service
+from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, MeetingTranscript, Opportunity, Service
 from meta_connector.models import Contact
 from meta_connector.roles import team
 
@@ -103,6 +103,7 @@ class MeetingForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         for name in ("start_at", "end_at"):
             self.fields[name].input_formats = ["%Y-%m-%dT%H:%M"]
+        self.fields["customer"].required = False
         self.fields["customer"].queryset = Customer.objects.order_by("name")
         self.fields["opportunity"].queryset = Opportunity.objects.filter(status__in=Opportunity.OPEN).select_related(
             "customer")
@@ -111,6 +112,57 @@ class MeetingForm(forms.ModelForm):
 
 class MeetingOutcomeForm(forms.Form):
     outcome = forms.CharField(max_length=5000, widget=forms.Textarea(attrs={"rows": 3}), required=False)
+
+
+class ProposeTimeForm(forms.Form):
+    email = forms.EmailField(label="Guest email")
+    name = forms.CharField(max_length=120, required=False, label="Guest name")
+    proposed_start = forms.DateTimeField(widget=DATETIME, input_formats=["%Y-%m-%dT%H:%M"], label="Proposed start")
+    proposed_end = forms.DateTimeField(widget=DATETIME, input_formats=["%Y-%m-%dT%H:%M"], label="Proposed end")
+    note = forms.CharField(max_length=500, required=False, widget=forms.Textarea(attrs={"rows": 2, "placeholder": "Reason or note…"}))
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("proposed_start"), cleaned.get("proposed_end")
+        if start and end and end <= start:
+            self.add_error("proposed_end", "Proposed end time must be after start time.")
+        return cleaned
+
+
+class MeetingTranscriptForm(forms.Form):
+    title = forms.CharField(max_length=255, required=False, widget=forms.TextInput(attrs={"placeholder": "e.g. Discovery Call Transcript"}))
+    source = forms.ChoiceField(choices=MeetingTranscript.Source.choices, initial=MeetingTranscript.Source.MANUAL)
+    language = forms.CharField(max_length=20, initial="en", required=False)
+    raw_text = forms.CharField(
+        required=False,
+        label="Transcript text",
+        widget=forms.Textarea(attrs={"rows": 6, "placeholder": "Paste transcript (Speaker: message, WebVTT, or SRT)…"}),
+    )
+    transcript_file = forms.FileField(required=False, label="Or upload .txt / .vtt / .srt")
+    summary = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Optional summary / key takeaways…"}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        text = (cleaned.get("raw_text") or "").strip()
+        uploaded = cleaned.get("transcript_file")
+        if uploaded:
+            if uploaded.size > 5 * 1024 * 1024:
+                self.add_error("transcript_file", "Transcript file must be under 5 MB.")
+                return cleaned
+            try:
+                text = uploaded.read().decode("utf-8", errors="replace").strip()
+            except Exception:
+                self.add_error("transcript_file", "Could not read transcript file.")
+                return cleaned
+            cleaned["raw_text"] = text
+            if cleaned.get("source") == MeetingTranscript.Source.MANUAL:
+                cleaned["source"] = MeetingTranscript.Source.UPLOAD
+        if not text:
+            raise forms.ValidationError("Paste transcript text or upload a transcript file.")
+        return cleaned
 
 
 class GoogleCredentialsForm(forms.ModelForm):

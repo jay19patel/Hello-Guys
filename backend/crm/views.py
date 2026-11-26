@@ -15,13 +15,19 @@ from django.utils.crypto import get_random_string
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, TemplateView
 
-from crm import google, services
+import json
+
+from crm import google, meetings as meetings_svc, services
 from crm.forms import (
-    CustomerForm, DriveFileForm, GoogleCredentialsForm, MessageForm, NoteForm,
-    OpportunityForm, ReplyForm, ShareForm, UploadForm,
+    CustomerForm, DriveFileForm, GoogleCredentialsForm, MeetingForm, MeetingOutcomeForm,
+    MeetingTranscriptForm, MessageForm, NoteForm, OpportunityForm, ProposeTimeForm,
+    ReplyForm, ShareForm, UploadForm,
 )
 from django.contrib.auth import get_user_model
-from crm.models import Activity, Customer, FollowUp, GoogleAccount, GoogleFile, Meeting, Opportunity, Service, Source
+from crm.models import (
+    Activity, Customer, FollowUp, GoogleAccount, GoogleFile, Meeting, MeetingTranscript,
+    Opportunity, Service, Source,
+)
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.exceptions import AssistantNotFound
 from hello_guy_ai.models import Message as AIMessage, Thread
@@ -786,3 +792,366 @@ class FollowUpActionView(CRMView, View):
             fu.save(update_fields=["due_at", "updated_at"])
             messages.success(request, "Follow-up rescheduled.")
         return redirect(next_url)
+
+
+# ---- meetings & transcripts ------------------------------------------------------------------
+
+
+class MeetingListView(CRMView, ListView):
+    """Meetings hub: upcoming, past, proposed-time requests, and stored transcripts table."""
+    template_name = "crm/meetings.html"
+    context_object_name = "meetings"
+    paginate_by = PAGE_SIZE
+
+    def get_queryset(self):
+        tab = self.request.GET.get("tab", "upcoming")
+        q = self.request.GET.get("q", "").strip()
+        now = timezone.now()
+        qs = Meeting.objects.select_related("customer", "opportunity", "organizer").prefetch_related("transcripts")
+
+        if tab == "upcoming":
+            qs = qs.filter(status=Meeting.Status.SCHEDULED, end_at__gte=now - timedelta(hours=2)).order_by("start_at")
+        elif tab == "past":
+            qs = qs.filter(Q(status=Meeting.Status.DONE) | Q(end_at__lt=now)).exclude(status=Meeting.Status.CANCELLED).order_by("-start_at")
+        elif tab == "cancelled":
+            qs = qs.filter(status=Meeting.Status.CANCELLED).order_by("-start_at")
+        elif tab == "proposals":
+            ids = [m.pk for m in qs.filter(status=Meeting.Status.SCHEDULED) if m.pending_proposals]
+            qs = qs.filter(pk__in=ids).order_by("start_at")
+        elif tab == "transcripts":
+            qs = qs.filter(transcripts__isnull=False).distinct().order_by("-start_at")
+        else:
+            qs = qs.order_by("-start_at")
+
+        if q:
+            qs = qs.filter(
+                Q(title__icontains=q)
+                | Q(description__icontains=q)
+                | Q(customer__name__icontains=q)
+                | Q(attendees__icontains=q)
+                | Q(transcripts__raw_text__icontains=q)
+            ).distinct()
+        return qs
+
+    def get_context_data(self, **kwargs):
+        now = timezone.now()
+        tab = self.request.GET.get("tab", "upcoming")
+        q = self.request.GET.get("q", "").strip()
+        all_scheduled = list(Meeting.objects.filter(status=Meeting.Status.SCHEDULED))
+        proposals_count = sum(1 for m in all_scheduled if m.pending_proposals)
+        today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+
+        transcripts_qs = MeetingTranscript.objects.select_related("meeting", "meeting__customer", "created_by")
+        if q:
+            transcripts_qs = transcripts_qs.filter(
+                Q(title__icontains=q)
+                | Q(raw_text__icontains=q)
+                | Q(summary__icontains=q)
+                | Q(meeting__title__icontains=q)
+                | Q(meeting__customer__name__icontains=q)
+            )
+
+        default_start = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        quick_form = MeetingForm(initial={
+            "start_at": timezone.localtime(default_start).strftime("%Y-%m-%dT%H:%M"),
+            "end_at": timezone.localtime(default_start + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M"),
+        })
+        google_account = GoogleAccount.get_solo()
+
+        return super().get_context_data(
+            tab=tab,
+            q=q,
+            google_account=google_account,
+            google_connected=google_account.is_connected,
+            quick_form=quick_form,
+            transcript_rows=transcripts_qs[:100],
+            stats={
+                "upcoming": Meeting.objects.filter(status=Meeting.Status.SCHEDULED, end_at__gte=now - timedelta(hours=2)).count(),
+                "today": Meeting.objects.filter(status=Meeting.Status.SCHEDULED, start_at__gte=today_start, start_at__lt=today_end).count(),
+                "proposals": proposals_count,
+                "transcripts": MeetingTranscript.objects.count(),
+                "synced": Meeting.objects.exclude(google_event_id="").count(),
+            },
+            **kwargs,
+        )
+
+
+class MeetingCreateView(CRMView, CreateView):
+    """Schedule a new CRM meeting (with optional Google Calendar + Meet sync)."""
+    role = AGENT
+    form_class = MeetingForm
+    template_name = "crm/form.html"
+    extra_context = {"title": "Schedule meeting"}
+
+    def get_initial(self):
+        initial = super().get_initial()
+        now = timezone.now()
+        default_start = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        initial["start_at"] = timezone.localtime(default_start).strftime("%Y-%m-%dT%H:%M")
+        initial["end_at"] = timezone.localtime(default_start + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+        if cid := self.request.GET.get("customer"):
+            customer = Customer.objects.filter(pk=cid).first()
+            if customer:
+                initial["customer"] = customer
+                if customer.email:
+                    initial["attendees"] = [customer.email]
+        if oid := self.request.GET.get("opportunity"):
+            opp = Opportunity.objects.select_related("customer").filter(pk=oid).first()
+            if opp:
+                initial["opportunity"] = opp
+                initial["customer"] = opp.customer
+                if opp.customer.email and "attendees" not in initial:
+                    initial["attendees"] = [opp.customer.email]
+        return initial
+
+    def form_valid(self, form):
+        form.instance.organizer = self.request.user
+        meeting = form.save()
+        if GoogleAccount.get_solo().is_connected:
+            google.sync_meeting(meeting)
+            if meeting.sync_error:
+                messages.warning(self.request, f"Meeting saved in CRM, but Google sync failed: {meeting.sync_error}")
+            else:
+                messages.success(self.request, "Meeting scheduled and synced to Google Calendar.")
+        else:
+            messages.success(self.request, "Meeting scheduled in CRM.")
+
+        if meeting.customer_id:
+            services.add_note(
+                user=self.request.user,
+                customer=meeting.customer,
+                opportunity=meeting.opportunity,
+                kind=Activity.Kind.MEETING,
+                body=f"Scheduled meeting \"{meeting.title}\" for {timezone.localtime(meeting.start_at):%d %b %Y, %H:%M}.",
+            )
+        return redirect("crm:meeting", meeting.pk)
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(back=reverse("crm:meetings"), **kwargs)
+
+
+class MeetingSyncView(CRMView, View):
+    """Pull & import upcoming meetings and RSVP updates from Google Calendar."""
+    role = AGENT
+    http_method_names = ["post"]
+
+    def post(self, request):
+        next_url = request.POST.get("next") or reverse("crm:meetings")
+        if not GoogleAccount.get_solo().is_connected:
+            messages.error(request, "Google is not connected. Connect it in CRM > Settings first.")
+            return redirect(next_url)
+        try:
+            result = google.import_calendar_events()
+        except google.GoogleError as exc:
+            messages.error(request, f"Google Calendar sync failed: {exc}")
+            return redirect(next_url)
+        messages.success(
+            request,
+            f"Synced with Google Calendar: {result['created']} imported, {result['updated']} updated.",
+        )
+        return redirect(next_url)
+
+
+class MeetingDetailView(CRMView, ActionsMixin, DetailView):
+    """Single meeting: Google Meet/Calendar link, RSVP breakdown, proposed times, and stored transcripts."""
+    template_name = "crm/meeting_detail.html"
+    context_object_name = "meeting"
+    queryset = Meeting.objects.select_related("customer", "opportunity", "organizer").prefetch_related(
+        "transcripts__created_by"
+    )
+
+    def get_context_data(self, **kwargs):
+        m = self.object
+        kwargs.setdefault("form", MeetingForm(instance=m))
+        kwargs.setdefault("outcome_form", MeetingOutcomeForm(initial={"outcome": m.outcome}))
+        kwargs.setdefault("propose_form", ProposeTimeForm())
+        kwargs.setdefault("transcript_form", MeetingTranscriptForm())
+        return super().get_context_data(
+            guests=m.detailed_guests,
+            rsvp=m.rsvp_summary,
+            proposals=m.proposed_times or [],
+            pending_proposals=m.pending_proposals,
+            transcripts=m.transcripts.all(),
+            google_connected=GoogleAccount.get_solo().is_connected,
+            **kwargs,
+        )
+
+    def done(self, text: str = ""):
+        if text:
+            messages.success(self.request, text)
+        return redirect("crm:meeting", self.object.pk)
+
+    def post_update(self):
+        form = MeetingForm(self.request.POST, instance=self.object)
+        if not form.is_valid():
+            return self.rerender(form=form)
+        meeting = form.save()
+        if GoogleAccount.get_solo().is_connected:
+            google.sync_meeting(meeting)
+            if meeting.sync_error:
+                messages.warning(self.request, f"Updated in CRM, but Google sync failed: {meeting.sync_error}")
+                return self.done()
+        return self.done("Meeting updated.")
+
+    def post_sync(self):
+        if not GoogleAccount.get_solo().is_connected:
+            messages.error(self.request, "Google is not connected.")
+            return self.done()
+        if self.object.google_event_id:
+            changes = google.pull_meeting(self.object)
+            msg = f"Synced from Google: {', '.join(changes)}." if changes else "Already up to date with Google Calendar."
+            return self.done(msg)
+        google.sync_meeting(self.object)
+        if self.object.sync_error:
+            messages.error(self.request, f"Google sync failed: {self.object.sync_error}")
+            return self.done()
+        return self.done("Pushed to Google Calendar.")
+
+    def post_complete(self):
+        form = MeetingOutcomeForm(self.request.POST)
+        if form.is_valid():
+            self.object.outcome = form.cleaned_data["outcome"]
+        self.object.status = Meeting.Status.DONE
+        self.object.save(update_fields=["status", "outcome", "updated_at"])
+        if self.object.customer_id:
+            services.add_note(
+                user=self.request.user,
+                customer=self.object.customer,
+                opportunity=self.object.opportunity,
+                kind=Activity.Kind.MEETING,
+                body=f"Completed meeting \"{self.object.title}\".{f' Outcome: {self.object.outcome}' if self.object.outcome else ''}",
+            )
+        return self.done("Meeting marked as completed.")
+
+    def post_cancel(self):
+        self.object.status = Meeting.Status.CANCELLED
+        self.object.save(update_fields=["status", "updated_at"])
+        if GoogleAccount.get_solo().is_connected and self.object.google_event_id:
+            google.sync_meeting(self.object)
+        if self.object.customer_id:
+            services.add_note(
+                user=self.request.user,
+                customer=self.object.customer,
+                opportunity=self.object.opportunity,
+                kind=Activity.Kind.MEETING,
+                body=f"Cancelled meeting \"{self.object.title}\".",
+            )
+        return self.done("Meeting cancelled.")
+
+    def post_propose_time(self):
+        form = ProposeTimeForm(self.request.POST)
+        if not form.is_valid():
+            return self.rerender(propose_form=form)
+        meetings_svc.propose_meeting_time(
+            self.object,
+            email=form.cleaned_data["email"],
+            name=form.cleaned_data["name"],
+            proposed_start=form.cleaned_data["proposed_start"],
+            proposed_end=form.cleaned_data["proposed_end"],
+            note=form.cleaned_data["note"],
+            user=self.request.user,
+        )
+        return self.done("Proposed time recorded.")
+
+    def post_resolve_proposal(self):
+        proposal_id = self.request.POST.get("proposal_id", "").strip()
+        decision = self.request.POST.get("decision", "").strip()
+        try:
+            meetings_svc.resolve_proposed_time(self.object, proposal_id, decision=decision, user=self.request.user)
+        except ValueError as exc:
+            messages.error(self.request, str(exc))
+            return self.done()
+        label = "accepted and rescheduled" if decision == "accepted" else "declined"
+        return self.done(f"Proposed time {label}.")
+
+    def post_add_transcript(self):
+        form = MeetingTranscriptForm(self.request.POST, self.request.FILES)
+        if not form.is_valid():
+            return self.rerender(transcript_form=form)
+        meetings_svc.create_transcript(
+            self.object,
+            form.cleaned_data["raw_text"],
+            title=form.cleaned_data["title"],
+            source=form.cleaned_data["source"],
+            summary=form.cleaned_data["summary"],
+            language=form.cleaned_data["language"] or "en",
+            user=self.request.user,
+        )
+        return self.done("Meeting transcript saved.")
+
+    def post_save_transcript_doc(self):
+        if not self.object.customer_id:
+            messages.error(self.request, "Link a customer to this meeting first to save to their Google Drive folder.")
+            return self.done()
+        transcript = get_object_or_404(MeetingTranscript, pk=self.request.POST.get("transcript_id"), meeting=self.object)
+        content_parts = [f"# {transcript.title or self.object.title}"]
+        if transcript.summary:
+            content_parts.append(f"\n## Summary\n{transcript.summary}")
+        content_parts.append(f"\n## Transcript\n{transcript.raw_text}")
+        gfile = google.upload_text_as_doc(
+            self.object.customer,
+            transcript.title or f"{self.object.title} Transcript",
+            "\n".join(content_parts),
+            user=self.request.user,
+        )
+        transcript.google_doc_id = gfile.google_id
+        transcript.google_doc_url = gfile.url
+        transcript.save(update_fields=["google_doc_id", "google_doc_url", "updated_at"])
+        return self.done("Transcript saved to Google Drive.")
+
+    def post_delete_transcript(self):
+        self.require(ADMIN)
+        transcript = get_object_or_404(MeetingTranscript, pk=self.request.POST.get("transcript_id"), meeting=self.object)
+        transcript.delete()
+        return self.done("Transcript deleted.")
+
+    def post_delete(self):
+        self.require(ADMIN)
+        self.object.delete()
+        messages.success(self.request, "Meeting deleted.")
+        return redirect("crm:meetings")
+
+
+class MeetingTranscriptAPIView(CRMView, View):
+    """JSON endpoint to store a meeting transcript at the end of a call/meeting."""
+    role = AGENT
+    http_method_names = ["post"]
+
+    def post(self, request, pk: int):
+        meeting = get_object_or_404(Meeting, pk=pk)
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+        raw_text = (payload.get("raw_text") or "").strip()
+        if not raw_text:
+            return JsonResponse({"error": "raw_text is required."}, status=400)
+
+        source = payload.get("source") or MeetingTranscript.Source.AI_AGENT
+        if source not in MeetingTranscript.Source.values:
+            source = MeetingTranscript.Source.MANUAL
+
+        transcript = meetings_svc.create_transcript(
+            meeting,
+            raw_text,
+            title=(payload.get("title") or "").strip(),
+            source=source,
+            segments=payload.get("segments") if isinstance(payload.get("segments"), list) else None,
+            summary=(payload.get("summary") or "").strip(),
+            action_items=payload.get("action_items") if isinstance(payload.get("action_items"), list) else None,
+            key_decisions=payload.get("key_decisions") if isinstance(payload.get("key_decisions"), list) else None,
+            language=(payload.get("language") or "en")[:20],
+            duration_seconds=payload.get("duration_seconds"),
+            user=request.user,
+        )
+        return JsonResponse(
+            {
+                "id": transcript.pk,
+                "meeting_id": meeting.pk,
+                "word_count": transcript.word_count,
+                "segments_count": len(transcript.segments or []),
+            },
+            status=201,
+        )

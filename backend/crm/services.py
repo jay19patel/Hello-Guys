@@ -162,6 +162,23 @@ def schedule_follow_up(*, customer: Customer, due_at, note: str = "", opportunit
         created_by=created_by,
         body=f"Follow-up scheduled for {timezone.localtime(due_at):%d %b %Y, %H:%M}" + (f": {note}" if note else ""),
     )
+    try:
+        from core import followups as global_followups
+        global_followups.schedule_follow_up(
+            title=note.strip()[:200] or f"Follow up with {customer.name}",
+            due_at=due_at,
+            channel=follow_up.get_channel_display(),
+            note=note,
+            assigned_to=follow_up.assigned_to,
+            created_by=created_by,
+            related_label=customer.name,
+            related_url=reverse("crm:customer", args=[customer.pk]),
+            entity_type="customer",
+            entity_id=str(customer.pk),
+            notify_now=bool(follow_up.assigned_to or created_by),
+        )
+    except Exception:
+        pass
     return follow_up
 
 
