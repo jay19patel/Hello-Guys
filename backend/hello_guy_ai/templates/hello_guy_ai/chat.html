@@ -27,10 +27,6 @@
 </a>
 
 <div class="caps px-3 pt-3 pb-1">Workspace</div>
-<button id="sched-btn" type="button" aria-controls="sched" aria-expanded="false" class="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors text-left">
-    <i class="fa-regular fa-clock w-4 text-center shrink-0"></i>
-    <span id="sched-label" class="truncate">Scheduled</span>
-</button>
 <button id="info-btn" type="button" aria-controls="info" aria-expanded="false" class="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors text-left">
     <i class="fa-solid fa-circle-info w-4 text-center shrink-0"></i>
     <span class="truncate">Agent details</span>
@@ -69,16 +65,6 @@
 
         <div class="content flex-1 min-h-0">
             <div id="messages" aria-live="polite"></div>
-            <aside id="sched" class="info-panel" aria-label="Scheduled reminders and tasks" hidden>
-                <div class="info-head">
-                    <h2>Scheduled</h2>
-                    <button id="sched-close" class="hg-act" type="button" aria-label="Close scheduled list">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                    </button>
-                </div>
-                <p class="info-desc">Reminders and recurring tasks. Ask the assistant to add or change one.</p>
-                <ul id="sched-list" class="info-tools"></ul>
-            </aside>
             <aside id="info" class="info-panel" aria-label="Agent details" hidden>
                 <div class="info-head">
                     <h2 id="info-name"></h2>
@@ -243,61 +229,6 @@
     showPanel("info", open);
   }
 
-  // ---- scheduled reminders & tasks ------------------------------------------------------
-
-  function whenText(r) {
-    const opts = { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" };
-    try {
-      return new Date(r.due_at).toLocaleString([], { ...opts, timeZone: r.timezone });
-    } catch (_) {
-      return new Date(r.due_at).toLocaleString([], opts); // unknown timezone in this browser
-    }
-  }
-
-  async function refreshScheduled() {
-    const { items, count } = await client.reminders();
-    const active = items.filter((r) => r.status === "scheduled").length;
-    $("sched-label").textContent = count ? `Scheduled (${active}${active < count ? ` + ${count - active} paused` : ""})` : "Scheduled";
-    return items;
-  }
-
-  function reminderItem(r) {
-    const paused = r.status === "paused";
-    const li = el("li", "info-tool");
-    const top = li.appendChild(el("div", "info-tool-top"));
-    top.appendChild(el("span", "info-tool-name", r.message));
-    if (paused) top.appendChild(el("span", "badge-warn", "Paused"));
-    if (r.agent_id) top.appendChild(el("span", "badge-warn", "Assistant task"));
-    li.appendChild(el("code", "info-tool-id", `${paused ? "Was due" : "Next"}: ${whenText(r)} (${r.timezone})`));
-    li.appendChild(el("p", "info-tool-desc", r.recurrence ? `Repeats: ${r.recurrence}` : "One-time"));
-    const actions = li.appendChild(el("div", "info-tool-top"));
-    const act = (label, fn) => {
-      const b = actions.appendChild(el("button", "hg-chip", label));
-      b.type = "button";
-      b.onclick = async () => {
-        b.disabled = true;
-        try { await fn(); } catch (err) { view.notice(err.message); }
-        renderScheduled();
-      };
-    };
-    act(paused ? "Resume" : "Pause", () => (paused ? client.resumeReminder(r.id) : client.pauseReminder(r.id)));
-    act("Delete", async () => {
-      if (confirm(`Delete "${r.message}"? This cannot be undone.`)) await client.deleteReminder(r.id);
-    });
-    return li;
-  }
-
-  async function renderScheduled() {
-    const items = await refreshScheduled();
-    $("sched-list").replaceChildren(...(items.length ? items.map(reminderItem)
-      : [el("li", "info-tool", "Nothing scheduled. Try: \"Remind me at 5 pm to send the invoice\".")]));
-  }
-
-  async function toggleScheduled(open = $("sched").hidden) {
-    showPanel("sched", open);
-    if (open) await renderScheduled();
-  }
-
   // ---- threads --------------------------------------------------------------------------
 
   async function loadThreads() {
@@ -393,11 +324,8 @@
   document.body.addEventListener("click", (e) => { if (e.target === document.body) closeNav(); }); // tap on the dimmed overlay
   $("info-btn").onclick = () => toggleInfo();
   $("info-close").onclick = () => toggleInfo(false);
-  $("sched-btn").onclick = () => toggleScheduled().catch((err) => view.notice(err.message));
-  $("sched-close").onclick = () => toggleScheduled(false);
   const refreshCounts = () => {
     window.dispatchEvent(new CustomEvent("notifications:refresh"));
-    refreshScheduled().catch(() => {});
   };
   refreshCounts();
   setInterval(refreshCounts, 60000);

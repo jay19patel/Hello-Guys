@@ -1124,7 +1124,22 @@ class MeetingDetailView(CRMView, ActionsMixin, DetailView):
 
     def post_delete(self):
         self.require(ADMIN)
-        self.object.delete()
+        from django.db import connection, transaction
+
+        if self.object.google_event_id and GoogleAccount.get_solo().is_connected:
+            self.object.status = Meeting.Status.CANCELLED
+            google.sync_meeting(self.object)
+            if self.object.sync_error:
+                messages.warning(self.request, f"Deleted in CRM, but could not cancel in Google Calendar: {self.object.sync_error}")
+
+        with transaction.atomic():
+            if "voice_agent_voicebotsession" in connection.introspection.table_names():
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE voice_agent_voicebotsession SET meeting_id = NULL WHERE meeting_id = %s",
+                        [self.object.pk],
+                    )
+            self.object.delete()
         messages.success(self.request, "Meeting deleted.")
         return redirect("crm:meetings")
 
