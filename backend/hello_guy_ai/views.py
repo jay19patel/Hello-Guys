@@ -11,11 +11,12 @@ import redis.asyncio as aioredis
 from asgiref.sync import sync_to_async
 from django.contrib.auth.decorators import login_required
 from django.core.handlers.asgi import ASGIRequest
-from django.http import Http404, HttpRequest, HttpResponse, StreamingHttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from redis.exceptions import RedisError
 
-from hello_guy_ai.analytics import build_ai_analytics
+from hello_guy_ai.access import can_chat
+from hello_guy_ai.analytics import build_ai_analytics, live_snapshot
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.core import events
 from hello_guy_ai.core.engine import public_questions
@@ -29,6 +30,8 @@ STREAM_ID = re.compile(r"^\d{1,20}-\d{1,20}$")
 
 @login_required
 def chat_page(request: HttpRequest) -> HttpResponse:
+    if not can_chat(request.user):
+        return render(request, "403.html", status=403)
     return render(request, "hello_guy_ai/chat.html")
 
 
@@ -37,16 +40,10 @@ def ai_analytics(request: HttpRequest) -> HttpResponse:
     """Render the hello_guy_ai Analytics & System Health dashboard."""
     if not (request.user.is_staff or request.user.is_superuser):
         return render(request, "403.html", status=403)
-    period = request.GET.get("period", "30d")
-    ctx = build_ai_analytics(period=period)
-    if request.GET.get("format") == "json":
-        from django.http import JsonResponse
-        return JsonResponse({
-            "live_runs": ctx["live_runs"],
-            "active_runs": ctx["health"]["active_runs"],
-            "paused_runs": ctx["health"]["paused_runs"],
-        })
-    return render(request, "hello_guy_ai/analytics.html", ctx)
+    if request.GET.get("format") == "json":  # polled every few seconds: live runs only, not the whole dashboard
+        snapshot = live_snapshot()
+        return JsonResponse({k: snapshot[k] for k in ("live_runs", "active_runs", "paused_runs")})
+    return render(request, "hello_guy_ai/analytics.html", build_ai_analytics(period=request.GET.get("period", "30d")))
 
 
 async def run_stream(request: HttpRequest, run_id: UUID) -> HttpResponse:

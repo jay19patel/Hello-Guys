@@ -37,7 +37,7 @@ class ContactDetailView(RoleRequiredMixin, DetailView):
         if action == 'link_customer':
             from crm.models import Customer
             customer_id = request.POST.get('customer_id')
-            customer = Customer.objects.filter(pk=customer_id).first()
+            customer = Customer.objects.filter(pk=customer_id).first() if str(customer_id).isdigit() else None
             if customer:
                 customer.contacts.add(contact)
                 messages.success(request, f"Linked {contact} to {customer.name}.")

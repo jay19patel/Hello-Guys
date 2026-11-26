@@ -26,7 +26,7 @@
                     <tbody class="divide-y divide-line">
                         {% for opp in opportunities %}
                         <tr class="hover:bg-subtle/60 transition-colors">
-                            <td class="cell px-5"><a href="{% url 'crm:opportunity' opp.pk %}" class="font-semibold hover:text-accent transition-colors">{{ opp.title }}</a><div class="text-[12px] text-muted">{{ opp.get_source_display }}</div></td>
+                            <td class="cell px-5"><a href="{% url 'crm:opportunity' opp.pk %}" class="font-semibold hover:text-accent transition-colors">{{ opp.title }}</a><div class="text-[12px] text-muted">{{ opp.get_source_display }}{% if opp.form_type %} · {{ opp.form_type }}{% endif %}</div></td>
                             <td class="cell px-5 text-[13px]"><div class="flex flex-wrap gap-1">{% for svc in opp.service_list %}<span class="pill bg-accent/10 text-accent">{{ svc }}</span>{% empty %}<span class="text-muted">—</span>{% endfor %}</div></td>
                             <td class="cell px-5">{% include "crm/_status.html" %}</td>
                             <td class="cell px-5 text-[13px] text-muted whitespace-nowrap">{{ opp.created_at|date:"d M Y" }}</td>
@@ -62,7 +62,7 @@
                         </p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        {% if m.meet_url and m.status == 'scheduled' %}<a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="fa-solid fa-video"></i> Join</a>{% endif %}
+                        {% if m.meet_url and m.status == 'scheduled' %}<a href="{{ m.meet_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm"><i class="fa-solid fa-video"></i> Join</a>{% endif %}
                         <a href="{% url 'crm:meeting' m.pk %}" class="btn btn-ghost btn-sm">Open</a>
                     </div>
                 </li>
@@ -76,7 +76,7 @@
         <section class="card p-5">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-brands fa-google-drive text-accent"></i> Google Drive</h2>
-                {% if customer.drive_folder_url %}<a href="{{ customer.drive_folder_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><i class="fa-solid fa-folder-open"></i> Open folder</a>{% endif %}
+                {% if customer.drive_folder_url %}<a href="{{ customer.drive_folder_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm"><i class="fa-solid fa-folder-open"></i> Open folder</a>{% endif %}
             </div>
             {% if not google_connected %}
             <p class="mt-3 text-[13.5px] text-muted">Google is not connected.{% if is_admin %} <a href="{% url 'crm:settings' %}" class="text-accent font-medium hover:underline">Connect it in Settings</a> to keep this customer's Google Docs, Sheets and files in one shared Drive folder.{% endif %}</p>
@@ -107,7 +107,7 @@
                     {% for f in files %}
                     <li class="py-3 flex flex-col gap-2">
                         <div class="flex items-center justify-between gap-3">
-                            <a href="{{ f.url }}" target="_blank" rel="noopener" class="flex items-center gap-2 min-w-0 hover:text-accent font-medium">
+                            <a href="{{ f.url }}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 min-w-0 hover:text-accent font-medium">
                                 <i class="fa-solid {% if f.kind == 'spreadsheet' %}fa-table text-ok{% elif f.kind == 'document' %}fa-file-lines text-accent{% elif f.kind == 'folder' %}fa-folder{% else %}fa-file{% endif %} w-4"></i>
                                 <span class="truncate">{{ f.name }}</span>
                             </a>
@@ -205,8 +205,8 @@
             <h2 class="caps">Contact</h2>
             {% if customer.email %}<a href="mailto:{{ customer.email }}" class="hover:text-accent break-all flex items-center gap-2"><i class="fa-solid fa-envelope w-4 text-muted"></i> {{ customer.email }}</a>{% endif %}
             {% if customer.phone %}<span class="flex items-center gap-2"><i class="fa-solid fa-phone w-4 text-muted"></i> {{ customer.phone }}</span>{% endif %}
-            {% if customer.instagram_username %}<a href="https://instagram.com/{{ customer.instagram_username|urlencode }}" target="_blank" rel="noopener" class="hover:text-accent flex items-center gap-2"><i class="fa-brands fa-instagram w-4 text-muted"></i> @{{ customer.instagram_username }}</a>{% endif %}
-            {% if customer.website %}<a href="{{ customer.website }}" target="_blank" rel="noopener" class="hover:text-accent break-all flex items-center gap-2"><i class="fa-solid fa-globe w-4 text-muted"></i> {{ customer.website }}</a>{% endif %}
+            {% if customer.instagram_username %}<a href="https://instagram.com/{{ customer.instagram_username|urlencode }}" target="_blank" rel="noopener noreferrer" class="hover:text-accent flex items-center gap-2"><i class="fa-brands fa-instagram w-4 text-muted"></i> @{{ customer.instagram_username }}</a>{% endif %}
+            {% if customer.website %}<a href="{{ customer.website }}" target="_blank" rel="noopener noreferrer" class="hover:text-accent break-all flex items-center gap-2"><i class="fa-solid fa-globe w-4 text-muted"></i> {{ customer.website }}</a>{% endif %}
             <span class="text-muted">Owner: {% include "crm/_user.html" with u=customer.owner empty="unassigned" %}</span>
             {% if customer.notes %}<p class="mt-2 pt-2 border-t border-line whitespace-pre-line text-muted">{{ customer.notes }}</p>{% endif %}
         </section>
@@ -247,7 +247,7 @@
                     <form method="post" action="{% url 'crm:follow-up-action' fu.pk %}">
                         {% csrf_token %}
                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                        <button type="submit" name="action" value="done" class="btn btn-ghost btn-sm px-2 text-ok" title="Mark done"><i class="fa-solid fa-check"></i></button>
+                        <button type="submit" name="action" value="done" class="btn btn-ghost btn-sm px-2 text-ok" title="Mark done" aria-label="Mark follow-up done"><i class="fa-solid fa-check"></i></button>
                     </form>
                     {% endif %}
                 </li>

@@ -1,5 +1,6 @@
 """Analytics & system health aggregation for hello_guy_ai."""
 
+import logging
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -23,6 +24,7 @@ from hello_guy_ai.models import (
     Trigger,
 )
 
+logger = logging.getLogger(__name__)
 
 PERIOD_DAYS: dict[str, int | None] = {
     "7d": 7,
@@ -51,6 +53,45 @@ def _format_duration(run: Run) -> str:
     return f"{secs:.1f}s" if secs < 60 else f"{secs / 60:.1f}m"
 
 
+def live_snapshot(now=None) -> dict[str, Any]:
+    """Runs in flight right now (cheap: the page polls this every few seconds)."""
+    from hello_guy_ai.assistants import AIAssistant
+
+    now = now or timezone.now()
+    assistant_names = {cls.id: cls.name for cls in AIAssistant.registry().values()}
+    runs = (
+        Run.objects.filter(status__in=[Run.Status.QUEUED, Run.Status.RUNNING, Run.Status.PAUSED])
+        .select_related("thread", "thread__created_by")
+        .order_by("-created_at")[:20]
+    )
+    live_runs: list[dict] = []
+    by_assistant: dict[str, int] = {}
+    for run in runs:
+        aid = run.thread.assistant_id
+        by_assistant[aid] = by_assistant.get(aid, 0) + 1
+        elapsed = max(0, int((now - run.created_at).total_seconds()))
+        live_runs.append({
+            "id": str(run.pk),
+            "assistant_id": aid,
+            "assistant_name": assistant_names.get(aid, aid),
+            "status": run.status,
+            "status_label": run.get_status_display(),
+            "thread_id": str(run.thread_id),
+            "thread_name": run.thread.name or "Untitled chat",
+            "user": run.thread.created_by.get_username() if run.thread.created_by else "Visitor",
+            "elapsed": f"{elapsed}s" if elapsed < 60 else f"{elapsed // 60}m {elapsed % 60}s",
+        })
+    totals = Run.objects.aggregate(
+        active=Count("id", filter=Q(status__in=Run.LIVE)), paused=Count("id", filter=Q(status=Run.Status.PAUSED))
+    )
+    return {
+        "live_runs": live_runs,
+        "by_assistant": by_assistant,
+        "active_runs": totals["active"] or 0,
+        "paused_runs": totals["paused"] or 0,
+    }
+
+
 def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
     """Collect hello_guy_ai health, usage KPIs, model/assistant breakdowns, RAG & automation stats."""
     if period not in PERIOD_DAYS:
@@ -71,8 +112,6 @@ def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
         total=Count("id"),
         succeeded=Count("id", filter=Q(status=Run.Status.SUCCEEDED)),
         failed=Count("id", filter=Q(status=Run.Status.FAILED)),
-        active=Count("id", filter=Q(status__in=Run.LIVE)),
-        paused=Count("id", filter=Q(status=Run.Status.PAUSED)),
         prompt_tokens=Sum("prompt_tokens"),
         completion_tokens=Sum("completion_tokens"),
         cost_usd=Sum("cost_usd"),
@@ -183,31 +222,9 @@ def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
 
     from hello_guy_ai.assistants import AIAssistant
     registered_assistants = list(AIAssistant.registry().values())
-    assistant_names = {cls.id: cls.name for cls in registered_assistants}
 
-    # Active / Live runs right now
-    active_runs_qs = (
-        Run.objects.filter(status__in=[Run.Status.QUEUED, Run.Status.RUNNING, Run.Status.PAUSED])
-        .select_related("thread", "thread__created_by")
-        .order_by("-created_at")[:20]
-    )
-    live_runs = []
-    live_by_assistant: dict[str, int] = {}
-    for run in active_runs_qs:
-        aid = run.thread.assistant_id
-        live_by_assistant[aid] = live_by_assistant.get(aid, 0) + 1
-        elapsed = max(0, int((now - run.created_at).total_seconds()))
-        live_runs.append({
-            "id": str(run.pk),
-            "assistant_id": aid,
-            "assistant_name": assistant_names.get(aid, aid),
-            "status": run.status,
-            "status_label": run.get_status_display(),
-            "thread_id": str(run.thread_id),
-            "thread_name": run.thread.name or "Untitled chat",
-            "user": run.thread.created_by.get_username() if run.thread.created_by else "Visitor",
-            "elapsed": f"{elapsed}s" if elapsed < 60 else f"{elapsed // 60}m {elapsed % 60}s",
-        })
+    live = live_snapshot(now)
+    live_runs, live_by_assistant = live["live_runs"], live["by_assistant"]
 
     # Today / 30d / All-Time summary
     today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -274,6 +291,7 @@ def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
             ]
             model_name = inst.get_model() or default_model_label
         except Exception:
+            logger.exception("Could not load tools for assistant %s", aid)
             tools_list = [{"name": n, "description": "", "requires_confirmation": False} for n in (getattr(cls, "builtin_tools", []) or [])]
             model_name = getattr(cls, "model", "") or default_model_label
         assistant_cards.append({
@@ -299,8 +317,8 @@ def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
             "redis_ok": _check_redis(),
             "chat_model": LLMModel.default(LLMModel.Kind.CHAT),
             "embed_model": LLMModel.default(LLMModel.Kind.EMBEDDING),
-            "active_runs": run_totals["active"] or 0,
-            "paused_runs": run_totals["paused"] or 0,
+            "active_runs": live["active_runs"],
+            "paused_runs": live["paused_runs"],
         },
         "live_runs": live_runs,
         "timeframes": timeframes,

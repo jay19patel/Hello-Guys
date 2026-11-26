@@ -25,7 +25,9 @@ class ProjectQuerySet(models.QuerySet):
             return self.none()
         if has_role(user, ADMIN):
             return self
-        return self.filter(models.Q(owner=user) | models.Q(members=user)).distinct()
+        # a subquery, not a join on members: joining multiplies task counts and hour sums per member
+        member_of = self.model.members.through.objects.filter(user=user).values("project_id")
+        return self.filter(models.Q(owner=user) | models.Q(pk__in=member_of))
 
 
 class Project(TimeStamped):

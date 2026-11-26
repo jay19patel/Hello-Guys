@@ -66,19 +66,6 @@ class LLMModelForm(forms.ModelForm):
             "is_default",
         )
 
-    def clean_model_id(self):
-        import litellm
-
-        model_id = self.cleaned_data["model_id"].strip()
-        try:
-            litellm.get_llm_provider(model_id)
-        except Exception:
-            raise forms.ValidationError(
-                "Add the provider prefix, e.g. mistral/ministral-8b-2512, openai/gpt-4o-mini, ollama_chat/llama3.1:8b "
-                "(embedding: mistral/mistral-embed, ollama/nomic-embed-text)."
-            )
-        return model_id
-
     def save(self, commit=True):
         llm = super().save(commit=False)
         llm.api_key = self.initial.get("api_key", "")

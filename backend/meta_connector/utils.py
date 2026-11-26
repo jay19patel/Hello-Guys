@@ -29,7 +29,9 @@ def get_fernet_instance() -> Fernet:
 
     try:
         return Fernet(key_bytes)
-    except Exception as exc:
+    except (ValueError, TypeError) as exc:
+        if not settings.DEBUG:  # a malformed key would silently weaken encryption of stored tokens
+            raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is not a valid Fernet key.") from exc
         logger.warning(
             "Invalid FIELD_ENCRYPTION_KEY specified (%s). Generating fallback Fernet.",
             exc
@@ -81,10 +83,9 @@ def verify_meta_signature(payload_bytes: bytes, signature_header: Optional[str],
         return False
 
     prefix = "sha256="
-    if signature_header.startswith(prefix):
-        received_hash = signature_header[len(prefix):]
-    else:
-        received_hash = signature_header
+    if not signature_header.startswith(prefix):
+        return False
+    received_hash = signature_header[len(prefix):]
 
     expected_hash = hmac.new(
         key=app_secret.encode('utf-8'),

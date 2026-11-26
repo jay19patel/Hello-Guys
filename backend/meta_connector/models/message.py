@@ -136,10 +136,12 @@ class PendingAIReply(models.Model):
     STATUS_PENDING = 'pending'
     STATUS_APPROVED = 'approved'
     STATUS_REJECTED = 'rejected'
+    STATUS_SENDING = 'sending'
     STATUS_FAILED = 'failed'
 
     STATUS_CHOICES = (
         (STATUS_PENDING, _('Pending approval')),
+        (STATUS_SENDING, _('Sending')),
         (STATUS_APPROVED, _('Approved & sent')),
         (STATUS_REJECTED, _('Rejected')),
         (STATUS_FAILED, _('Send failed')),

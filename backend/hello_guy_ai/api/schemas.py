@@ -159,3 +159,4 @@ class PublicThreadOut(Schema):
 
 class PublicMessageIn(Schema):
     content: str = Field(min_length=1, max_length=2000)
+    timezone: str = Field(default="", max_length=64, description="Browser IANA timezone, e.g. Asia/Kolkata")

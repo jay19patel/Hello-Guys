@@ -29,7 +29,7 @@
         <div class="flex flex-col text-center"><span class="font-display text-[20px] font-bold tabular-nums">{{ profile.media_count|default:0 }}</span><span class="caps">Posts</span></div>
         <div class="flex flex-col text-center"><span class="font-display text-[20px] font-bold tabular-nums">{{ profile.followers_count|default:0 }}</span><span class="caps">Followers</span></div>
         <div class="flex flex-col text-center"><span class="font-display text-[20px] font-bold tabular-nums">{{ profile.follows_count|default:0 }}</span><span class="caps">Following</span></div>
-        <a href="https://www.instagram.com/{{ profile.username }}/" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="Open on Instagram"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+        <a href="https://www.instagram.com/{{ profile.username }}/" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="Open on Instagram" aria-label="Open on Instagram"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
         {% if is_admin %}<a href="{% url 'dashboard-settings' %}?edit={{ account.pk }}" class="btn btn-ghost btn-sm" title="Edit account in settings"><i class="fa-solid fa-sliders"></i> Edit</a>{% endif %}
     </div>
 </header>
@@ -279,7 +279,7 @@
                                 {{ c.msg_count }}
                             </td>
                             <td class="px-5 py-3 text-right text-muted tabular-nums text-[12.5px]">
-                                {{ c.last_message_at|timesince|default:"Never" }} ago
+                                {% if c.last_message_at %}{{ c.last_message_at|timesince }} ago{% else %}Never{% endif %}
                             </td>
                         </tr>
                         {% endfor %}

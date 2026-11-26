@@ -145,7 +145,7 @@
                         <span class="font-semibold tabular-nums">{{ count }}</span>
                     </div>
                     <div class="h-2 mt-1.5 rounded-full bg-subtle overflow-hidden">
-                        <div class="h-full bg-accent rounded-full max-w-full" style="width: {% widthratio count stats.open|add:stats.won_this_month|add:1 100 %}%"></div>
+                        <div class="h-full bg-accent rounded-full max-w-full" style="width: {% widthratio count pipeline_total 100 %}%"></div>
                     </div>
                 </a>
             </li>

@@ -45,3 +45,24 @@ class AIAnalyticsTests(TestCase):
         self.assertContains(resp, "50.0% success")
         self.assertContains(resp, "gpt-4o-mini")
         self.assertContains(resp, "RateLimitError: 429")
+
+    def test_poll_returns_only_live_runs_and_other_users_reminders_have_no_buttons(self):
+        from django.utils import timezone
+
+        from hello_guy_ai.models import Reminder
+
+        for status in (Run.Status.RUNNING, Run.Status.PAUSED):  # one active run per thread
+            Run.objects.create(thread=Thread.objects.create(created_by=self.staff, assistant_id="website_bot"), status=status)
+        self.client.force_login(self.staff)
+        data = self.client.get(reverse("hello_guy_ai_analytics"), {"format": "json"}).json()
+        self.assertEqual(
+            (set(data), data["active_runs"], data["paused_runs"], len(data["live_runs"])),
+            ({"live_runs", "active_runs", "paused_runs"}, 1, 1, 2),
+        )
+
+        mine = Reminder.objects.create(user=self.staff, message="my task", due_at=timezone.now())
+        theirs = Reminder.objects.create(user=self.regular, message="their task", due_at=timezone.now())
+        html = self.client.get(reverse("hello_guy_ai_analytics")).content.decode()
+        self.assertIn(f"aiReminderAction({mine.pk},", html)
+        self.assertNotIn(f"aiReminderAction({theirs.pk},", html)
+        self.assertIn("Owner only", html)

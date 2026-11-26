@@ -17,11 +17,17 @@
 <a href="{% url 'crm:meetings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
     <i class="fa-solid fa-calendar-days w-4 text-center shrink-0"></i> Meetings
 </a>
+<a href="{% url 'pms:projects' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-diagram-project w-4 text-center shrink-0"></i> Projects
+</a>
 <a href="{% url 'dashboard' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
     <i class="fa-solid fa-inbox w-4 text-center shrink-0"></i> Meta Inbox
 </a>
 <a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
     <i class="fa-solid fa-wand-magic-sparkles w-4 text-center shrink-0"></i> AI Chat
+</a>
+<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-chart-line w-4 text-center shrink-0"></i> AI Analytics
 </a>
 {% endblock %}
 
@@ -55,22 +61,22 @@
     <!-- KPI Strip -->
     <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div class="card p-4 flex flex-col gap-1">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Pending</span>
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-accent"></span> Pending</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.pending }}</span>
             <span class="text-[11.5px] text-muted">Active reminders</span>
         </div>
         <div class="card p-4 flex flex-col gap-1 {% if stats.overdue %}border-bad/35 bg-bad/5{% endif %}">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-rose-500"></span> Overdue</span>
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-bad"></span> Overdue</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums {% if stats.overdue %}text-bad{% else %}text-ink{% endif %}">{{ stats.overdue }}</span>
             <span class="text-[11.5px] text-muted">Needs attention</span>
         </div>
         <div class="card p-4 flex flex-col gap-1">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Due Today</span>
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-warn"></span> Due Today</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.today }}</span>
             <span class="text-[11.5px] text-muted">Scheduled today</span>
         </div>
         <div class="card p-4 flex flex-col gap-1">
-            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Completed</span>
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-ok"></span> Completed</span>
             <div class="flex items-baseline gap-2">
                 <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.done }}</span>
                 {% if stats.completion_rate is not None %}
@@ -91,8 +97,8 @@
                     <p class="text-[12px] text-muted">Scheduled vs completed reminders over the last 2 weeks.</p>
                 </div>
                 <div class="flex items-center gap-3 text-[12px] text-muted">
-                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-indigo-500"></span> Scheduled</span>
-                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Completed</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-accent"></span> Scheduled</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-ok"></span> Completed</span>
                 </div>
             </div>
             <div id="followupTrendChart" class="w-full h-48"></div>
@@ -113,10 +119,10 @@
                     <span>{{ stats.done }} done · {{ stats.ontime }} on track · {{ stats.overdue }} overdue</span>
                 </div>
                 <div class="h-2.5 w-full rounded-full bg-subtle overflow-hidden flex">
-                    {% if stats.done %}<div class="bg-emerald-500 h-full" style="width: {% widthratio stats.done stats.total 100 %}%"></div>{% endif %}
-                    {% if stats.ontime %}<div class="bg-indigo-500 h-full" style="width: {% widthratio stats.ontime stats.total 100 %}%"></div>{% endif %}
-                    {% if stats.overdue %}<div class="bg-rose-500 h-full" style="width: {% widthratio stats.overdue stats.total 100 %}%"></div>{% endif %}
-                    {% if stats.cancelled %}<div class="bg-slate-400 h-full" style="width: {% widthratio stats.cancelled stats.total 100 %}%"></div>{% endif %}
+                    {% if stats.done %}<div class="bg-ok h-full" style="width: {% widthratio stats.done stats.total 100 %}%"></div>{% endif %}
+                    {% if stats.ontime %}<div class="bg-accent h-full" style="width: {% widthratio stats.ontime stats.total 100 %}%"></div>{% endif %}
+                    {% if stats.overdue %}<div class="bg-bad h-full" style="width: {% widthratio stats.overdue stats.total 100 %}%"></div>{% endif %}
+                    {% if stats.cancelled %}<div class="bg-muted h-full" style="width: {% widthratio stats.cancelled stats.total 100 %}%"></div>{% endif %}
                 </div>
             </div>
             {% endif %}
@@ -245,7 +251,8 @@
             <input type="hidden" name="status" value="{{ status_filter }}">
             {% if channel_filter %}<input type="hidden" name="channel" value="{{ channel_filter }}">{% endif %}
             <div class="field w-60">
-                <input type="search" name="q" value="{{ q }}" placeholder="Search reminders…" class="!py-1.5 !text-[13px]">
+                <label for="fu-search" class="sr-only">Search reminders</label>
+                <input type="search" id="fu-search" name="q" value="{{ q }}" placeholder="Search reminders…" class="!py-1.5 !text-[13px]">
             </div>
             {% if q %}<a href="?status={{ status_filter }}{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}" class="btn btn-ghost btn-sm">Clear</a>{% endif %}
         </form>
@@ -284,7 +291,7 @@
                             {% endif %}
                             {% if fu.is_overdue %}
                             <span class="pill bg-bad/15 text-bad border border-bad/30 font-semibold"><i class="fa-solid fa-triangle-exclamation text-[10px] mr-1"></i>Overdue · {{ fu.due_at|naturaltime }}</span>
-                            {% else %}
+                            {% elif fu.status == 'pending' %}
                             <span class="pill bg-ok/10 text-ok border border-ok/20 text-[11.5px] tabular-nums">
                                 <i class="fa-regular fa-clock text-[10px] mr-1"></i>Due {{ fu.due_at|date:"D d M, g:i A" }} ({{ fu.due_at|naturaltime }})
                             </span>
@@ -310,8 +317,8 @@
                             </span>
                             {% endif %}
                             {% if fu.related_label %}
-                                {% if fu.related_url %}
-                                <a href="{{ fu.related_url }}" class="text-accent hover:underline font-medium"><i class="fa-solid fa-arrow-up-right-from-square mr-1 text-[10.5px]"></i>{{ fu.related_label }}</a>
+                                {% if fu.safe_related_url %}
+                                <a href="{{ fu.safe_related_url }}" class="text-accent hover:underline font-medium"><i class="fa-solid fa-arrow-up-right-from-square mr-1 text-[10.5px]"></i>{{ fu.related_label }}</a>
                                 {% else %}
                                 <span><i class="fa-solid fa-tag mr-1"></i>{{ fu.related_label }}</span>
                                 {% endif %}
@@ -329,9 +336,9 @@
                 <form method="post" action="{% url 'core:reminder-action' fu.pk %}" class="flex items-center gap-2 shrink-0">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <button type="submit" name="action" value="snooze" class="btn btn-ghost btn-sm" title="Snooze 24 hours">+24h</button>
+                    <button type="submit" name="action" value="snooze" class="btn btn-ghost btn-sm" title="Snooze 24 hours" aria-label="Snooze 24 hours">+24h</button>
                     <button type="submit" name="action" value="done" class="btn btn-primary btn-sm"><i class="fa-solid fa-check"></i> Done</button>
-                    <button type="submit" name="action" value="cancel" class="btn btn-ghost btn-sm text-bad px-2" title="Cancel"><i class="fa-solid fa-xmark"></i></button>
+                    <button type="submit" name="action" value="cancel" class="btn btn-ghost btn-sm text-bad px-2" title="Cancel" aria-label="Cancel reminder"><i class="fa-solid fa-xmark"></i></button>
                 </form>
                 {% else %}
                 <span class="pill bg-subtle border border-line shrink-0">{{ fu.get_status_display }}</span>
@@ -354,6 +361,10 @@
     if (!el || !dataEl) return;
     const data = JSON.parse(dataEl.textContent);
 
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const sum = a => a.reduce((t, v) => t + v, 0);
+    const summary = `Reminders over the last ${data.labels.length} days: ${sum(data.scheduled)} scheduled, ${sum(data.completed)} completed.`;
+
     function draw() {
         const W = el.clientWidth || 520, H = el.clientHeight || 190;
         const padL = 26, padR = 12, padT = 12, padB = 24;
@@ -365,7 +376,7 @@
         const x = i => padL + (n > 1 ? (i / (n - 1)) * iw : iw / 2);
         const y = v => padT + ih - (v / yMax) * ih;
 
-        let svg = `<svg width="${W}" height="${H}" class="block overflow-visible" aria-hidden="true">`;
+        let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="block overflow-visible" role="img" aria-label="${esc(summary)}"><title>${esc(summary)}</title>`;
         for (let v = 0; v <= yMax; v += step) {
             const yy = Math.round(y(v)) + 0.5;
             svg += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" stroke="rgb(var(--line))" stroke-width="1"/>`;
@@ -373,20 +384,21 @@
         }
 
         const series = [
-            { vals: data.scheduled, color: '#6366f1' },
-            { vals: data.completed, color: '#10b981' },
+            { vals: data.scheduled, color: 'rgb(var(--accent))', name: 'scheduled' },
+            { vals: data.completed, color: 'rgb(var(--ok))', name: 'completed' },
         ];
         series.forEach(s => {
             const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
             svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/>`;
             s.vals.forEach((v, i) => {
-                if (v > 0) svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.2" fill="${s.color}"/>`;
+                if (v > 0) svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.2" fill="${s.color}"><title>${esc(data.labels[i])}: ${v} ${s.name}</title></circle>`;
             });
         });
 
         const every = Math.ceil(n / 6);
         data.labels.forEach((lbl, i) => {
-            if (i % every === 0 || i === n - 1) {
+            // skip a regular tick that would collide with the final label
+            if ((i % every === 0 && n - 1 - i >= every) || i === n - 1) {
                 svg += `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="rgb(var(--muted))">${lbl}</text>`;
             }
         });

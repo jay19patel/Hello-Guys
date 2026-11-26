@@ -34,6 +34,9 @@ STOP_CHECK_EVERY = 8  # chunks between Redis stop-flag checks
 DENIED = json.dumps({"status": "denied", "message": "The user denied this action. Do not retry it."})
 
 
+OUT_OF_STEPS = "I ran out of steps before I could finish. Please try again, or ask for a smaller part of the task."
+
+
 class RunStopped(Exception):
     pass
 
@@ -83,12 +86,11 @@ class AgentRunner:
         schemas = [t.schema() for t in spec.tools]
         while True:
             iteration = Run.objects.filter(pk=self.run.pk).values_list("iterations", flat=True).first() or 0
-            if iteration > spec.max_iterations:
-                raise RuntimeError(f"Agent exceeded max_iterations ({spec.max_iterations})")
             # Last round gets no tools, forcing an answer instead of an endless tool loop.
-            reply = self._stream(messages, schemas if iteration < spec.max_iterations else [])
+            final = iteration >= spec.max_iterations
+            reply = self._stream(messages, [] if final else schemas)
             Run.objects.filter(pk=self.run.pk).update(iterations=F("iterations") + 1)
-            saved = self._save_assistant(reply)
+            saved = self._save_assistant(reply, final=final)
             messages.append(saved.to_llm())
             if not saved.tool_calls:
                 return self._finish(saved)
@@ -207,8 +209,9 @@ class AgentRunner:
 
     # ---- persistence & status ----------------------------------------------------
 
-    def _save_assistant(self, reply: Any) -> Message:
-        tool_calls = [
+    def _save_assistant(self, reply: Any, final: bool = False) -> Message:
+        """final: the tool-less last round. A model that still asks for tools is ignored: answer with what it said."""
+        tool_calls = [] if final else [
             {
                 "id": tc.id,
                 "type": "function",
@@ -216,11 +219,12 @@ class AgentRunner:
             }
             for tc in (reply.tool_calls or [])
         ]
+        content = reply.content or (OUT_OF_STEPS if final else "")
         return Message.objects.create(
             thread=self.thread,
             run=self.run,
             role=Message.Role.ASSISTANT,
-            content=reply.content or "",
+            content=content,
             tool_calls=tool_calls or None,
         )
 
@@ -271,6 +275,7 @@ class AgentRunner:
         try:
             cost = sum(litellm.cost_per_token(model=self.spec.model, prompt_tokens=prompt, completion_tokens=completion))
         except Exception:  # local / unpriced model
+            logger.debug("No price for model %s", self.spec.model, exc_info=True)
             cost = 0
         Run.objects.filter(pk=self.run.pk).update(
             prompt_tokens=F("prompt_tokens") + prompt,

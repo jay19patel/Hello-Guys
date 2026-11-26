@@ -136,10 +136,17 @@
 
                         <!-- Notifications Tab -->
                         <div x-show="tab === 'notifications'" class="max-h-96 overflow-y-auto divide-y divide-line">
-                            <template x-if="loading && items.length === 0">
+                            <template x-if="(loading || !loaded) && !loadError && items.length === 0">
                                 <div class="p-6 text-center text-[13px] text-muted">Loading notifications…</div>
                             </template>
-                            <template x-if="!loading && items.length === 0">
+                            <template x-if="loadError">
+                                <div class="p-6 text-center" role="alert">
+                                    <i class="fa-solid fa-triangle-exclamation text-bad text-lg mb-1.5"></i>
+                                    <p class="text-[13px] font-medium text-ink">Couldn't load notifications</p>
+                                    <button type="button" @click="load()" class="mt-2 text-[12.5px] text-accent font-medium hover:underline">Try again</button>
+                                </div>
+                            </template>
+                            <template x-if="loaded && !loading && !loadError && items.length === 0">
                                 <div class="p-6 text-center">
                                     <i class="fa-regular fa-bell-slash text-muted text-lg mb-1.5"></i>
                                     <p class="text-[13px] font-medium text-ink">You're all caught up</p>
@@ -147,7 +154,7 @@
                                 </div>
                             </template>
                             <template x-for="item in items" :key="item.id">
-                                <a :href="item.url || '#'" @click="onItemClick($event, item)"
+                                <a :href="safeHref(item.url, '#')" @click="onItemClick($event, item)"
                                    class="flex items-start gap-3 px-4 py-3 hover:bg-subtle/60 transition-colors"
                                    :class="!item.is_read ? 'bg-accent/5' : ''">
                                     <span class="w-8 h-8 rounded-xl border border-line bg-surface flex items-center justify-center shrink-0 mt-0.5 text-[12px]"
@@ -157,7 +164,8 @@
                                     <div class="min-w-0 flex-1">
                                         <div class="flex items-center justify-between gap-2">
                                             <span class="font-semibold text-[13px] text-ink truncate" x-text="item.title"></span>
-                                            <span x-show="!item.is_read" class="w-2 h-2 rounded-full bg-accent shrink-0"></span>
+                                            <span x-show="!item.is_read" class="w-2 h-2 rounded-full bg-accent shrink-0" aria-hidden="true"></span>
+                                            <span x-show="!item.is_read" class="sr-only">Unread</span>
                                         </div>
                                         <p x-show="item.body" class="text-[12.5px] text-muted mt-0.5 line-clamp-2" x-text="item.body"></p>
                                         <div class="flex items-center gap-2 mt-1 text-[11px] text-muted">
@@ -172,7 +180,17 @@
 
                         <!-- Reminders Tab -->
                         <div x-show="tab === 'followups'" x-cloak class="max-h-96 overflow-y-auto divide-y divide-line">
-                            <template x-if="followups.length === 0">
+                            <template x-if="loadError">
+                                <div class="p-6 text-center" role="alert">
+                                    <i class="fa-solid fa-triangle-exclamation text-bad text-lg mb-1.5"></i>
+                                    <p class="text-[13px] font-medium text-ink">Couldn't load reminders</p>
+                                    <button type="button" @click="load()" class="mt-2 text-[12.5px] text-accent font-medium hover:underline">Try again</button>
+                                </div>
+                            </template>
+                            <template x-if="(loading || !loaded) && !loadError && followups.length === 0">
+                                <div class="p-6 text-center text-[13px] text-muted">Loading reminders…</div>
+                            </template>
+                            <template x-if="loaded && !loading && !loadError && followups.length === 0">
                                 <div class="p-6 text-center">
                                     <i class="fa-regular fa-circle-check text-ok text-lg mb-1.5"></i>
                                     <p class="text-[13px] font-medium text-ink">No pending reminders</p>
@@ -181,7 +199,7 @@
                             </template>
                             <template x-for="fu in followups" :key="fu.id">
                                 <div class="px-4 py-3 hover:bg-subtle/40 transition-colors flex items-start justify-between gap-2.5">
-                                    <a :href="fu.related_url || '/reminders/'" class="min-w-0 flex-1">
+                                    <a :href="safeHref(fu.related_url, '/reminders/')" class="min-w-0 flex-1">
                                         <div class="flex items-center gap-1.5 flex-wrap">
                                             <span class="font-semibold text-[13px] text-ink truncate" x-text="fu.title"></span>
                                             <span x-show="fu.is_overdue" class="pill bg-bad/10 text-bad text-[10px] px-1.5 py-0">Overdue</span>
@@ -193,8 +211,8 @@
                                         </div>
                                     </a>
                                     <div class="flex items-center gap-1 shrink-0">
-                                        <button type="button" @click="followUpAction(fu.id, 'snooze')" class="btn btn-ghost btn-sm px-2 text-[11px]" title="Snooze 24h">+24h</button>
-                                        <button type="button" @click="followUpAction(fu.id, 'done')" class="btn btn-primary btn-sm px-2 text-[11px]" title="Mark done"><i class="fa-solid fa-check"></i></button>
+                                        <button type="button" @click="followUpAction(fu.id, 'snooze')" class="btn btn-ghost btn-sm px-2 text-[11px]" title="Snooze 24h" aria-label="Snooze 24 hours">+24h</button>
+                                        <button type="button" @click="followUpAction(fu.id, 'done')" class="btn btn-primary btn-sm px-2 text-[11px]" title="Mark done" aria-label="Mark done"><i class="fa-solid fa-check"></i></button>
                                     </div>
                                 </div>
                             </template>
@@ -233,7 +251,7 @@
 
 {% if request.path|slice:':5' != '/chat' %}
 <!-- Floating AI Chat Widget -->
-<div class="fixed bottom-5 right-5 z-40" x-data="floatingAiChat()" x-init="init()" @keydown.escape.window="open = false">
+<div class="fixed bottom-5 right-5 z-30" x-data="floatingAiChat()" x-init="init()" @keydown.escape.window="open = false">
     <!-- Popup Window -->
     <div x-show="open" x-transition x-cloak
          class="mb-3 w-[calc(100vw-2.5rem)] sm:w-[400px] h-[520px] max-h-[75vh] bg-surface border border-line rounded-2xl shadow-2xl flex flex-col overflow-hidden">
@@ -266,6 +284,7 @@
 
         <!-- Messages -->
         <div x-ref="msgBox" class="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5 text-[13px]">
+            <p x-show="loadError" x-text="loadError" role="alert" class="text-[12px] text-bad"></p>
             <template x-if="messages.length === 0">
                 <div class="m-auto text-center px-4 py-6">
                     <div class="w-10 h-10 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mx-auto mb-2.5">
@@ -279,14 +298,15 @@
                 <div class="flex" :class="m.role === 'user' ? 'justify-end' : 'justify-start'">
                     <div class="max-w-[85%] rounded-2xl px-3.5 py-2 whitespace-pre-wrap break-words"
                          :class="m.role === 'user' ? 'bg-accent text-on-accent rounded-br-sm' : 'bg-subtle text-ink border border-line rounded-bl-sm'"
-                         x-text="m.text || (m.streaming ? 'Thinking…' : '')"></div>
+                         ><span x-text="m.text || (m.streaming ? 'Thinking…' : '')"></span>
+                        <a x-show="m.paused" :href="fullPageUrl()" class="block mt-1.5 text-accent font-medium underline">Approval needed — open full chat</a></div>
                 </div>
             </template>
         </div>
 
         <!-- Composer -->
         <form @submit.prevent="send()" class="p-3 border-t border-line bg-surface flex items-end gap-2 shrink-0">
-            <textarea x-model="draft" rows="1" placeholder="Ask AI anything…"
+            <textarea x-model="draft" rows="1" placeholder="Ask AI anything…" aria-label="Message the AI assistant"
                       @keydown.enter.prevent="if (!$event.shiftKey) send()"
                       class="flex-1 resize-none rounded-xl border border-line bg-subtle/40 px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent max-h-24"></textarea>
             <button type="submit" :disabled="busy || !draft.trim()" class="btn btn-primary btn-sm h-[36px] px-3 shrink-0" aria-label="Send">
@@ -348,11 +368,21 @@
         return m ? decodeURIComponent(m[1]) : '';
     }
 
+    // Only same-site paths or http(s) URLs may become a link target (blocks javascript:/data: URLs).
+    function safeHref(url, fallback) {
+        try {
+            const u = new URL(url, location.origin);
+            return (u.protocol === 'http:' || u.protocol === 'https:') ? url : fallback;
+        } catch (_) { return fallback; }
+    }
+
     function globalNotifications() {
         return {
             open: false,
             tab: 'notifications',
             loading: false,
+            loaded: false,
+            loadError: false,
             filterUnread: false,
             items: [],
             followups: [],
@@ -382,6 +412,7 @@
             },
             async load() {
                 this.loading = true;
+                this.loadError = false;
                 try {
                     const q = this.filterUnread ? '?unread_only=1' : '';
                     const res = await fetch('/notifications/' + q, { credentials: 'same-origin' });
@@ -391,7 +422,12 @@
                         this.followups = data.followups || [];
                         this.unreadCount = data.unread_count || 0;
                         this.followupsDueCount = data.followups_due_count || 0;
+                        this.loaded = true;
+                    } else {
+                        this.loadError = true;
                     }
+                } catch (_) {
+                    this.loadError = true;
                 } finally {
                     this.loading = false;
                 }
@@ -467,6 +503,7 @@
         return {
             open: false,
             busy: false,
+            loadError: '',
             draft: '',
             assistants: [],
             assistantId: '',
@@ -477,15 +514,17 @@
                 this.open = !this.open;
                 if (this.open && this.assistants.length === 0) {
                     try {
+                        this.loadError = '';
                         const res = await fetch('/api/ai/assistants', { credentials: 'same-origin' });
-                        if (res.ok) {
-                            const data = await res.json();
-                            this.assistants = data.items || data || [];
-                            if (this.assistants.length && !this.assistantId) {
-                                this.assistantId = this.assistants[0].id;
-                            }
+                        if (!res.ok) throw new Error('status ' + res.status);
+                        const data = await res.json();
+                        this.assistants = data.items || data || [];
+                        if (this.assistants.length && !this.assistantId) {
+                            this.assistantId = this.assistants[0].id;
                         }
-                    } catch (_) {}
+                    } catch (_) {
+                        this.loadError = "Couldn't load the AI assistants. Close and reopen to retry.";
+                    }
                 }
             },
             fullPageUrl() {
@@ -503,8 +542,9 @@
                 this.draft = '';
                 this.busy = true;
                 this.messages.push({ role: 'user', text });
-                const reply = { role: 'assistant', text: '', streaming: true };
-                this.messages.push(reply);
+                this.messages.push({ role: 'assistant', text: '', streaming: true });
+                // Re-read from the reactive array: the pushed plain object is not the proxy Alpine tracks.
+                const reply = this.messages[this.messages.length - 1];
                 this.scrollBottom();
 
                 try {
@@ -545,6 +585,20 @@
                         this.busy = false;
                         src.close();
                         this.scrollBottom();
+                    });
+                    src.addEventListener('paused', () => {
+                        reply.streaming = false;
+                        reply.paused = true;
+                        reply.text = reply.text || 'Approval needed — open full chat to continue.';
+                        this.busy = false;
+                        src.close();
+                        this.scrollBottom();
+                    });
+                    src.addEventListener('stopped', () => {
+                        reply.streaming = false;
+                        if (!reply.text) reply.text = 'Stopped.';
+                        this.busy = false;
+                        src.close();
                     });
                     src.addEventListener('error', () => {
                         reply.streaming = false;

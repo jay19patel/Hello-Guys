@@ -37,8 +37,31 @@ def test_public_api_needs_no_login_but_never_reaches_internal_chats(bot, client,
     assert client.get(f"/api/ai/public/threads/{internal.pk}/messages").status_code == 404
 
 
-def test_one_thread_per_visitor_ip(bot, client):
+def test_visitors_on_one_ip_get_separate_threads_and_can_continue_their_own(bot, client):
     first = client.post("/api/ai/public/threads", REMOTE_ADDR="1.2.3.4").json()["thread_id"]
-    assert client.post("/api/ai/public/threads", REMOTE_ADDR="1.2.3.4").json()["thread_id"] == first  # returning visitor
-    other = client.post("/api/ai/public/threads", REMOTE_ADDR="5.6.7.8").json()["thread_id"]
-    assert other != first and Thread.objects.get(pk=first).external_id == "web:1.2.3.4"
+    second = client.post("/api/ai/public/threads", REMOTE_ADDR="1.2.3.4").json()["thread_id"]
+    assert first != second  # same NAT/office: never share one conversation
+    assert Thread.objects.get(pk=first).external_id != Thread.objects.get(pk=second).external_id
+    for thread_id in (first, second):  # the id is the visitor's key: it reads the thread back from any connection
+        assert client.get(f"/api/ai/public/threads/{thread_id}/messages", REMOTE_ADDR="5.6.7.8").status_code == 200
+
+
+def test_bot_can_create_inquiries_in_crm_but_nothing_else_there(bot):
+    from crm.models import Opportunity
+
+    assert set(bot.get_all_permissions()) >= {"crm.add_opportunity", "crm.add_customer"}
+    assert not {p for p in bot.get_all_permissions() if p.startswith("crm.")} - {"crm.add_opportunity", "crm.add_customer"}
+    with tool_context(ToolContext(user=bot, agent_key="website_assistant")):
+        tools = registered_tools()
+        out = tools["create_inquiry"].call({"name": "Ravi", "email": "ravi@example.com", "message": "I need a chatbot"})
+        assert '"status": "received"' in out
+        assert tools["get_inquiry"].call({"inquiry_id": "opp_x"}).startswith("Error: You don't have permission")
+    assert Opportunity.objects.get().customer.email == "ravi@example.com"
+
+
+def test_public_message_passes_the_visitor_timezone_to_the_thread(bot, client, broker):
+    thread_id = client.post("/api/ai/public/threads").json()["thread_id"]
+    res = client.post(
+        f"/api/ai/public/threads/{thread_id}/messages", {"content": "hi", "timezone": "Asia/Kolkata"}, content_type="application/json"
+    )
+    assert res.status_code == 202 and Thread.objects.get(pk=thread_id).timezone == "Asia/Kolkata"

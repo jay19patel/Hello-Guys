@@ -7,6 +7,7 @@ Links to the channels without them knowing:
 """
 
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -200,7 +201,7 @@ class Meeting(TimeStamped):
         constraints = [models.CheckConstraint(condition=models.Q(end_at__gt=models.F("start_at")), name="crm_meeting_ends_after_start")]
 
     def __str__(self) -> str:
-        return f"{self.title} @ {timezone.localtime(self.start_at):%Y-%m-%d %H:%M}"
+        return f"{self.title} @ {timezone.localtime(self.start_at):%Y-%m-%d %I:%M %p}"
 
     @property
     def guests(self) -> list[tuple[str, str]]:
@@ -251,6 +252,14 @@ class Meeting(TimeStamped):
     def pending_proposals(self) -> list[dict]:
         """Time-change proposals waiting for team decision."""
         return [p for p in (self.proposed_times or []) if p.get("status", "pending") == "pending"]
+
+    @property
+    def tzinfo(self):
+        """`timezone` as a tzinfo (the site default when the stored name is unknown), for {% timezone %}."""
+        try:
+            return ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            return timezone.get_default_timezone()
 
     @property
     def duration_minutes(self) -> int:
@@ -436,7 +445,7 @@ class FollowUp(TimeStamped):
         indexes = [models.Index(fields=["status", "due_at"], name="crm_followup_status_due")]
 
     def __str__(self) -> str:
-        return f"Follow-up {self.customer.name} ({self.due_at:%d %b %H:%M})"
+        return f"Follow-up {self.customer.name} ({self.due_at:%d %b %I:%M %p})"
 
     @property
     def is_overdue(self) -> bool:

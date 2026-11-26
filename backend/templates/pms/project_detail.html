@@ -50,7 +50,7 @@
                 <div class="w-28 h-2 rounded-full bg-subtle overflow-hidden">
                     <div class="h-full rounded-full bg-ok" style="width: {{ project_progress }}%"></div>
                 </div>
-                <span class="tabular-nums">{{ done_tasks }}/{{ total_tasks }} ({{ project_progress }}%)</span>
+                <span class="tabular-nums">{{ done_tasks }}/{{ leaf_tasks }} ({{ project_progress }}%)</span>
                 <span class="pill bg-subtle border border-line tabular-nums" title="Hours spent / Estimated hours">
                     <i class="fa-regular fa-clock text-[11px]"></i> {{ total_actual_hours|floatformat:1 }} / {{ total_expected_hours|floatformat:1 }} h
                 </span>
@@ -86,7 +86,7 @@
         {% for r in rows %}
         <div id="task-{{ r.task.pk }}"
              style="order: {{ r.order }}; margin-left: {{ r.indent }}px;"
-             x-show="!isHidden({{ r.ancestors|safe }})"
+             x-show="!isHidden([{{ r.ancestors|join:',' }}])"
              class="rounded-xl border border-line bg-surface hover:bg-subtle/40 transition-colors px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
                 {% if r.child_count %}
@@ -221,7 +221,7 @@
 
 <div class="grid lg:grid-cols-3 gap-6 items-start">
     <section class="card p-5">
-        <h2 class="caps mb-3">Members ({{ project.members.count }})</h2>
+        <h2 class="caps mb-3">Members ({{ project.members.all|length }})</h2>
         <ul class="flex flex-col gap-2 text-[13.5px]">
             {% for m in project.members.all %}
             <li class="flex items-center gap-2">
@@ -274,7 +274,7 @@ function pmsTree() {
     let seq = 1;
     const makeRow = (level = 0, data = {}) => ({
         key: seq++,
-        level: Number.isInteger(level) ? level : 0,
+        level: Number.isInteger(level) ? Math.max(0, level) : 0,
         title: data.title || '',
         assignee: data.assignee || '',
         due_date: data.due_date || '',
@@ -343,7 +343,8 @@ function pmsTree() {
         addRowAfter(i) {
             const lvl = i >= 0 && this.bulkRows[i] ? this.bulkRows[i].level : 0;
             const row = makeRow(lvl);
-            this.bulkRows.splice(i + 1, 0, row);
+            // after the row's whole subtree, so Enter on a parent does not steal its children
+            this.bulkRows.splice((i >= 0 && this.bulkRows[i] ? this.subtreeEnd(i) : i) + 1, 0, row);
             this.$nextTick(() => this.focusRow(row.key));
         },
         indent(i) {
@@ -371,9 +372,9 @@ function pmsTree() {
         onBackspace(e, i) {
             if (this.bulkRows[i].title === '' && this.bulkRows.length > 1) {
                 e.preventDefault();
-                const prevKey = i > 0 ? this.bulkRows[i - 1].key : null;
                 this.removeRow(i);
-                if (prevKey) this.$nextTick(() => this.focusRow(prevKey));
+                const next = this.bulkRows[Math.max(0, i - 1)];  // the previous row, or the new first row
+                this.$nextTick(() => this.focusRow(next.key));
             }
         },
         prepareSubmit(e) {

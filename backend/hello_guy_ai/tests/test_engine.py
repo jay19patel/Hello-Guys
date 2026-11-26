@@ -1,4 +1,5 @@
 import json
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -56,6 +57,29 @@ def test_tool_call_then_answer(user, fake_redis, monkeypatch):
     names = [e for e, _ in stream_events(fake_redis, run)]
     assert names[0] == "status" and "tool_start" in names and names[-1] == "done"
     assert "".join(d["text"] for e, d in stream_events(fake_redis, run) if e == "token") == "It is noon."
+
+
+def test_model_that_ignores_the_tool_less_last_round_gets_a_graceful_answer(user, monkeypatch):
+    from hello_guy_ai.tests.demo_crm.ai_assistants import DemoAssistant
+
+    monkeypatch.setattr(DemoAssistant, "max_tool_iterations", 1)
+    llm = FakeLLM(tool_call_stream("get_current_datetime", {}, "c1"), tool_call_stream("get_current_datetime", {}, "c2"))
+    run = execute(make_run(user), llm, monkeypatch)
+    assert run.status == "succeeded" and run.iterations == 2 and "tools" not in llm.calls[1]
+    assert run.thread.messages.filter(role="assistant").last().content == engine.OUT_OF_STEPS
+
+
+def test_system_prompt_carries_current_date_and_thread_timezone(user, monkeypatch, settings):
+    from django.utils import timezone
+
+    settings.TIME_ZONE = "UTC"
+    run = make_run(user)
+    Thread.objects.filter(pk=run.thread_id).update(timezone="Asia/Kolkata")
+    llm = FakeLLM(text_stream("ok"))
+    execute(run, llm, monkeypatch)
+    system = llm.calls[0]["messages"][0]["content"]
+    today = timezone.now().astimezone(ZoneInfo("Asia/Kolkata"))
+    assert f"{today:%A, %Y-%m-%d}" in system and "Asia/Kolkata" in system
 
 
 def test_write_tool_pauses_then_approve_executes(crm_user, fake_redis, monkeypatch):

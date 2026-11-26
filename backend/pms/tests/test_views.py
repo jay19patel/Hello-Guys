@@ -133,3 +133,37 @@ def test_builder_slot_orders():
     assert slots[str(c1.pk)] == {"order": 5, "indent": 48}
     assert slots[str(t2.pk)] == {"order": 7, "indent": 24}
     assert slots[""] == {"order": 7, "indent": 0}
+
+
+def test_project_list_hours_are_not_multiplied_by_member_count(client, users, django_user_model):
+    proj = Project.objects.create(name="Web App", owner=users["agent"])
+    proj.members.add(users["viewer"], users["outsider"], users["admin"])
+    Task.objects.create(project=proj, title="A", expected_hours=Decimal("10"), actual_hours=Decimal("4"))
+    Task.objects.create(project=proj, title="B", expected_hours=Decimal("2"), actual_hours=Decimal("1"))
+    for user in (users["agent"], users["viewer"]):
+        client.force_login(user)
+        shown = client.get(reverse("pms:projects")).context["projects"][0]
+        assert (shown.total_tasks, shown.total_expected_hours, shown.total_actual_hours) == (2, Decimal("12"), Decimal("5"))
+
+
+def test_only_admin_or_project_owner_can_delete_a_task(client, users):
+    proj = Project.objects.create(name="Web App", owner=users["agent"])
+    proj.members.add(users["outsider"])  # an Agent member who does not own the project
+    task = Task.objects.create(project=proj, title="A")
+    client.force_login(users["outsider"])
+    assert client.post(reverse("pms:task", args=[task.pk]), {"action": "delete"}).status_code == 403
+    assert Task.objects.filter(pk=task.pk).exists()
+    client.force_login(users["agent"])  # the owner
+    assert client.post(reverse("pms:task", args=[task.pk]), {"action": "delete"}).status_code == 302
+    assert not Task.objects.filter(pk=task.pk).exists()
+
+
+def test_project_progress_counts_leaf_tasks_only(client, users):
+    proj = Project.objects.create(name="Web App", owner=users["agent"])
+    group = Task.objects.create(project=proj, title="Group", is_group=True)
+    Task.objects.create(project=proj, parent=group, title="Done", status="done")
+    Task.objects.create(project=proj, parent=group, title="Open")
+    Task.objects.create(project=proj, parent=group, title="Cancelled", status="cancelled")
+    client.force_login(users["agent"])
+    ctx = client.get(reverse("pms:project", args=[proj.pk])).context
+    assert (ctx["done_tasks"], ctx["leaf_tasks"], ctx["project_progress"]) == (1, 2, 50)

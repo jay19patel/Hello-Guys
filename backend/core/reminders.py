@@ -10,6 +10,7 @@ from django.utils.text import slugify
 
 from core import notifications
 from core.models import FollowUpChannel, GlobalFollowUp
+from core.safety import safe_url
 
 DEFAULT_CHANNELS = [
     ("General", "fa-solid fa-bolt", "indigo"),
@@ -104,7 +105,7 @@ def schedule_follow_up(
         assigned_to=target_user if getattr(target_user, "is_authenticated", False) else None,
         created_by=created_by if getattr(created_by, "is_authenticated", False) else None,
         related_label=(related_label or "").strip()[:150],
-        related_url=(related_url or "").strip()[:500],
+        related_url=safe_url(related_url)[:500],
         entity_type=(entity_type or "").strip()[:40],
         entity_id=str(entity_id or "")[:64],
     )
@@ -145,7 +146,9 @@ def cancel_follow_up(follow_up: GlobalFollowUp) -> GlobalFollowUp:
 
 
 def notify_due_follow_ups(user: Any = None) -> int:
-    """Push a warning notification once for any pending follow-up that has reached its due_at."""
+    """Push a warning notification once for any pending follow-up that has reached its due_at.
+
+    `user=None` covers every user (callable from a scheduler)."""
     now = timezone.now()
     qs = GlobalFollowUp.objects.select_related("channel", "assigned_to", "created_by").filter(
         status=GlobalFollowUp.Status.PENDING,
@@ -157,6 +160,9 @@ def notify_due_follow_ups(user: Any = None) -> int:
 
     count = 0
     for fu in qs[:50]:
+        # Claim the row first so two concurrent bell polls cannot both notify.
+        if not GlobalFollowUp.objects.filter(pk=fu.pk, notified_at__isnull=True).update(notified_at=now):
+            continue
         recipient = fu.assigned_to or fu.created_by
         if not recipient:
             continue
@@ -170,7 +176,5 @@ def notify_due_follow_ups(user: Any = None) -> int:
             level="warning",
             metadata={"followup_id": fu.pk},
         )
-        fu.notified_at = now
-        fu.save(update_fields=["notified_at", "updated_at"])
         count += 1
     return count

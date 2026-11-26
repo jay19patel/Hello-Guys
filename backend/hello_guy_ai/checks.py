@@ -1,5 +1,6 @@
 """System checks: misconfiguration fails at startup (`manage.py check`), not at 3 AM."""
 
+from cryptography.fernet import Fernet
 from django.apps import apps
 from django.conf import settings
 from django.core.checks import Error, Tags, Warning, register
@@ -29,7 +30,12 @@ def check_settings(app_configs, **kwargs):
 @register(Tags.security, deploy=True)
 def check_encryption_key(app_configs, **kwargs):
     """LLM API keys are Fernet-encrypted; without FIELD_ENCRYPTION_KEY a key hard-coded in the source is used."""
-    if getattr(settings, "FIELD_ENCRYPTION_KEY", "").strip():
+    key = getattr(settings, "FIELD_ENCRYPTION_KEY", "").strip()
+    if key:
+        try:
+            Fernet(key.encode())
+        except ValueError:
+            return [Error("FIELD_ENCRYPTION_KEY is not a valid Fernet key.", id="hello_guy_ai.E001")]
         return []
     return [
         Error(

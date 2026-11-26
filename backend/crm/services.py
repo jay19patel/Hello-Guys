@@ -4,6 +4,8 @@
     create_opportunity(name="Asha", email="asha@example.com", title="Website redesign", source=Source.WEBSITE_FORM)
 """
 
+import logging
+
 from django.db import transaction
 from django.db.models import Q
 from django.urls import reverse
@@ -12,6 +14,8 @@ from django.utils import timezone
 from crm.models import Activity, Customer, FollowUp, Opportunity, Source
 from meta_connector.models import Contact
 from meta_connector.roles import notify_team
+
+logger = logging.getLogger(__name__)
 
 # hello_guy_ai thread external_id prefixes -> source ("<platform>:<account id>:<user id>", "web:<random>")
 THREAD_SOURCES = {
@@ -33,40 +37,48 @@ def contact_for_thread(thread) -> Contact | None:
     ).first()
 
 
-def _phone_variants(phone: str) -> list[str]:
-    cleaned = phone.strip()
-    if not cleaned:
-        return []
-    digits = "".join(ch for ch in cleaned if ch.isdigit())
-    variants = [cleaned]
-    if digits:
-        variants.append(digits)
-        variants.append(f"+{digits}")
-        if len(digits) >= 10:
-            variants.append(digits[-10:])
-    return list(dict.fromkeys(variants))
+def _digits(phone: str) -> str:
+    return "".join(ch for ch in phone if ch.isdigit())
+
+
+def _clean_phone(phone) -> str:
+    """The trimmed phone, or "" when it holds no digits (e.g. "N/A")."""
+    phone = (phone or "").strip()
+    return phone if _digits(phone) else ""
+
+
+def _same_phone(a: str, b: str) -> bool:
+    """Same digits, or the same number with and without a country code (+91 98765 43210 = 9876543210)."""
+    a, b = _digits(a), _digits(b)
+    if not a or not b:
+        return False
+    short, long_ = sorted((a, b), key=len)
+    return short == long_ or (len(short) >= 10 and len(long_) - len(short) <= 3 and long_.endswith(short))
 
 
 def match_customer(*, email: str = "", phone: str = "", instagram_username: str = "", contact=None) -> Customer | None:
-    """The existing customer with this email, phone, Instagram handle or inbox contact."""
+    """The existing customer with this email, Instagram handle or inbox contact, else with this phone number
+    (never when both have an email and the emails differ: that is a different person on a shared number)."""
+    emails = {e.strip().lower() for e in (email, getattr(contact, "email", "")) if e and e.strip()}
+    phones = [p for p in (_clean_phone(phone), _clean_phone(getattr(contact, "phone", ""))) if p]
     query = Q()
-    if email.strip():
-        query |= Q(email__iexact=email.strip())
-    for p in _phone_variants(phone):
-        query |= Q(phone__iendswith=p) if len(p) == 10 and p.isdigit() else Q(phone=p)
+    for e in emails:
+        query |= Q(email__iexact=e)
     ig = instagram_username.strip().lstrip("@")
     if ig:
         query |= Q(instagram_username__iexact=ig)
     if contact is not None:
         query |= Q(contacts=contact)
-        if getattr(contact, "email", ""):
-            query |= Q(email__iexact=contact.email.strip())
-        if getattr(contact, "phone", ""):
-            for p in _phone_variants(contact.phone):
-                query |= Q(phone__iendswith=p) if len(p) == 10 and p.isdigit() else Q(phone=p)
         if getattr(contact, "username", ""):
             query |= Q(instagram_username__iexact=contact.username.strip().lstrip("@"))
-    return Customer.objects.filter(query).distinct().first() if query else None
+    if query and (found := Customer.objects.filter(query).distinct().first()):
+        return found
+    if phones:
+        # shortcut: compares in Python because phones are stored free-form; index a digits column if customers reach 100k+
+        for pk, stored_phone, stored_email in Customer.objects.exclude(phone="").values_list("pk", "phone", "email"):
+            if any(_same_phone(p, stored_phone) for p in phones) and not (emails and stored_email.strip()):
+                return Customer.objects.get(pk=pk)
+    return None
 
 
 @transaction.atomic
@@ -75,8 +87,8 @@ def get_or_create_customer(*, name: str, email: str = "", phone: str = "", insta
     """One person = one customer across channels: reuse the customer with the same email, phone, Instagram handle
     or inbox contact (filling in details they lacked), else create one. Links the inbox contact for messaging."""
     ig = (instagram_username or (getattr(contact, "username", "") if contact else "")).strip().lstrip("@")[:100]
-    resolved_email = (email or (getattr(contact, "email", "") if contact else "")).strip()
-    resolved_phone = (phone or (getattr(contact, "phone", "") if contact else "")).strip()[:50]
+    resolved_email = (email or "").strip() or (getattr(contact, "email", "") or "").strip()
+    resolved_phone = (_clean_phone(phone) or _clean_phone(getattr(contact, "phone", "")))[:50]
     details = {
         "email": resolved_email,
         "phone": resolved_phone,
@@ -104,7 +116,7 @@ def get_or_create_customer(*, name: str, email: str = "", phone: str = "", insta
                     level="success",
                 )
             except Exception:
-                pass
+                logger.exception("Could not notify staff about customer %s", customer.pk)
         transaction.on_commit(_notify_new_customer)
     elif missing := [field for field, value in details.items() if value and not getattr(customer, field)]:
         for field in missing:
@@ -144,21 +156,22 @@ def create_opportunity(*, title: str, customer: Customer | None = None, name: st
         from django.contrib.auth import get_user_model
         assignee = opportunity.assigned_to or get_user_model().objects.filter(is_active=True, is_staff=True).order_by("-is_superuser", "id").first()
         if assignee:
-            global_reminders.schedule_follow_up(
-                title=f"Follow up: {customer.name} ({opportunity.title[:60]})",
-                due_at=timezone.now() + timezone.timedelta(hours=24),
-                channel="Email" if customer.email else "WhatsApp",
-                note=opportunity.details[:300],
-                assigned_to=assignee,
-                created_by=created_by,
-                related_label=customer.name,
-                related_url=reverse("crm:opportunity", args=[opportunity.pk]),
-                entity_type="opportunity",
-                entity_id=str(opportunity.pk),
-                notify_now=True,
-            )
+            with transaction.atomic():  # savepoint: a failing reminder must not poison the opportunity's transaction
+                global_reminders.schedule_follow_up(
+                    title=f"Follow up: {customer.name} ({opportunity.title[:60]})",
+                    due_at=timezone.now() + timezone.timedelta(hours=24),
+                    channel="Email" if customer.email else "WhatsApp",
+                    note=opportunity.details[:300],
+                    assigned_to=assignee,
+                    created_by=created_by,
+                    related_label=customer.name,
+                    related_url=reverse("crm:opportunity", args=[opportunity.pk]),
+                    entity_type="opportunity",
+                    entity_id=str(opportunity.pk),
+                    notify_now=True,
+                )
     except Exception:
-        pass
+        logger.exception("Could not schedule the follow-up reminder for opportunity %s", opportunity.pk)
     return opportunity
 
 
@@ -198,25 +211,26 @@ def schedule_follow_up(*, customer: Customer, due_at, note: str = "", opportunit
         opportunity=opportunity,
         kind=Activity.Kind.SYSTEM,
         created_by=created_by,
-        body=f"Follow-up scheduled for {timezone.localtime(due_at):%d %b %Y, %H:%M}" + (f": {note}" if note else ""),
+        body=f"Follow-up scheduled for {timezone.localtime(due_at):%d %b %Y, %I:%M %p}" + (f": {note}" if note else ""),
     )
     try:
         from core import reminders as global_followups
-        global_followups.schedule_follow_up(
-            title=note.strip()[:200] or f"Follow up with {customer.name}",
-            due_at=due_at,
-            channel=follow_up.get_channel_display(),
-            note=note,
-            assigned_to=follow_up.assigned_to,
-            created_by=created_by,
-            related_label=customer.name,
-            related_url=reverse("crm:customer", args=[customer.pk]),
-            entity_type="customer",
-            entity_id=str(customer.pk),
-            notify_now=bool(follow_up.assigned_to or created_by),
-        )
+        with transaction.atomic():  # savepoint, as in create_opportunity
+            global_followups.schedule_follow_up(
+                title=note.strip()[:200] or f"Follow up with {customer.name}",
+                due_at=due_at,
+                channel=follow_up.get_channel_display(),
+                note=note,
+                assigned_to=follow_up.assigned_to,
+                created_by=created_by,
+                related_label=customer.name,
+                related_url=reverse("crm:customer", args=[customer.pk]),
+                entity_type="customer",
+                entity_id=str(customer.pk),
+                notify_now=bool(follow_up.assigned_to or created_by),
+            )
     except Exception:
-        pass
+        logger.exception("Could not schedule the global reminder for follow-up %s", follow_up.pk)
     return follow_up
 
 

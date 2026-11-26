@@ -15,6 +15,7 @@
     <nav class="flex gap-1 bg-subtle border border-line rounded-xl p-1 text-[13px] font-medium self-start sm:self-auto" aria-label="Filter approvals">
         <a href="?status=pending" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'pending' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Pending</a>
         <a href="?status=approved" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'approved' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Approved</a>
+        <a href="?status=failed" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'failed' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Failed</a>
         <a href="?status=rejected" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'rejected' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Rejected</a>
         <a href="?status=all" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
     </nav>
@@ -42,7 +43,7 @@
                     <p class="text-[12.5px] text-muted">{{ item.created_at|naturaltime }} · {{ item.reason }}</p>
                 </div>
             </div>
-            <span class="pill {% if item.status == 'pending' %}bg-warn/15 text-warn border border-warn/30{% elif item.status == 'approved' %}bg-ok/10 text-ok border border-ok/20{% elif item.status == 'rejected' %}bg-subtle text-muted{% else %}bg-bad/10 text-bad{% endif %}">
+            <span class="pill {% if item.status == 'pending' or item.status == 'sending' %}bg-warn/15 text-warn border border-warn/30{% elif item.status == 'approved' %}bg-ok/10 text-ok border border-ok/20{% elif item.status == 'rejected' %}bg-subtle text-muted{% else %}bg-bad/10 text-bad{% endif %}">
                 {{ item.get_status_display }}
             </span>
         </div>
@@ -54,13 +55,14 @@
         </div>
         {% endif %}
 
-        {% if item.status == 'pending' %}
+        {% if item.status == 'pending' or item.status == 'failed' %}
+        {% if item.error %}<p class="text-bad text-[12.5px]">Last send failed: {{ item.error }}</p>{% endif %}
         <form method="post" action="{% url 'dashboard-approval-action' item.pk %}" class="flex flex-col gap-3">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
             <div class="field flex flex-col gap-1.5">
                 <label for="draft-{{ item.pk }}" class="caps">AI Drafted Reply (editable)</label>
-                <textarea id="draft-{{ item.pk }}" name="reply_text" rows="3" required>{{ item.draft_text }}</textarea>
+                <textarea id="draft-{{ item.pk }}" name="reply_text" rows="3" required>{{ item.edited_text|default:item.draft_text }}</textarea>
             </div>
             <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <a href="{% url 'dashboard-contact' item.contact.pk %}" class="text-[13px] font-medium text-accent hover:underline">Open full conversation →</a>
@@ -69,7 +71,7 @@
                         <i class="fa-solid fa-xmark"></i> Reject
                     </button>
                     <button type="submit" name="action" value="approve" class="btn btn-primary btn-sm">
-                        <i class="fa-solid fa-paper-plane"></i> Approve &amp; Send
+                        <i class="fa-solid fa-paper-plane"></i> {% if item.status == 'failed' %}Retry Send{% else %}Approve &amp; Send{% endif %}
                     </button>
                 </div>
             </div>
@@ -84,6 +86,7 @@
     </article>
     {% endfor %}
 </div>
+{% include "crm/_pagination.html" %}
 {% else %}
 <div class="card">
     {% include "components/_empty_state.html" with icon="fa-wand-magic-sparkles" title="No AI replies waiting" subtitle="When an account has 'AI require approval' enabled, drafted replies will appear here for your review." %}

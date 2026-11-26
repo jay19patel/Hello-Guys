@@ -44,9 +44,9 @@
 {% block user_role_label %}{% if user.is_superuser %}Superuser{% elif user.is_staff %}Staff{% else %}Member{% endif %}{% endblock %}
 
 {% block content %}
-<div class="grid lg:grid-cols-[minmax(0,1fr)_280px] gap-4 h-[calc(100vh-8.5rem)] min-h-[540px]">
+<div class="grid lg:grid-cols-[minmax(0,1fr)_280px] gap-4 lg:h-[calc(100vh-8.5rem)] lg:min-h-[540px]">
     <!-- Main Chat Card -->
-    <section class="card flex flex-col min-w-0 min-h-0 overflow-hidden">
+    <section class="card flex flex-col min-w-0 min-h-[420px] lg:min-h-0 overflow-hidden">
         <div class="px-4 py-3 border-b border-line flex items-center justify-between gap-3 shrink-0 bg-surface">
             <div class="flex items-center gap-2.5 min-w-0">
                 <h1 id="title" class="font-display font-semibold text-[15px] text-ink truncate">New chat</h1>
@@ -74,7 +74,7 @@
     </section>
 
     <!-- Right Side: Recent Chat History -->
-    <aside class="card flex flex-col min-h-0 overflow-hidden" aria-label="Recent chat history">
+    <aside class="card flex flex-col min-h-[200px] max-h-72 lg:max-h-none lg:min-h-0 overflow-hidden" aria-label="Recent chat history">
         <div class="px-4 py-3 border-b border-line flex items-center justify-between shrink-0">
             <span class="caps">Chat History</span>
             <i class="fa-regular fa-clock text-muted text-xs"></i>
@@ -93,6 +93,7 @@
   const client = HG.createClient("{% url 'hello_guy_ai:api-root' %}");
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
+  const IS_STAFF = {{ user.is_staff|yesno:"true,false" }};
   let agents = [];
   let assistantId = params.get("assistant");
   let threadId = params.get("thread");
@@ -206,8 +207,8 @@
       const chips = box.appendChild(el("div", "welcome-tools"));
       tools.slice(0, 6).forEach((t) => chips.appendChild(el("span", "hg-chip", HG.toolTitle(t.name))));
       if (tools.length > 6) {
-        const more = chips.appendChild(el("a", "hg-chip chip-more", `+${tools.length - 6} more`));
-        more.href = "{% url 'hello_guy_ai_analytics' %}";
+        const more = chips.appendChild(el(IS_STAFF ? "a" : "span", "hg-chip chip-more", `+${tools.length - 6} more`));
+        if (IS_STAFF) more.href = "{% url 'hello_guy_ai_analytics' %}"; // analytics is staff only (403 otherwise)
       }
     }
     const grid = box.appendChild(el("div", "suggestions"));
@@ -262,11 +263,9 @@
     }
   }
 
-  function closeNav() { document.body.classList.remove("nav-open"); }
+  function closeNav() { if (window.Alpine) Alpine.$data(document.body).navOpen = false; } // base.html sidebar state
 
   $("new").onclick = () => { if (view.isBusy()) return; closeNav(); openThread(null); loadThreads(); $("input").focus(); };
-  if ($("menu")) $("menu").onclick = () => document.body.classList.toggle("nav-open");
-  document.body.addEventListener("click", (e) => { if (e.target === document.body) closeNav(); }); // tap on the dimmed overlay
   const refreshCounts = () => {
     window.dispatchEvent(new CustomEvent("notifications:refresh"));
   };
@@ -281,9 +280,6 @@
     if (view.isBusy()) return view.stop();
     submit($("input").value);
   };
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { closeNav(); }
-  });
 
   loadAgents()
     .then(loadThreads)

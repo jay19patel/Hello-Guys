@@ -1,14 +1,15 @@
 """Global AI tools for Reminders and Notifications (autodiscovered by hello_guy_ai)."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Literal
 
 from django.db.models import Q
 from django.utils import timezone
 
 from core import notifications, reminders
-from core.models import GlobalFollowUp
-from hello_guy_ai import current_context, tool
+from core.models import FollowUpChannel, GlobalFollowUp
+from hello_guy_ai import ToolError, current_context, tool
+from hello_guy_ai.services.reminders import plan, zone
 
 
 @tool
@@ -23,38 +24,54 @@ def create_global_reminder(
 ) -> dict:
     """Create a global Reminder (shown in the Reminders page and Notification Bell) for any topic and channel
     (e.g. Email, WhatsApp, Call, Meeting, Payment, Slack, General).
-    Pass `due_at` as an ISO datetime in the user's local timezone (e.g. '2026-11-29T20:00' for Sunday 8 PM),
-    or `hours_from_now` if only a relative offset is known."""
+    Pass `due_at` as an ISO datetime in the user's local timezone (e.g. 'YYYY-MM-DDTHH:MM'),
+    or `hours_from_now` if only a relative offset is known. A time that is invalid or already past is an error."""
     ctx = current_context()
     user = ctx.user
-    parsed_due = None
+    is_staff = getattr(user, "is_staff", False)
+    title = (title or "").strip()[:200]
+    if not title:
+        raise ToolError("Give the reminder a title.")
+
+    if not is_staff:
+        # Public website visitors: one reminder per run, no new channels, no priority escalation.
+        from hello_guy_ai.models import Message
+
+        if ctx.run_id and Message.objects.filter(run_id=ctx.run_id, name="create_global_reminder").exists():
+            raise ToolError("A reminder was already created in this reply. Do not create another one.")
+        priority = "normal"
+        channel = (
+            FollowUpChannel.objects.filter(name__iexact=(channel or "").strip()).values_list("name", flat=True).first()
+            or "General"
+        )
+
+    tz = zone(ctx.timezone)
+    now = timezone.now()
     if (due_at or "").strip():
         try:
-            parsed_due = datetime.fromisoformat(due_at.strip())
-            if timezone.is_naive(parsed_due):
-                parsed_due = timezone.make_aware(parsed_due, timezone.get_current_timezone())
-        except ValueError:
-            parsed_due = None
-
-    if parsed_due is None:
-        hours = max(1, min(int(hours_from_now), 24 * 90))
-        parsed_due = timezone.now() + timedelta(hours=hours)
+            parsed_due = plan(due_at=due_at, recurrence=None, tz=tz, now=now)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from None
+    else:
+        if hours_from_now <= 0:
+            raise ToolError("hours_from_now must be positive; pass due_at for a specific time.")
+        parsed_due = now + timedelta(hours=min(hours_from_now, 24 * 90))
 
     # If triggered by public website-bot, assign to active staff so the team sees it in the Notification Bell.
     assigned_to = user
-    if not getattr(user, "is_staff", False):
+    if not is_staff:
         from django.contrib.auth import get_user_model
         assigned_to = get_user_model().objects.filter(is_active=True, is_staff=True).order_by("-is_superuser", "id").first() or user
 
     fu = reminders.schedule_follow_up(
-        title=title.strip()[:200],
+        title=title,
         due_at=parsed_due,
-        channel=channel.strip() or "General",
-        note=note.strip(),
+        channel=(channel or "").strip() or "General",
+        note=(note or "").strip()[:500 if not is_staff else 2000],
         priority=priority,
         assigned_to=assigned_to,
         created_by=user,
-        related_label=related_label.strip(),
+        related_label=(related_label or "").strip(),
         related_url="/reminders/",
         notify_now=True,
     )

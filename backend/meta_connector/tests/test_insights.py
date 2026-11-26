@@ -57,5 +57,5 @@ class InsightsTests(TestCase):
         self.assertEqual(self.client.get(reverse('dashboard')).status_code, 302)
 
     def test_old_insights_url_redirects_to_overview_with_range(self):
-        resp = self.client.get('/dashboard/insights/?days=7')
-        self.assertRedirects(resp, '/dashboard/?days=7', fetch_redirect_response=False)
+        resp = self.client.get(reverse('dashboard-insights') + '?days=7')
+        self.assertRedirects(resp, reverse('dashboard') + '?days=7', fetch_redirect_response=False)

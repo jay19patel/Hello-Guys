@@ -2,8 +2,8 @@
 
     python manage.py setup_website_bot
 
-The user can VIEW public site content and ADD inquiries. Nothing else: it cannot create, change or
-delete blogs or any other data, cannot read inquiries, cannot log in (no password), and is not staff.
+The user can VIEW public site content and ADD inquiries (a CRM Customer + Opportunity). Nothing else: it cannot
+create, change or delete blogs or any other data, cannot read inquiries, cannot log in (no password), and is not staff.
 """
 
 from django.contrib.auth import get_user_model
@@ -14,14 +14,15 @@ from hello_guy_ai.conf import ai_settings
 
 GROUP = "Website Visitor"
 PERMISSIONS = [
-    "view_blogpost",
-    "view_project",
-    "view_faq",
-    "view_solution",
-    "view_testimonial",
-    "view_techskill",
-    "view_youtubevideo",
-    "add_inquirysubmission",  # the only write: visitors can leave a lead
+    ("cms", "view_blogpost"),
+    ("cms", "view_project"),
+    ("cms", "view_faq"),
+    ("cms", "view_solution"),
+    ("cms", "view_testimonial"),
+    ("cms", "view_techskill"),
+    ("cms", "view_youtubevideo"),
+    ("crm", "add_opportunity"),  # the only writes: visitors can leave a lead (create_inquiry)
+    ("crm", "add_customer"),
 ]
 
 
@@ -34,8 +35,14 @@ class Command(BaseCommand):
             self.stderr.write('Set HELLO_GUY_AI["PUBLIC_USER"] in settings first.')
             return
 
-        perms = list(Permission.objects.filter(content_type__app_label="cms", codename__in=PERMISSIONS))
-        missing = set(PERMISSIONS) - {p.codename for p in perms}
+        perms = [
+            p
+            for p in Permission.objects.filter(
+                content_type__app_label__in={app for app, _ in PERMISSIONS}, codename__in={c for _, c in PERMISSIONS}
+            ).select_related("content_type")
+            if (p.content_type.app_label, p.codename) in PERMISSIONS
+        ]
+        missing = set(PERMISSIONS) - {(p.content_type.app_label, p.codename) for p in perms}
         if missing:
             self.stderr.write(f"Missing permissions (run migrate first): {sorted(missing)}")
             return

@@ -16,6 +16,7 @@ def _get(path: str, **params) -> Tuple[Optional[dict], str]:
         response = requests.get(f"{MetaConfig.get_solo().graph_base_url}/{path}", params=params, timeout=10)
         data = response.json()
     except (requests.RequestException, ValueError) as exc:
+        logger.warning("Meta Graph request to %s failed: %s", path, exc)
         return None, f"Could not reach Meta: {exc}"
     if 'error' in data:
         return None, data['error'].get('message', 'Unknown Meta error')
@@ -119,7 +120,10 @@ class TokenService:
         cutoff = timezone.now() - STALE_AFTER
         for account in PlatformAccount.objects.filter(is_active=True).exclude(access_token_encrypted=''):
             if not account.token_checked_at or account.token_checked_at < cutoff:
-                cls.refresh(account)
+                try:
+                    cls.refresh(account)
+                except Exception:  # a bad token/DB row must not 500 every dashboard page
+                    logger.exception("Token refresh failed for account '%s'", account.display_name)
 
     @classmethod
     def mark_invalid(cls, account: PlatformAccount, message: str) -> None:

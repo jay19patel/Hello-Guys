@@ -1,6 +1,10 @@
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from hello_guy_ai.crypto import decrypt, encrypt
+
+# Owned by the engine / the fields above; a value here would clash or override them.
+RESERVED_PARAMS = frozenset({"stream", "messages", "tools", "model", "api_key"})
 
 
 class LLMModel(models.Model):
@@ -39,6 +43,25 @@ class LLMModel(models.Model):
     def __str__(self) -> str:
         return self.name
 
+    def clean(self) -> None:
+        import litellm
+
+        self.model_id = (self.model_id or "").strip()
+        if self.model_id:
+            try:
+                litellm.get_llm_provider(self.model_id)
+            except Exception:
+                raise ValidationError(
+                    {
+                        "model_id": "Add the provider prefix, e.g. mistral/ministral-8b-2512, openai/gpt-4o-mini, "
+                        "ollama_chat/llama3.1:8b (embedding: mistral/mistral-embed, ollama/nomic-embed-text)."
+                    }
+                ) from None
+        if not isinstance(self.params, dict):
+            raise ValidationError({"params": "Must be a JSON object."})
+        if reserved := sorted(RESERVED_PARAMS & set(self.params)):
+            raise ValidationError({"params": f"Set these in the fields above, not here: {', '.join(reserved)}."})
+
     def save(self, *args, **kwargs) -> None:
         super().save(*args, **kwargs)
         if self.is_default:  # one default per kind
@@ -53,8 +76,8 @@ class LLMModel(models.Model):
         kwargs = dict(self.params or {})
         if self.api_base:
             kwargs["api_base"] = self.api_base
-        if self.api_key:
-            kwargs["api_key"] = self.get_api_key()
+        if self.api_key and (key := self.get_api_key()):  # "" = undecryptable (logged): let litellm use its env var
+            kwargs["api_key"] = key
         return kwargs
 
     def get_api_key(self) -> str:

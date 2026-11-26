@@ -8,8 +8,9 @@ DEFAULTS: dict[str, Any] = {
     # LLM (any LiteLLM model string: "ollama_chat/llama3.1:8b", "gpt-4o-mini", ...)
     "DEFAULT_MODEL": "ollama_chat/llama3.1:8b",
     "LLM_API_BASE": "http://localhost:11434",  # None/"" for hosted providers
-    "LLM_TIMEOUT_SECONDS": 120,
-    "LLM_NUM_RETRIES": 4,  # total attempts; waits 1s, 2s, 4s between them
+    # One LLM call can take up to TIMEOUT x (RETRIES + 1) = 270s: keep it below RUN_TIME_LIMIT_SECONDS.
+    "LLM_TIMEOUT_SECONDS": 90,
+    "LLM_NUM_RETRIES": 2,  # retries after the first attempt; waits 1s, 2s between them
     "LLM_FALLBACK_MODELS": [],  # tried in order when the main model fails, e.g. ["ollama_chat/llama3.1:8b"]
     "DAILY_TOKEN_LIMIT_PER_USER": 0,  # prompt+completion tokens per user per day; 0 = no limit
     # RAG. The admin's default "Embedding" LLM model wins over these two (fallback when none is set).

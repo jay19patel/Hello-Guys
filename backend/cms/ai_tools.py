@@ -1,4 +1,5 @@
 """Read tools for the AI assistant over the website CMS (autodiscovered by hello_guy_ai).
+Visitor inquiries live in CRM (crm.Opportunity + Customer); the inquiry tools here are thin views of them.
 
 One explicit tool per question, like django-ai-assistant's @method_tool: the LLM gets the
 answer in ONE call instead of the generic list -> describe -> read chain (fewer LLM round
@@ -8,13 +9,14 @@ trips = fewer rate-limit hits). Every tool checks the requesting user's Django v
 from typing import Any, Literal
 
 from django.contrib.auth import get_permission_codename
-from django.db.models import Model, Q
-from django.utils import timezone
+from django.db.models import F, Model, Q
 from django.utils.text import slugify
 
 from django.core.validators import validate_email
 
-from cms.models import FAQ, BlogPost, InquirySubmission, Project, Solution, TechSkill, Testimonial, YouTubeVideo
+from cms.models import FAQ, BlogPost, Project, Solution, TechSkill, Testimonial, YouTubeVideo
+from crm import services as crm_services
+from crm.models import Opportunity, Source
 from hello_guy_ai import ToolError, current_context, tool
 
 MAX_LIMIT = 50
@@ -52,12 +54,16 @@ def site_content_summary() -> dict[str, Any]:
     summary: dict[str, Any] = {}
     counts = {
         BlogPost: lambda qs: {"published": qs.filter(is_published=True).count(), "drafts": qs.filter(is_published=False).count()},
-        InquirySubmission: lambda qs: {"total": qs.count(), "unreplied": qs.filter(is_replied=False).count()},
     }
-    for model in (BlogPost, Project, FAQ, Testimonial, Solution, TechSkill, YouTubeVideo, InquirySubmission):
+    for model in (BlogPost, Project, FAQ, Testimonial, Solution, TechSkill, YouTubeVideo):
         if user.has_perm(f"cms.{get_permission_codename('view', model._meta)}"):
             qs = _visible(model.objects.all())
             summary[str(model._meta.verbose_name_plural)] = counts[model](qs) if model in counts else qs.count()
+    if user.has_perm("crm.view_opportunity"):
+        summary["inquiries"] = {
+            "total": Opportunity.objects.count(),
+            "unreplied": Opportunity.objects.filter(status=Opportunity.Status.NEW).count(),
+        }
     if not summary:
         raise ToolError("You don't have permission to view website content.")
     return summary
@@ -134,17 +140,28 @@ def search_faqs(query: str = "", limit: int = 20) -> list[dict]:
 def list_inquiries(unreplied_only: bool = False, query: str = "", limit: int = 10) -> list[dict]:
     """List contact/project inquiries from website visitors, newest first. query matches name, email,
     subject or message. Contains personal data: only share it with the user who asked."""
-    _require_view(InquirySubmission)
-    qs = InquirySubmission.objects.order_by("-created_at")
+    _require_view(Opportunity)
+    qs = Opportunity.objects.order_by("-created_at")
     if unreplied_only:
-        qs = qs.filter(is_replied=False)
+        qs = qs.filter(status=Opportunity.Status.NEW)
     if query:
         qs = qs.filter(
-            Q(name__icontains=query) | Q(email__icontains=query) | Q(subject__icontains=query) | Q(message__icontains=query)
+            Q(customer__name__icontains=query)
+            | Q(customer__email__icontains=query)
+            | Q(title__icontains=query)
+            | Q(details__icontains=query)
         )
     return list(
         qs.values(
-            "inquiry_id", "name", "email", "phone", "subject", "message", "inquiry_type", "is_replied", "created_at"
+            "status",
+            "created_at",
+            inquiry_id=F("reference"),
+            name=F("customer__name"),
+            email=F("customer__email"),
+            phone=F("customer__phone"),
+            subject=F("title"),
+            message=F("details"),
+            inquiry_type=F("form_type"),
         )[: _limit(limit)]
     )
 
@@ -163,12 +180,24 @@ def top_blog_posts(metric: Literal["views", "likes"] = "views", limit: int = 5) 
 
 @tool
 def get_inquiry(inquiry_id: str) -> dict:
-    """Get one visitor inquiry with its full message and reply history, by inquiry_id (e.g. sub_74658245fdf5)."""
-    _require_view(InquirySubmission)
-    row = InquirySubmission.objects.filter(inquiry_id=inquiry_id).values().first()
-    if row is None:
+    """Get one visitor inquiry with its full message and activity history, by inquiry_id (e.g. opp_74658245fdf5)."""
+    _require_view(Opportunity)
+    opp = Opportunity.objects.select_related("customer").filter(reference=inquiry_id).first()
+    if opp is None:
         raise ToolError(f"No inquiry {inquiry_id!r}. Use list_inquiries to find the id.")
-    return row
+    c = opp.customer
+    return {
+        "inquiry_id": opp.reference,
+        "name": c.name,
+        "email": c.email,
+        "phone": c.phone,
+        "subject": opp.title,
+        "message": opp.details,
+        "inquiry_type": opp.form_type,
+        "status": opp.status,
+        "created_at": opp.created_at,
+        "activity": list(opp.activities.values("kind", "body", "created_at")[:20]),
+    }
 
 
 def _confirm_replied(args: dict) -> str:
@@ -179,17 +208,16 @@ def _confirm_replied(args: dict) -> str:
 @tool(requires_confirmation=True, confirm_prompt=_confirm_replied)
 def mark_inquiry_replied(inquiry_id: str, note: str = "") -> dict:
     """Mark a visitor inquiry as replied and log an optional note. Needs the user's approval."""
-    _require("change", InquirySubmission)
-    inquiry = InquirySubmission.objects.filter(inquiry_id=inquiry_id).first()
-    if inquiry is None:
+    _require("change", Opportunity)
+    opp = Opportunity.objects.select_related("customer").filter(reference=inquiry_id).first()
+    if opp is None:
         raise ToolError(f"No inquiry {inquiry_id!r}.")
-    inquiry.is_replied = True
-    inquiry.replies = [
-        *(inquiry.replies or []),
-        {"type": "marked_replied", "note": note[:1000], "by": current_context().user.get_username(), "at": timezone.now().isoformat()},
-    ]
-    inquiry.save(update_fields=["is_replied", "replies", "updated_at"])
-    return {"inquiry_id": inquiry_id, "is_replied": True}
+    user = current_context().user
+    if opp.status == Opportunity.Status.NEW:  # replied = first contact made; later stages stay as they are
+        crm_services.set_status(opp, Opportunity.Status.CONTACTED, user, note=note[:1000])
+    else:
+        crm_services.add_note(user=user, body=note[:1000] or "Marked as replied", customer=opp.customer, opportunity=opp)
+    return {"inquiry_id": inquiry_id, "status": opp.status}
 
 
 def _confirm_draft(args: dict) -> str:
@@ -238,11 +266,9 @@ def create_inquiry(name: str, email: str, message: str, phone: str = "", subject
     Only call it after the visitor has given their name, a valid email and what they need,
     and has confirmed the details. Returns the inquiry reference to share with the visitor."""
     from cms.views import check_maintenance  # same switch as the website's contact form
-    from crm import services as crm_services
-    from crm.models import Opportunity, Source
     from hello_guy_ai.models import Message, Thread
 
-    _require("add", InquirySubmission)
+    _require("add", Opportunity)
     ctx = current_context()
     if ctx.run_id and Message.objects.filter(run_id=ctx.run_id, name="create_inquiry").exists():
         raise ToolError("An inquiry was already submitted in this reply. Do not submit it again.")

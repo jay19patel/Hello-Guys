@@ -58,7 +58,7 @@ def public_send(request, thread_id: UUID, payload: PublicMessageIn):
     if thread.human_mode:  # a team member is chatting: their replies arrive on /events
         message = chat.post_live_message(thread, payload.content)
         return Status(202, {"message_id": message.pk, "mode": "human"})
-    message, run = chat.post_message(thread.created_by, thread, payload.content)
+    message, run = chat.post_message(thread.created_by, thread, payload.content, payload.timezone)
     return Status(202, {"run_id": run.pk, "message_id": message.pk, "stream_url": chat.stream_url(run)})
 
 

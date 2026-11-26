@@ -111,7 +111,7 @@
             <div class="flex justify-between gap-2"><span class="text-muted">Created</span><span class="text-muted">{{ task.created_at|date:"d M Y" }}</span></div>
         </section>
 
-        {% if can_edit %}
+        {% if can_delete %}
         <section class="card p-5">
             <form method="post" onsubmit="return confirm('Delete this task?')">
                 {% csrf_token %}

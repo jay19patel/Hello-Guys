@@ -202,6 +202,7 @@ def run_reminder_agent(reminder_id: int) -> None:
     try:
         run = start_agent_run(reminder.user, reminder.agent_id, reminder.message)
     except Exception as exc:  # assistant removed or user lost access
+        logger.exception("Scheduled task for reminder %s failed to start", reminder.pk)
         notify(reminder.user, "Scheduled task failed", f"{reminder.message}\n\n{exc}", reminder=reminder)
         return
     AgentRunner(run).execute()

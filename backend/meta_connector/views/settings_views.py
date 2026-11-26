@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.models import User
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -36,6 +37,8 @@ class SettingsView(RoleRequiredMixin, View):
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
         edit_id = request.GET.get('edit') or request.POST.get('account_id')
+        if edit_id and not edit_id.isdigit():
+            raise Http404("Unknown account.")
         self.edit_account = get_object_or_404(PlatformAccount, pk=edit_id) if edit_id else None
 
     def get(self, request, config_form=None, account_form=None, team_form=None):
@@ -91,7 +94,8 @@ class SettingsView(RoleRequiredMixin, View):
             messages.success(request, f"Added {user.username} as {d['role']}.")
             return redirect(reverse('dashboard-settings') + '#team')
         elif action in ('set_role', 'toggle_active'):
-            member = get_object_or_404(User, pk=request.POST.get('user_id'))
+            user_id = request.POST.get('user_id', '')
+            member = get_object_or_404(User, pk=user_id if user_id.isdigit() else 0)
             if member == request.user:
                 messages.warning(request, "You can't change your own role or access. Ask another admin.")
             elif action == 'set_role' and request.POST.get('role') in ROLES:

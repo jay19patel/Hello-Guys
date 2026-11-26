@@ -61,9 +61,9 @@
         <i class="fa-solid fa-vector-square text-[10px]"></i>
         Embed: {% if health.embed_model %}{{ health.embed_model.name }}{% else %}None{% endif %}
     </span>
-    <span class="pill {% if health.active_runs %}bg-accent/15 text-accent{% else %}bg-subtle border border-line text-muted{% endif %}">
+    <span id="live-pill" class="pill {% if health.active_runs %}bg-accent/15 text-accent{% else %}bg-subtle border border-line text-muted{% endif %}">
         <i class="fa-solid fa-bolt text-[10px]"></i>
-        {{ health.active_runs }} active · {{ health.paused_runs }} paused
+        <span id="live-pill-text">{{ health.active_runs }} active · {{ health.paused_runs }} paused</span>
     </span>
 </section>
 
@@ -429,6 +429,7 @@
                     </td>
                     <td class="cell px-5 text-muted">{{ r.user.get_full_name|default:r.user.username }}</td>
                     <td class="cell px-5 text-right whitespace-nowrap">
+                        {% if r.user_id == request.user.pk %}{# the API only lets owners manage their reminders #}
                         <div class="flex items-center justify-end gap-1.5">
                             <button type="button"
                                     onclick="aiReminderAction({{ r.pk }}, '{% if r.status == 'paused' %}resume{% else %}pause{% endif %}')"
@@ -441,6 +442,7 @@
                                 <i class="fa-solid fa-trash"></i>
                             </button>
                         </div>
+                        {% else %}<span class="text-[12px] text-muted">Owner only</span>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -512,17 +514,32 @@ function liveAgentsMonitor() {
     const initial = JSON.parse(document.getElementById('live-runs-initial').textContent || '[]');
     return {
         runs: initial,
+        failures: 0,
+        timer: null,
         init() {
-            setInterval(() => this.poll(), 5000);
+            this.schedule();
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) this.poll(); });
+        },
+        schedule() {
+            if (this.failures >= 5) return; // give up: signed out or the server is down; a reload restarts it
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => this.poll(), 5000 * 2 ** this.failures); // back off 5s, 10s, 20s...
         },
         async poll() {
+            if (document.hidden) return this.schedule(); // no point polling a background tab
             try {
-                const res = await fetch('?format=json', { credentials: 'same-origin' });
-                if (res.ok) {
-                    const data = await res.json();
-                    this.runs = data.live_runs || [];
-                }
-            } catch (_) {}
+                const res = await fetch('?format=json', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+                // An expired session redirects to the login page (HTML): treat it like a failure.
+                if (!res.ok || !(res.headers.get('content-type') || '').includes('application/json')) throw new Error('bad response');
+                const data = await res.json();
+                this.runs = data.live_runs || [];
+                const pill = document.getElementById('live-pill-text');
+                if (pill) pill.textContent = `${data.active_runs} active · ${data.paused_runs} paused`;
+                this.failures = 0;
+            } catch (_) {
+                this.failures += 1;
+            }
+            this.schedule();
         },
     };
 }
@@ -536,7 +553,8 @@ async function aiReminderAction(id, action) {
         credentials: 'same-origin',
         headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
     });
-    if (res.ok) location.reload();
+    if (res.ok) return location.reload();
+    alert(res.status === 404 ? 'Only the owner of this task can change it.' : 'Could not update the task. Please try again.');
 }
 </script>
 {% endblock %}

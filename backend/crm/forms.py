@@ -1,8 +1,9 @@
-from zoneinfo import available_timezones
+from zoneinfo import ZoneInfo, available_timezones
 
 from django import forms
 from django.contrib.auth import get_user_model
 from django.core.validators import validate_email
+from django.db.models import Q
 
 from crm.google import MAX_UPLOAD_BYTES, SHARE_ROLES
 from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, MeetingTranscript, Opportunity, Service
@@ -105,9 +106,19 @@ class MeetingForm(forms.ModelForm):
             self.fields[name].input_formats = ["%Y-%m-%dT%H:%M"]
         self.fields["customer"].required = False
         self.fields["customer"].queryset = Customer.objects.order_by("name")
-        self.fields["opportunity"].queryset = Opportunity.objects.filter(status__in=Opportunity.OPEN).select_related(
-            "customer")
+        # a meeting keeps its opportunity after it is won or lost
+        self.fields["opportunity"].queryset = Opportunity.objects.filter(
+            Q(status__in=Opportunity.OPEN) | Q(pk=self.instance.opportunity_id)).select_related("customer")
         self.fields["location"].help_text = "Leave blank to create a Google Meet link."
+
+    def clean(self):
+        """The typed times are wall-clock times in the chosen timezone, not the server's."""
+        cleaned = super().clean()
+        if tz := cleaned.get("timezone"):
+            for name in ("start_at", "end_at"):
+                if value := cleaned.get(name):
+                    cleaned[name] = value.replace(tzinfo=ZoneInfo(tz))
+        return cleaned
 
 
 class MeetingOutcomeForm(forms.Form):

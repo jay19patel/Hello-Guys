@@ -1,7 +1,7 @@
 """Fernet encryption for secrets stored in the DB (LLM API keys). Key: settings.FIELD_ENCRYPTION_KEY.
 
 Key handling matches the host's previous helper, so values encrypted before this module existed still decrypt.
-`manage.py check --deploy` fails (hello_guy_ai.E001) while the development fallback key is in use.
+`manage.py check --deploy` fails (hello_guy_ai.E001) while the development fallback key is in use or the key is not a valid Fernet key.
 """
 
 import base64
@@ -26,7 +26,10 @@ def _fernet() -> Fernet:
         return Fernet(_DEV_KEY)
     try:
         return Fernet(raw)
-    except ValueError:  # not a Fernet key: derive one, same as before so old ciphertext stays readable
+    except ValueError:  # not a Fernet key
+        if not settings.DEBUG:  # a low-entropy placeholder (e.g. .env.example) must never protect real secrets
+            raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is not a valid Fernet key.") from None
+        # DEBUG only: derive one, same as before so old dev ciphertext stays readable
         return Fernet(base64.urlsafe_b64encode(hashlib.sha256(raw).digest()))
 
 

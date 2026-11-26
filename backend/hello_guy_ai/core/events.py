@@ -17,7 +17,7 @@ import redis.asyncio as aioredis
 
 from hello_guy_ai.conf import ai_settings
 
-TERMINAL_EVENTS = {"done", "error", "paused", "stopped"}
+TERMINAL_EVENTS = frozenset({"done", "error", "paused", "stopped"})
 XREAD_BLOCK_MS = 15000
 # redis-py 8 defaults socket_timeout to 5s; a blocking XREAD must outlive its block window.
 XREAD_SOCKET_TIMEOUT = XREAD_BLOCK_MS / 1000 + 10
@@ -83,7 +83,7 @@ def _entries(response: list) -> list[tuple[str, str, str]]:
 
 
 def iter_run_events_sync(
-    run_id: Any, last_id: str, client: redis.Redis, *, key: str = "", terminal: set[str] = TERMINAL_EVENTS
+    run_id: Any, last_id: str, client: redis.Redis, *, key: str = "", terminal: frozenset[str] | set[str] = TERMINAL_EVENTS
 ) -> Iterator[tuple[str, str, str]]:
     """Blocking twin of iter_run_events for WSGI servers (runserver, gunicorn sync workers)."""
     key = key or stream_key(run_id)
@@ -102,7 +102,7 @@ def iter_run_events_sync(
 
 async def iter_run_events(
     run_id: Any, last_id: str = "0-0", client: aioredis.Redis | None = None, *, key: str = "",
-    terminal: set[str] = TERMINAL_EVENTS,
+    terminal: frozenset[str] | set[str] = TERMINAL_EVENTS,
 ) -> AsyncIterator[tuple[str, str, str]]:
     """Yield (entry_id, event, json_data) until a terminal event or SSE_MAX_SECONDS.
 

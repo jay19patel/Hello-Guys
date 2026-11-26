@@ -78,7 +78,7 @@
         const meta = document.createElement('p');
         meta.className = 'text-[11px] font-semibold opacity-80 mb-0.5';
         const who = m.who === 'visitor' ? 'Visitor' : m.who === 'staff' ? (m.name || 'Team') : 'AI assistant';
-        meta.textContent = who + ' · ' + new Date(m.at).toLocaleString([], {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'});
+        meta.textContent = who + ' · ' + new Date(m.at).toLocaleString('en-IN', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'});
         const text = document.createElement('p');
         text.className = 'text-[13.5px]';
         text.textContent = m.text;

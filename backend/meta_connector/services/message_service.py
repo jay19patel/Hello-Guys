@@ -56,7 +56,7 @@ class MessageService:
         template_name: Optional[str] = None,
         account_id: Optional[int] = None,
         sent_by=None,
-    ) -> Tuple[Message, bool, str]:
+    ) -> Tuple[Optional[Message], bool, str]:
         """
         Sends an outbound message to WhatsApp or Instagram, and records it in Message table.
 
@@ -65,7 +65,7 @@ class MessageService:
         :param text: Text content of message.
         :param template_name: Optional WhatsApp template name.
         :param account_id: Specific PlatformAccount ID to send from.
-        :return: (Message instance, success: bool, error_message: str)
+        :return: (Message instance or None when no account matched, success: bool, error_message: str)
         """
         platform = platform.lower().strip()
         if platform not in [p for p, _ in PlatformAccount.PLATFORM_CHOICES]:

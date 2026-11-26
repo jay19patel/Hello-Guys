@@ -1,17 +1,27 @@
+import logging
+
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import ListView
 
-from meta_connector.models import PendingAIReply
+from meta_connector.models import PendingAIReply, PlatformAccount
 from meta_connector.roles import AGENT, RoleRequiredMixin
 from meta_connector.services import SendError, send_message
 
 
+logger = logging.getLogger(__name__)
+
+# Platform text limits (IG/Messenger 1000, WhatsApp 4096).
+MAX_REPLY_CHARS = {PlatformAccount.PLATFORM_WHATSAPP: 4096}
+DEFAULT_MAX_REPLY_CHARS = 1000
+
+
 class ApprovalQueueView(RoleRequiredMixin, ListView):
     """Queue of AI-drafted replies awaiting human approval before sending."""
-    required_role = AGENT
+    role = AGENT
     template_name = 'dashboard/approvals.html'
     context_object_name = 'approvals'
     paginate_by = 25
@@ -32,29 +42,41 @@ class ApprovalQueueView(RoleRequiredMixin, ListView):
 
 class ApprovalActionView(RoleRequiredMixin, View):
     """Approve & send (with optional edits) or reject a pending AI reply."""
-    required_role = AGENT
+    role = edit_role = AGENT
 
     def post(self, request, pk: int):
         item = get_object_or_404(PendingAIReply.objects.select_related('contact', 'platform_account'), pk=pk)
-        next_url = request.POST.get('next') or 'dashboard-approvals'
+        next_url = request.POST.get('next') or ''
+        if not url_has_allowed_host_and_scheme(next_url, {request.get_host()}, require_https=request.is_secure()):
+            next_url = 'dashboard-approvals'
         action = request.POST.get('action')
 
-        if item.status != PendingAIReply.STATUS_PENDING:
+        if item.status not in (PendingAIReply.STATUS_PENDING, PendingAIReply.STATUS_FAILED):
             messages.info(request, "This AI draft was already reviewed.")
             return redirect(next_url)
 
         if action == 'reject':
-            item.status = PendingAIReply.STATUS_REJECTED
-            item.reviewed_by = request.user
-            item.reviewed_at = timezone.now()
-            item.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
-            messages.info(request, "AI draft rejected.")
+            rejected = PendingAIReply.objects.filter(
+                pk=item.pk, status__in=(PendingAIReply.STATUS_PENDING, PendingAIReply.STATUS_FAILED),
+            ).update(status=PendingAIReply.STATUS_REJECTED, reviewed_by=request.user, reviewed_at=timezone.now())
+            messages.info(request, "AI draft rejected." if rejected else "This AI draft was already reviewed.")
             return redirect(next_url)
 
         if action == 'approve':
             text = (request.POST.get('reply_text') or item.draft_text).strip()
             if not text:
                 messages.error(request, "Reply text cannot be empty.")
+                return redirect(next_url)
+            limit = MAX_REPLY_CHARS.get(item.platform_account.platform, DEFAULT_MAX_REPLY_CHARS)
+            if len(text) > limit:
+                messages.error(request, f"Reply is too long for {item.platform_account.get_platform_display()} ({len(text)}/{limit} characters).")
+                return redirect(next_url)
+            # Compare-and-set claim so a double click / second agent cannot send twice.
+            claimed = PendingAIReply.objects.filter(
+                pk=item.pk, status__in=(PendingAIReply.STATUS_PENDING, PendingAIReply.STATUS_FAILED),
+            ).update(status=PendingAIReply.STATUS_SENDING)
+            if not claimed:
+                messages.info(request, "This AI draft was already reviewed.")
                 return redirect(next_url)
             item.edited_text = text if text != item.draft_text else ''
             item.reviewed_by = request.user
@@ -66,7 +88,9 @@ class ApprovalActionView(RoleRequiredMixin, View):
                 item.error = ''
                 item.save(update_fields=['status', 'edited_text', 'reviewed_by', 'reviewed_at', 'sent_message', 'error'])
                 messages.success(request, f"Approved and sent reply to {item.contact}.")
-            except SendError as exc:
+            except Exception as exc:  # incl. SendError; never leave the row stuck in 'sending'
+                if not isinstance(exc, SendError):
+                    logger.exception("Approving AI reply %s failed", item.pk)
                 item.status = PendingAIReply.STATUS_FAILED
                 item.error = str(exc)[:500]
                 item.save(update_fields=['status', 'edited_text', 'reviewed_by', 'reviewed_at', 'error'])

@@ -1,11 +1,13 @@
-import hashlib
 from datetime import timedelta
 from typing import Any
+import hashlib
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 from django.db.models import F, Q
 from rest_framework import generics, permissions, status
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle, ScopedRateThrottle
 from rest_framework.views import APIView
 
 from cms.models import (
@@ -48,7 +50,7 @@ def make_cached_response(data: Any, request, max_age: int = 120, s_maxage: int =
     Wraps payload in an HTTP-cached DRF Response with ETag and 304 Not Modified validation.
     """
     rendered = JSONRenderer().render(data)
-    etag = f'W/"{hashlib.md5(rendered).hexdigest()}"'
+    etag = f'W/"{hashlib.sha256(rendered).hexdigest()[:32]}"'
     client_etag = request.headers.get('If-None-Match') or request.META.get('HTTP_IF_NONE_MATCH')
 
     cache_control = f"public, max-age={max_age}, s-maxage={s_maxage}, stale-while-revalidate=600"
@@ -454,6 +456,8 @@ class BlogPostLikeAPIView(APIView):
     Endpoint: POST /api/cms/blog/<slug>/like/
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'engagement'
 
     def post(self, request, slug, *args, **kwargs):
         blocked = check_maintenance('blog')
@@ -473,14 +477,9 @@ def get_visitor_info(request) -> tuple[str, str]:
     """
     Extract salted SHA256 hash of visitor IP for rate-limiting and anonymous like/comment tracking.
     """
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0].strip()
-    else:
-        ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
-
-    salt = "njtechstudio_cms_engagement_salt"
-    h = hashlib.sha256(f"{salt}:{ip}".encode('utf-8')).hexdigest()
+    # DRF's get_ident honors settings.NUM_PROXIES, so a client-sent X-Forwarded-For is not trusted blindly.
+    ip = BaseThrottle().get_ident(request)
+    h = salted_hmac('cms.engagement', ip, algorithm='sha256').hexdigest()  # keyed with SECRET_KEY
     visitor_name = f"Guest-{h[:6].upper()}"
     return h, visitor_name
 
@@ -493,6 +492,12 @@ class BlogPostEngagementAPIView(APIView):
       POST /api/cms/blog/<slug>/engagement/
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'engagement'
+
+    def get_throttles(self):
+        # Only writes are limited; page loads (GET) are cheap and frequent.
+        return super().get_throttles() if self.request.method == 'POST' else []
 
     def get_post(self, slug: str) -> BlogPost | None:
         return BlogPost.objects.filter(slug=slug, is_published=True).first() or \
@@ -532,13 +537,10 @@ class BlogPostEngagementAPIView(APIView):
         action = request.data.get('action')
 
         if action == 'like':
-            existing = BlogLike.objects.filter(post=post, author_hash=visitor_hash).first()
-            if existing:
-                existing.delete()
-                liked = False
-            else:
-                BlogLike.objects.create(post=post, author_hash=visitor_hash)
-                liked = True
+            like, created = BlogLike.objects.get_or_create(post=post, author_hash=visitor_hash)  # race-safe
+            if not created:
+                like.delete()
+            liked = created
 
             total_likes = BlogLike.objects.filter(post=post).count()
             BlogPost.objects.filter(pk=post.pk).update(likes_count=total_likes)
@@ -552,7 +554,8 @@ class BlogPostEngagementAPIView(APIView):
             })
 
         if action == 'comment':
-            text = (request.data.get('text') or '').strip()
+            text = request.data.get('text')
+            text = text.strip() if isinstance(text, str) else ''
             if not text or len(text) > 1000:
                 return Response(
                     {'error': 'Comment must be between 1 and 1000 characters.'},
@@ -572,7 +575,11 @@ class BlogPostEngagementAPIView(APIView):
                     status=status.HTTP_429_TOO_MANY_REQUESTS
                 )
 
-            author = request.data.get('author') or visitor_name
+            author = request.data.get('author')
+            author = author.strip() if isinstance(author, str) else ''
+            if len(author) > 100:
+                return Response({'error': 'Name must be at most 100 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+            author = author or visitor_name
             BlogComment.objects.create(
                 post=post,
                 author_name=author,

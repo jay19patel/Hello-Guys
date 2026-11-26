@@ -14,7 +14,7 @@ import httplib2
 import requests
 from django.db import transaction
 from django.utils import timezone
-from google.auth.exceptions import GoogleAuthError
+from google.auth.exceptions import GoogleAuthError, RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -48,6 +48,10 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 class GoogleError(Exception):
     """A Google call failed; the message is safe to show to staff (never contains tokens)."""
+
+
+class GoogleAuthLost(GoogleError):
+    """Google rejected the stored token (revoked or expired). The account is marked disconnected."""
 
 
 # ---- OAuth ---------------------------------------------------------------------------------
@@ -120,16 +124,26 @@ def _service(name: str, version: str):
     return build(name, version, credentials=creds, cache_discovery=False)
 
 
+def _lose_access() -> GoogleAuthLost:
+    """Forget the dead refresh token so the CRM shows "not connected" instead of failing on every call."""
+    GoogleAccount.objects.update(refresh_token_encrypted="", connected_at=None,
+                                 last_error="Google access expired or was revoked: connect again.")
+    return GoogleAuthLost("Google access expired or was revoked: connect again in CRM > Settings.")
+
+
 def _execute(request, missing_ok: bool = False) -> dict:
     try:
         return request.execute(num_retries=2) or {}
     except HttpError as exc:
         if missing_ok and exc.status_code in (404, 410):
             return {}
+        if exc.status_code == 401:
+            raise _lose_access() from None
         raise GoogleError(exc.reason or f"HTTP {exc.status_code}") from None
-    except GoogleAuthError:
-        GoogleAccount.objects.update(last_error="Access expired or was revoked")
-        raise GoogleError("Google access expired or was revoked: connect again in CRM > Settings.") from None
+    except RefreshError:  # the refresh token itself was refused (revoked, expired, client changed)
+        raise _lose_access() from None
+    except GoogleAuthError:  # e.g. TransportError: Google was unreachable, the token may be fine
+        raise GoogleError("Could not reach Google. Try again.") from None
     except (OSError, httplib2.HttpLib2Error):
         raise GoogleError("Could not reach Google. Try again.") from None
 
@@ -189,6 +203,7 @@ def sync_meeting(meeting: Meeting) -> Meeting:
 
 RSVP = {"accepted": "accepted", "declined": "declined", "tentative": "said maybe to"}
 PULL_FROM = timedelta(days=1)  # also pull meetings that ended in the last day
+MAX_EVENT_PAGES = 10  # 2,500 events in the window is far past what one calendar holds
 
 
 def _event_time(value: dict) -> datetime | None:
@@ -246,7 +261,7 @@ def _apply_event_to_meeting(meeting: Meeting, event: dict) -> tuple[list[str], b
     if start and end and (start, end) != (meeting.start_at, meeting.end_at) and end > start:
         meeting.start_at, meeting.end_at = start, end
         meeting.timezone = event["start"].get("timeZone") or meeting.timezone
-        changes.append(f"rescheduled to {timezone.localtime(start):%d %b %Y, %H:%M}")
+        changes.append(f"rescheduled to {timezone.localtime(start):%d %b %Y, %I:%M %p}")
     if event.get("summary") and event["summary"][:200] != meeting.title:
         meeting.title = event["summary"][:200]
         changes.append(f"renamed to \"{meeting.title}\"")
@@ -329,6 +344,8 @@ def pull_meetings() -> int:
     for meeting in meetings:
         try:
             changed += bool(pull_meeting(meeting, events, calendar_id))
+        except GoogleAuthLost:
+            raise  # every other meeting would fail the same way
         except GoogleError as exc:
             logger.warning("Could not pull meeting %s from Google Calendar: %s", meeting.pk, exc)
     return changed
@@ -344,15 +361,20 @@ def import_calendar_events(days_back: int = 1, days_ahead: int = 30) -> dict[str
     time_min = (now - timedelta(days=days_back)).isoformat()
     time_max = (now + timedelta(days=days_ahead)).isoformat()
 
-    payload = _execute(events_api.list(
-        calendarId=calendar_id,
-        timeMin=time_min,
-        timeMax=time_max,
-        singleEvents=True,
-        orderBy="startTime",
-        maxResults=100,
-    ))
-    items = payload.get("items", [])
+    items, page_token = [], None
+    for _ in range(MAX_EVENT_PAGES):
+        payload = _execute(events_api.list(
+            calendarId=calendar_id,
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=250,
+            **({"pageToken": page_token} if page_token else {}),
+        ))
+        items += payload.get("items", [])
+        if not (page_token := payload.get("nextPageToken")):
+            break
     existing_by_id = {
         m.google_event_id: m
         for m in Meeting.objects.select_related("customer", "opportunity").exclude(google_event_id="")
@@ -404,7 +426,7 @@ def import_calendar_events(days_back: int = 1, days_ahead: int = 30) -> dict[str
                 user=None,
                 customer=matched_customer,
                 kind=Activity.Kind.MEETING,
-                body=f"Meeting \"{meeting.title}\" synced from Google Calendar ({timezone.localtime(start):%d %b %Y, %H:%M}).",
+                body=f"Meeting \"{meeting.title}\" synced from Google Calendar ({timezone.localtime(start):%d %b %Y, %I:%M %p}).",
             )
 
     return {"created": created, "updated": updated}
@@ -466,6 +488,8 @@ def pull_files() -> int:
     for gfile in gfiles:
         try:
             item = _execute(files.get(fileId=gfile.google_id, fields=FILE_FIELDS_SYNC), missing_ok=True)
+        except GoogleAuthLost:
+            raise
         except GoogleError as exc:
             logger.warning("Could not read Drive item %s: %s", gfile.google_id, exc)
             continue

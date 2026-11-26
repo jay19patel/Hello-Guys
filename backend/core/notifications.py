@@ -30,6 +30,7 @@ from django.dispatch import Signal
 from django.utils import timezone
 
 from core.models import GlobalNotification
+from core.safety import safe_url
 
 # Fired after commit with `notification` (a GlobalNotification) or `notifications` (list).
 global_notification_created = Signal()
@@ -52,7 +53,7 @@ def notify(
         user=user,
         title=(title or "Notification")[:200],
         body=(body or "").strip(),
-        url=(url or "")[:500],
+        url=safe_url(url)[:500],
         category=(category or "system")[:40],
         level=level,
         metadata=metadata or {},
@@ -82,7 +83,7 @@ def notify_many(
             user=u,
             title=(title or "Notification")[:200],
             body=(body or "").strip(),
-            url=(url or "")[:500],
+            url=safe_url(url)[:500],
             category=(category or "system")[:40],
             level=level,
             metadata=metadata or {},

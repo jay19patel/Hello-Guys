@@ -8,11 +8,13 @@ import logging
 from collections.abc import Callable
 
 import litellm
+from django.utils import timezone
 
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.core.runtime import AgentSpec
 from hello_guy_ai.models import Document, Message, Thread
 from hello_guy_ai.services.memory import build_memory_block
+from hello_guy_ai.services.reminders import zone
 from hello_guy_ai.services.rag import Chunk, RagService
 
 logger = logging.getLogger(__name__)
@@ -52,7 +54,7 @@ class PromptBuilder:
     def build(self) -> list[dict]:
         history = self._history()
         question = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
-        system = self.spec.instructions
+        system = self.spec.instructions + self._now_note()
         if self.spec.tools:
             system += TOOL_DATA_NOTE
         if self.spec.memory_enabled:
@@ -60,6 +62,12 @@ class PromptBuilder:
         if self.spec.rag_mode == "auto" and self.spec.knowledge_base_ids:
             system += self._rag_context(history)
         return [{"role": "system", "content": system}, *history]
+
+    def _now_note(self) -> str:
+        """Today's date and the user's timezone, so "tomorrow" / "Sunday" resolve correctly without a tool call."""
+        tz = zone(self.thread.timezone)
+        now = timezone.now().astimezone(tz)
+        return f"\n\nCurrent date and time: {now:%A, %Y-%m-%d %H:%M} (timezone {tz.key})."
 
     def _history(self) -> list[dict]:
         recent = list(self.thread.messages.order_by("-id")[: ai_settings.HISTORY_LIMIT])[::-1]

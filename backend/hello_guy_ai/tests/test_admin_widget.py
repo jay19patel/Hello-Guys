@@ -25,9 +25,19 @@ def test_full_page_chat(client, user, staff):
     assert client.get("/chat/").status_code == 302  # login required
     client.force_login(user)
     html = client.get("/chat/?thread=abc").content.decode()
-    assert "hello_guy_ai/client.js" in html and "Admin ↗" not in html
+    assert "hello_guy_ai/client.js" in html and "/admin/hello_guy_ai/" not in html
+    assert "const IS_STAFF = false" in html  # "+N more tools" must not link members to the staff-only analytics page
     client.force_login(staff)
-    assert "Admin ↗" in client.get("/chat/").content.decode()
+    html = client.get("/chat/").content.decode()
+    assert "/admin/hello_guy_ai/" in html and "const IS_STAFF = true" in html
+
+
+def test_chat_needs_a_dashboard_role_or_staff(client, django_user_model):
+    nobody = django_user_model.objects.create_user("nobody", password="pass12345")
+    client.force_login(nobody)
+    assert client.get("/chat/").status_code == 403
+    assert client.get("/api/ai/assistants").status_code == 401
+    assert client.get("/api/ai/public/agent").status_code != 401  # public chat is unaffected
 
 
 @pytest.mark.parametrize("name", ["client.js", "chat-view.js", "markdown.js", "chat.css"])

@@ -1,110 +1,34 @@
 import json
 import logging
-import platform
 from datetime import timedelta
-from typing import Any
-import django
 from django.contrib import messages
-from django.contrib.auth import get_user_model
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
-from django.views.generic import ListView, TemplateView
+from django.views.generic import ListView
 
+from config.views import HubPortalView  # noqa: F401  (the single hub view, mounted at / by core.urls)
 from core import reminders as global_followups, notifications as global_notifications
 from core.models import FollowUpChannel, GlobalFollowUp
-
-from meta_connector.models import PlatformAccount, Contact, Message
-from meta_connector.services.maintenance import webhook_health
-from cms.models import (
-    InquirySubmission,
-    Project,
-    BlogPost,
-    SiteSettings,
-    Solution,
-)
+from core.safety import redirect_next, safe_url
+from meta_connector.roles import ADMIN, AGENT, VIEWER, RoleRequiredMixin, has_role, team
 
 logger = logging.getLogger(__name__)
 
 
-class HubPortalView(LoginRequiredMixin, TemplateView):
-    """
-    Root module selector hub (mounted at /).
-    Provides access to Meta Connector and CMS Studio modules with live status telemetry.
-    """
-    template_name = 'core/portal.html'
-    login_url = 'dashboard-login'
+def _to_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
-    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        context = super().get_context_data(**kwargs)
 
-        # ------------------------------------------------------------------
-        # 1. Meta Connector module metrics
-        # ------------------------------------------------------------------
-        active_accounts = PlatformAccount.objects.filter(is_active=True)
-        wa_count = active_accounts.filter(platform=PlatformAccount.PLATFORM_WHATSAPP).count()
-        ig_count = active_accounts.filter(platform=PlatformAccount.PLATFORM_INSTAGRAM).count()
-        fb_count = active_accounts.filter(platform=PlatformAccount.PLATFORM_FACEBOOK).count()
-        total_contacts = Contact.objects.count()
-        total_messages = Message.objects.count()
-        
-        health_info = None
-        try:
-            health_info = webhook_health()
-        except Exception as exc:
-            logger.warning("Could not evaluate webhook health in hub portal: %s", exc)
-
-        meta_module = {
-            'name': 'Meta Connector',
-            'tagline': 'WhatsApp & Instagram Omnichannel Automation',
-            'accounts_count': active_accounts.count(),
-            'wa_count': wa_count,
-            'ig_count': ig_count,
-            'fb_count': fb_count,
-            'contacts_count': total_contacts,
-            'messages_count': total_messages,
-            'webhook_healthy': not health_info,
-            'url': '/dashboard/',
-        }
-
-        # ------------------------------------------------------------------
-        # 2. CMS Studio module metrics
-        # ------------------------------------------------------------------
-        total_inquiries = InquirySubmission.objects.count()
-        unreplied_inquiries = InquirySubmission.objects.filter(is_replied=False).count()
-        total_projects = Project.objects.count()
-        featured_projects = Project.objects.filter(featured=True, is_active=True).count()
-        total_blogs = BlogPost.objects.count()
-        total_solutions = Solution.objects.count()
-        site_settings = SiteSettings.get_solo()
-
-        cms_module = {
-            'name': 'CMS Studio',
-            'tagline': 'Decoupled Content Engine & Client Inquiries CRM',
-            'inquiries_count': total_inquiries,
-            'unreplied_inquiries': unreplied_inquiries,
-            'projects_count': total_projects,
-            'featured_projects': featured_projects,
-            'blogs_count': total_blogs,
-            'solutions_count': total_solutions,
-            'brand_name': site_settings.brand_name,
-            'url': '/admin/cms/',
-        }
-
-        # ------------------------------------------------------------------
-        # 3. System Telemetry
-        # ------------------------------------------------------------------
-        context.update({
-            'meta_module': meta_module,
-            'cms_module': cms_module,
-            'python_version': platform.python_version(),
-            'django_version': django.__version__,
-            'page_title': 'Workspace Hub',
-        })
-        return context
+def _visible_followups(user):
+    """Admins see every reminder; everyone else only their own (assigned to or created by them)."""
+    qs = GlobalFollowUp.objects.all()
+    return qs if has_role(user, ADMIN) else qs.filter(Q(assigned_to=user) | Q(created_by=user))
 
 
 class _JsonLoginRequiredMixin:
@@ -123,7 +47,7 @@ class NotificationListView(_JsonLoginRequiredMixin, View):
         global_followups.notify_due_follow_ups(request.user)
         unread_only = request.GET.get("unread_only") in ("1", "true", "yes")
         category = request.GET.get("category") or None
-        limit = int(request.GET.get("limit") or 30)
+        limit = _to_int(request.GET.get("limit"), 30)
         rows = global_notifications.notifications_for(
             request.user, unread_only=unread_only, category=category, limit=limit
         )
@@ -132,7 +56,7 @@ class NotificationListView(_JsonLoginRequiredMixin, View):
                 "id": n.pk,
                 "title": n.title,
                 "body": n.body,
-                "url": n.url,
+                "url": safe_url(n.url),
                 "category": n.category,
                 "level": n.level,
                 "is_read": n.is_read,
@@ -157,7 +81,7 @@ class NotificationListView(_JsonLoginRequiredMixin, View):
                 "due_at": fu.due_at.isoformat(),
                 "is_overdue": fu.due_at < now,
                 "related_label": fu.related_label,
-                "related_url": fu.related_url or "/reminders/",
+                "related_url": safe_url(fu.related_url, "/reminders/"),
             }
             for fu in fu_qs[:12]
         ]
@@ -195,8 +119,8 @@ class NotificationMarkReadView(_JsonLoginRequiredMixin, View):
         except (ValueError, UnicodeDecodeError):
             payload = {}
         ids = payload.get("ids")
-        if ids is not None and not isinstance(ids, list):
-            return JsonResponse({"error": "ids must be a list."}, status=400)
+        if ids is not None and not (isinstance(ids, list) and all(isinstance(i, int) for i in ids)):
+            return JsonResponse({"error": "ids must be a list of integers."}, status=400)
         updated = global_notifications.mark_read(request.user, ids=ids)
         return JsonResponse({
             "count": updated,
@@ -204,13 +128,13 @@ class NotificationMarkReadView(_JsonLoginRequiredMixin, View):
         })
 
 
-class GlobalFollowUpListView(LoginRequiredMixin, ListView):
+class GlobalFollowUpListView(RoleRequiredMixin, ListView):
     """Global Follow-ups hub: any topic, any custom channel, integrated with global notifications."""
 
     template_name = "core/reminders.html"
     context_object_name = "follow_ups"
     paginate_by = 25
-    login_url = "dashboard-login"
+    role = VIEWER
 
     def get_queryset(self):
         global_followups.ensure_default_channels()
@@ -219,7 +143,7 @@ class GlobalFollowUpListView(LoginRequiredMixin, ListView):
         q = self.request.GET.get("q", "").strip()
         now = timezone.now()
 
-        qs = GlobalFollowUp.objects.select_related("channel", "assigned_to", "created_by")
+        qs = _visible_followups(self.request.user).select_related("channel", "assigned_to", "created_by")
         if status == "overdue":
             qs = qs.filter(status=GlobalFollowUp.Status.PENDING, due_at__lt=now)
         elif status in GlobalFollowUp.Status.values:
@@ -238,12 +162,10 @@ class GlobalFollowUpListView(LoginRequiredMixin, ListView):
         today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         default_due = (now + timedelta(hours=2)).replace(minute=0, second=0, microsecond=0)
-        User = get_user_model()
-
         # Analytics: 14-day trend (scheduled vs completed)
         days_range = 14
         start_day = timezone.localtime(now).date() - timedelta(days=days_range - 1)
-        all_fu = GlobalFollowUp.objects.all()
+        all_fu = _visible_followups(self.request.user)
         scheduled_by_day = {
             row["created_at__date"]: row["c"]
             for row in all_fu.filter(created_at__date__gte=start_day)
@@ -271,12 +193,15 @@ class GlobalFollowUpListView(LoginRequiredMixin, ListView):
         cancelled_count = all_fu.filter(status=GlobalFollowUp.Status.CANCELLED).count()
         completion_rate = round((done_count / total_all) * 100) if total_all else None
 
+        mine = Q() if has_role(self.request.user, ADMIN) else (
+            Q(follow_ups__assigned_to=self.request.user) | Q(follow_ups__created_by=self.request.user)
+        )
         channel_rows = (
             FollowUpChannel.objects.filter(is_active=True)
             .annotate(
-                total=Count("follow_ups"),
-                done_cnt=Count("follow_ups", filter=Q(follow_ups__status=GlobalFollowUp.Status.DONE)),
-                pending_cnt=Count("follow_ups", filter=Q(follow_ups__status=GlobalFollowUp.Status.PENDING)),
+                total=Count("follow_ups", filter=mine),
+                done_cnt=Count("follow_ups", filter=mine & Q(follow_ups__status=GlobalFollowUp.Status.DONE)),
+                pending_cnt=Count("follow_ups", filter=mine & Q(follow_ups__status=GlobalFollowUp.Status.PENDING)),
             )
             .order_by("-total", "name")
         )
@@ -311,7 +236,7 @@ class GlobalFollowUpListView(LoginRequiredMixin, ListView):
             q=self.request.GET.get("q", "").strip(),
             channels=FollowUpChannel.objects.filter(is_active=True),
             priorities=GlobalFollowUp.Priority.choices,
-            team_users=User.objects.filter(is_active=True).order_by("username"),
+            team_users=team().order_by("username"),
             default_due=timezone.localtime(default_due).strftime("%Y-%m-%dT%H:%M"),
             stats={
                 "pending": pending_count,
@@ -336,15 +261,15 @@ class GlobalFollowUpListView(LoginRequiredMixin, ListView):
         )
 
 
-class GlobalFollowUpCreateView(LoginRequiredMixin, View):
+class GlobalFollowUpCreateView(RoleRequiredMixin, View):
     http_method_names = ["post"]
-    login_url = "dashboard-login"
+    role = edit_role = AGENT
 
     def post(self, request):
         title = request.POST.get("title", "").strip()
         if not title:
             messages.error(request, "Give your reminder a title.")
-            return redirect(request.POST.get("next") or "core:reminders")
+            return redirect_next(request, "core:reminders")
 
         due_raw = request.POST.get("due_at", "").strip()
         try:
@@ -352,7 +277,8 @@ class GlobalFollowUpCreateView(LoginRequiredMixin, View):
             if timezone.is_naive(due_at):
                 due_at = timezone.make_aware(due_at, timezone.get_current_timezone())
         except ValueError:
-            due_at = timezone.now() + timedelta(days=1)
+            messages.error(request, "Pick a valid due date and time.")
+            return redirect_next(request, "core:reminders")
 
         new_channel_name = request.POST.get("new_channel_name", "").strip()
         if new_channel_name:
@@ -365,28 +291,27 @@ class GlobalFollowUpCreateView(LoginRequiredMixin, View):
         else:
             channel = request.POST.get("channel") or None
 
-        assigned_id = request.POST.get("assigned_to")
-        User = get_user_model()
-        assigned_to = User.objects.filter(pk=assigned_id).first() if assigned_id else request.user
+        assigned_id = _to_int(request.POST.get("assigned_to"), 0)
+        assigned_to = (team().filter(pk=assigned_id).first() if assigned_id else None) or request.user
 
         global_followups.schedule_follow_up(
             title=title,
             due_at=due_at,
             channel=channel,
             note=request.POST.get("note", "").strip(),
-            priority=request.POST.get("priority", GlobalFollowUp.Priority.NORMAL),
+            priority=request.POST.get("priority", GlobalFollowUp.Priority.NORMAL),  # invalid -> normal in schedule_follow_up
             assigned_to=assigned_to,
             created_by=request.user,
             related_label=request.POST.get("related_label", "").strip(),
             related_url=request.POST.get("related_url", "").strip(),
         )
         messages.success(request, f"Reminder \"{title}\" added.")
-        return redirect(request.POST.get("next") or "core:reminders")
+        return redirect_next(request, "core:reminders")
 
 
-class FollowUpChannelCreateView(LoginRequiredMixin, View):
+class FollowUpChannelCreateView(RoleRequiredMixin, View):
     http_method_names = ["post"]
-    login_url = "dashboard-login"
+    role = edit_role = AGENT
 
     def post(self, request):
         if request.content_type == "application/json":
@@ -415,29 +340,29 @@ class FollowUpChannelCreateView(LoginRequiredMixin, View):
         return redirect("core:follow-ups")
 
 
-class GlobalFollowUpActionView(LoginRequiredMixin, View):
+class GlobalFollowUpActionView(RoleRequiredMixin, View):
     http_method_names = ["post"]
-    login_url = "dashboard-login"
+    role = edit_role = AGENT
 
     def post(self, request, pk: int):
-        fu = get_object_or_404(GlobalFollowUp, pk=pk)
+        fu = get_object_or_404(_visible_followups(request.user), pk=pk)
         if request.content_type == "application/json":
             try:
                 data = json.loads(request.body.decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
                 data = {}
             action = data.get("action", "")
-            hours = int(data.get("hours", 24) or 24)
+            hours = _to_int(data.get("hours"), 24)
         else:
             action = request.POST.get("action", "")
-            hours = int(request.POST.get("hours", 24) or 24)
+            hours = _to_int(request.POST.get("hours"), 24)
 
         if action == "done":
             global_followups.complete_follow_up(fu)
             msg = "Reminder marked done."
         elif action == "snooze":
             global_followups.snooze_follow_up(fu, hours=hours)
-            msg = "Reminder snoozed +24h."
+            msg = f"Reminder snoozed +{max(1, min(hours, 24 * 30))}h."
         elif action == "cancel":
             global_followups.cancel_follow_up(fu)
             msg = "Reminder cancelled."
@@ -449,5 +374,5 @@ class GlobalFollowUpActionView(LoginRequiredMixin, View):
         if request.content_type == "application/json" or request.headers.get("Accept") == "application/json":
             return JsonResponse({"ok": True, "status": fu.status, "due_at": fu.due_at.isoformat()})
         messages.success(request, msg)
-        return redirect(request.POST.get("next") or "core:reminders")
+        return redirect_next(request, "core:reminders")
 

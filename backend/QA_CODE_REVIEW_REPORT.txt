@@ -1,0 +1,1211 @@
+================================================================================
+              HELLO-GUYS BACKEND — QA, TESTING & CODE REVIEW REPORT
+================================================================================
+
+Project      : Hello-Guys Backend (/Users/jaypatel/Desktop/Development/njtechstudio.in/Hello-Guys/backend/)
+Assessment   : Report-Only, 5-Phase QA, Testing & Senior Code Review
+Date (UTC)   : 2026-11-26
+Scope        : core, crm, pms, meta_connector, cms, hello_guy_ai
+               + Cross-Cutting (config/, templates/, AST code quality, voice_agent/)
+Methodology  : Local CLI checks (manage.py check / check --deploy), pytest execution,
+               static code/template inspection, and AST quality sweep (no live
+               external services or live browser exercised)
+Repo State   : Strictly read-only (zero modifications to tracked source, config,
+               or test files; verified via git status & git diff --stat)
+
+
+================================================================================
+1. EXECUTIVE SUMMARY
+================================================================================
+
+1.1 ASSESSMENT SCOPE & METHODOLOGY
+----------------------------------
+This report synthesizes a 5-phase, report-only quality assurance, testing, and
+senior code review of the Hello-Guys Django 5.1.15 backend across its six core
+modules (`core`, `crm`, `pms`, `meta_connector`, `cms`, `hello_guy_ai`), shared
+configuration (`config/`), global UI templates (`templates/`), and the unmounted
+`voice_agent/` app:
+
+  - Phase 1 (Baseline & Automated Tests): Executed `manage.py check`,
+    `manage.py check --deploy`, all 7 target pytest suites, and full-repo
+    test discovery without mutating `.venv`, `pyproject.toml`, or any test file.
+  - Phase 2 (UI/UX & Frontend): Audited `templates/base.html`, Display popover,
+    Floating AI Chat widget, Global Notification & Reminders bell, `/reminders/`
+    14-day SVG chart, `g:i A` AM/PM formatting, CRM Meetings/Transcripts/Inbox,
+    PMS `pmsTree` Alpine bulk builder, `/meta/` & `/meta/approvals/`, `/chat/`,
+    `/ai/analytics/`, Dark/Light mode tokens, and mobile responsiveness.
+  - Phase 3 (Backend, DB & Permissions): Audited `Viewer`/`Agent`/`Admin` RBAC
+    scoping, `403`/`404` isolation, `pms.services.create_tree` atomicity &
+    `RestrictedError`, N+1 queries, Google Calendar/Drive sync (`crm/google.py`),
+    and the CMS -> CRM lead pipeline (`InquiryCreateAPIView` and
+    `InquirySubmissionAdmin` removal verified).
+  - Phase 4 (AI/LLM & Agentic): Audited `WebsiteAssistant` (`create_inquiry` &
+    `create_global_reminder`), `core/ai_tools.py`, `LLMModel` provider prefix
+    validation (`litellm.get_llm_provider`), RAG/Milvus isolation, Dramatiq &
+    scheduler reliability, prompt injection hardening, and `/meta/approvals/` HITL.
+  - Phase 5 (Security & Code Quality): Audited secrets & `FIELD_ENCRYPTION_KEY`,
+    SQLi, XSS, CSRF, Open Redirects, Meta webhook signature verification, plus
+    an AST sweep across 235 non-migration Python files for type hints,
+    docstrings, error handling, `print()`, mutable defaults, and layer separation.
+
+1.2 KEY METRICS SUMMARY
+-----------------------
+  - Repository Non-Modification : CONFIRMED CLEAN (0 modified tracked files)
+  - `manage.py check`           : PASS — 0 issues (0 silenced)
+  - `manage.py check --deploy`  : FAIL — 1 ERROR (`hello_guy_ai.E001`),
+                                  7 WARNINGs (`hello_guy_ai.W001`, `security.W004/
+                                  W008/W009/W012/W016/W018`)
+  - Default `../.venv/bin/python -m pytest` : BROKEN — `No module named pytest`
+                                  (missing `pytest`, `pytest-django`, `fakeredis`,
+                                  `milvus-lite`, and `[tool.pytest.ini_options]`)
+  - 7 Target Pytest Suites (via `uv run` + `DJANGO_SETTINGS_MODULE=config.settings.test`):
+                                  48 PASSED, 0 FAILED, 0 ERRORS, 0 SKIPPED
+                                  (7 warnings in 1.74s combined)
+  - Full-Repo Pytest Discovery  : 236 PASSED, 8 FAILED, 3 ERRORS (11 warnings)
+    (`--ignore=core/test_meta_ai.py`)
+  - Global Collection Blocker   : `core/test_meta_ai.py` crashes collection with
+                                  `ValueError: An actor named 'reply_with_ai' is
+                                  already registered.`
+  - Uncollected `tests.py`      : 3 broken files (`core/tests.py`, `config/tests.py`,
+                                  `voice_agent/tests.py`)
+
+1.3 SEVERITY SUMMARY TABLE
+--------------------------
+  +------------+-------+--------------------------------------------------------+
+  | Severity   | Count | Key Highlights                                         |
+  +------------+-------+--------------------------------------------------------+
+  | Critical   |     4 | Stored XSS (`related_url`), Open Redirects (`next`),   |
+  |            |       | Public `WebsiteAssistant` reminder spam/DB pollution,  |
+  |            |       | Broken `/` Hub Portal (`crm_module` missing/no RBAC)   |
+  +------------+-------+--------------------------------------------------------+
+  | High       |    12 | `core` & `/meta/approvals/` RBAC bypasses, HITL double |
+  |            |       | send race, CRM M2M `services` data loss, PMS hours     |
+  |            |       | M2M fan-out, Floating Chat `paused` hang, CMS blog     |
+  |            |       | engagement throttling/race, `/ai/analytics/` 404,      |
+  |            |       | missing Meeting Proposed Times UI, weak prod key       |
+  |            |       | derivation, Bell error swallowing, broken pytest env   |
+  +------------+-------+--------------------------------------------------------+
+  | Medium     |    21 | Timezone/validation gaps in AI & forms, stale CMS      |
+  |            |       | inquiry tools, N+1 queries, unguarded `int()` 500s,    |
+  |            |       | GET-time external syncs, silent `except: pass`, fat    |
+  |            |       | views, `/chat/` mobile & accessibility gaps, 11+3      |
+  |            |       | broken/stale tests outside baseline                    |
+  +------------+-------+--------------------------------------------------------+
+  | Low        |    13 | Low CBV type/docstring coverage, oversized funcs,      |
+  |            |       | `SendMessageSerializer` gaps, `g:i A` minor JS nits,   |
+  |            |       | MD5 ETag, dead files, mutable `TERMINAL_EVENTS` set    |
+  +------------+-------+--------------------------------------------------------+
+  | TOTAL      |    50 | Deduplicated, verified across all 6 modules + shared   |
+  +------------+-------+--------------------------------------------------------+
+
+1.4 TOP BLOCKERS & PRODUCTION READINESS VERDICT
+-----------------------------------------------
+VERDICT: NOT READY FOR PRODUCTION DEPLOYMENT WITHOUT REMEDIATION.
+
+While core architectural foundations (Django 5.1.15, Fernet secret encryption
+scaffolding, parameterized ORM/SQL usage, `PromptBuilder` untrusted-data framing,
+`pms.services.create_tree` atomicity, and verified removal of `InquiryCreateAPIView`
+and `InquirySubmissionAdmin`) are strong, the codebase has 4 Critical security/
+functional defects and 12 High defects that block production release:
+
+  1. Security blockers: Stored XSS via `related_url` (`C-01`), 10 unvalidated
+     `next` Open Redirects (`C-02`), public-visitor notification/channel spam
+     via `WebsiteAssistant -> create_global_reminder` (`C-03`), unthrottled +
+     spoofable `BlogPostEngagementAPIView` (`H-07`), and weak SHA-256 fallback
+     for malformed `FIELD_ENCRYPTION_KEY` in production (`H-10`).
+  2. Functional & RBAC blockers: Broken `/` Hub Portal (`C-04`), unauthenticated-
+     tier RBAC bypass on `core` reminders (`H-01`), `VIEWER` access to
+     `/meta/approvals/` (`H-02`) + double-send race (`H-03`), CRM M2M `services`
+     silent data loss (`H-04`), PMS task hours multiplied by member count
+     (`H-05`), and Floating AI Chat freezing on tool approvals (`H-06`).
+  3. Test & CI blockers: `../.venv/bin/python -m pytest` fails immediately and
+     full-repo discovery crashes on `core/test_meta_ai.py` (`H-12`).
+
+
+================================================================================
+2. TEST SUITE RESULTS
+================================================================================
+
+2.1 ENVIRONMENT & RUNNER FINDINGS
+---------------------------------
+  - Python / Django in `.venv`: Python 3.11.13, Django 5.1.15.
+  - `../.venv/bin/python -m pytest pms/tests/ -v --tb=short`
+      Exit Code: 1
+      Output   : `.../backend/../.venv/bin/python: No module named pytest`
+  - `backend/pyproject.toml` (lines 1-45) & `.venv` (`uv pip list`):
+      `pytest`, `pytest-django`, `fakeredis`, and `milvus-lite` are absent from
+      `.venv` and `pyproject.toml` (`milvus-lite>=3.0.0` is listed only in
+      `backend/requirements.txt`).
+  - Missing `[tool.pytest.ini_options]` in `pyproject.toml`:
+      `backend/config/settings/test.py:1` states:
+      `"""Test settings: pytest picks these up via [tool.pytest.ini_options] in pyproject.toml."""`
+      Because that section is absent, running pytest without explicitly setting
+      `DJANGO_SETTINGS_MODULE=config.settings.test` fails collection (Exit 2)
+      with `ImproperlyConfigured: Requested setting AUTH_USER_MODEL, but settings
+      are not configured.`
+  - `backend/run.sh` (61 lines):
+      Starts Redis, runs `migrate --noinput`, `setup_website_bot`, `dramatiq
+      hello_guy_ai.tasks.worker --processes 1 --threads 4`, `hello_guy_scheduler`,
+      `runserver`, and `crm_google_sync`. Contains no test runner invocation.
+  - Non-mutating execution method used for all Phase 1 runs:
+      `DJANGO_SETTINGS_MODULE=config.settings.test uv run --no-sync --with pytest --with pytest-django --with fakeredis -- python -m pytest <target> -v --tb=short`
+      (Layered `pytest==9.2.0`, `pytest-django==4.14.0`, `fakeredis==2.41.0`
+      without modifying `.venv` or repository files. `milvus-lite` was
+      deliberately omitted so RAG test failures reflect actual `.venv` state.)
+
+2.2 DJANGO SYSTEM CHECK OUTPUTS
+-------------------------------
+Command 1: `../.venv/bin/python manage.py check` (Exit Code: 0)
+  System check identified no issues (0 silenced).
+
+Command 2: `../.venv/bin/python manage.py check --deploy` (Exit Code: 1)
+  SystemCheckError: System check identified some issues:
+
+  ERRORS:
+  ?: (hello_guy_ai.E001) FIELD_ENCRYPTION_KEY is not set, so stored LLM API keys
+     are encrypted with a public development key.
+     HINT: Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+  WARNINGS:
+  ?: (hello_guy_ai.W001) CACHES['default'] is LocMemCache: rate limits and
+     trigger updates are per process.
+     HINT: Use a shared cache, e.g. django.core.cache.backends.redis.RedisCache.
+  ?: (security.W004) SECURE_HSTS_SECONDS is not set.
+  ?: (security.W008) SECURE_SSL_REDIRECT is not set to True.
+  ?: (security.W009) SECRET_KEY has <50 chars, <5 unique chars, or 'django-insecure-' prefix.
+  ?: (security.W012) SESSION_COOKIE_SECURE is not set to True.
+  ?: (security.W016) CSRF_COOKIE_SECURE is not set to True.
+  ?: (security.W018) DEBUG should not be True in deployment.
+
+  System check identified 8 issues (0 silenced).
+
+2.3 SPECIFIED PHASE 1 PYTEST TARGETS (INDIVIDUAL & COMBINED)
+------------------------------------------------------------
+Command template (in `/Users/jaypatel/Desktop/Development/njtechstudio.in/Hello-Guys/backend/`):
+  `DJANGO_SETTINGS_MODULE=config.settings.test uv run --no-sync --with pytest --with pytest-django --with fakeredis -- python -m pytest <target> -v --tb=short`
+
+  +---+--------------------------------------+--------+--------+--------+---------+----------+----------+-----------+
+  | # | Target                               | Passed | Failed | Errors | Skipped | Warnings | Duration | Exit Code |
+  +---+--------------------------------------+--------+--------+--------+---------+----------+----------+-----------+
+  | 1 | `pms/tests/`                         |      7 |      0 |      0 |       0 |        2 |    1.12s |         0 |
+  | 2 | `core/test_notifications.py`         |      2 |      0 |      0 |       0 |        1 |    1.03s |         0 |
+  | 3 | `crm/tests/test_meetings.py`         |      4 |      0 |      0 |       0 |        1 |    1.31s |         0 |
+  | 4 | `crm/tests/test_google.py`           |     11 |      0 |      0 |       0 |        1 |    1.06s |         0 |
+  | 5 | `crm/tests/test_views.py`            |      3 |      0 |      0 |       0 |        2 |    1.12s |         0 |
+  | 6 | `cms/tests/test_cms_api.py`          |     12 |      0 |      0 |       0 |        2 |    1.02s |         0 |
+  | 7 | `hello_guy_ai/tests/test_reminders.py`|     9 |      0 |      0 |       0 |        4 |    1.12s |         0 |
+  +---+--------------------------------------+--------+--------+--------+---------+----------+----------+-----------+
+  |   | COMBINED RUN (all 7 targets)         |     48 |      0 |      0 |       0 |        7 |    1.74s |         0 |
+  +---+--------------------------------------+--------+--------+--------+---------+----------+----------+-----------+
+
+Warnings observed across the 7 targets:
+  - `cms/models/testimonial.py:6`: `PytestCollectionWarning` — cannot collect
+    test class `Testimonial` (name begins with `Test` and has `__init__`).
+  - `pms/tests/test_views.py::test_pages_render_for_admin_and_scoping_for_members`:
+    `UnorderedObjectListWarning` on `ProjectQuerySet` pagination.
+  - `crm/tests/test_views.py::test_every_page_renders_for_admin`:
+    `UnorderedObjectListWarning` on `Customer` `QuerySet` pagination.
+  - `django/db/models/fields/__init__.py:1142`: `RemovedInDjango60Warning`
+    (`FORMS_URLFIELD_ASSUME_HTTPS`).
+  - `pydantic/_internal/_generate_schema.py:1574` (3 warnings in
+    `test_reminders.py`): `ReadOnly` qualifier on `ChatCompletionThinkingBlock`,
+    `ChatCompletionRedactedThinkingBlock`, `ChatCompletionReasoningItem`.
+
+2.4 FULL-REPOSITORY PYTEST DISCOVERY & BROKEN TEST FILES
+--------------------------------------------------------
+1. Full Collection (`pytest --collect-only -q`):
+   - Collected 247 tests before crashing with Exit Code 2 on `core/test_meta_ai.py`.
+   - `core/test_meta_ai.py:9` imports `from core import meta_ai as ai_reply`.
+   - `core/meta_ai.py:50` registers `@dramatiq.actor` named `reply_with_ai`,
+     raising `ValueError: An actor named 'reply_with_ai' is already registered.`
+     (conflicts with `meta_connector/tasks.py` / `ai_reply.py`).
+
+2. Full Suite Excluding Blocker (`pytest --ignore=core/test_meta_ai.py -v --tb=short`):
+   - Result: **236 passed, 8 failed, 3 errors, 11 warnings in 3.14s** (Exit Code 1).
+   - Detailed Failure & Error Breakdown (11 items):
+     1. `cms/tests/test_ai_public.py:42` (`test_one_thread_per_visitor_ip`):
+        FAILED (`AssertionError`) — expects identical `thread_id` for same IP,
+        but `api/public.py:33-42` intentionally returns a fresh `uuid4().hex`.
+     2. `crm/tests/test_services.py:32` (`test_website_form_creates_customer_and_opportunity_and_alerts_the_team`):
+        FAILED (`assert 404 == 201`) — tests removed CMS inquiry POST endpoint.
+     3. `crm/tests/test_services.py:60` (`test_ai_opportunity_from_a_whatsapp_chat_links_contact_thread_and_service`):
+        FAILED (`JSONDecodeError`) — tool returned plain-text error string.
+     4. `crm/tests/test_services.py:77` (`test_failed_create_opportunity_can_be_retried_but_a_saved_one_cannot`):
+        FAILED (`AssertionError`) — returned permission error instead of `"reference"`.
+     5. `hello_guy_ai/tests/test_admin_widget.py:30` (`test_full_page_chat`):
+        FAILED (`AssertionError: assert 'Admin ↗' in ...`) — link absent from `/chat/`.
+     6. `hello_guy_ai/tests/test_rag.py:103` (`test_each_embedding_model_gets_its_own_collection_sized_by_its_vectors`):
+        FAILED (`ConnectionConfigException`) — `No module named 'milvus_lite'`.
+     7-9. `hello_guy_ai/tests/test_rag.py:17` (`test_ingest_search_scoped_by_knowledge_base`,
+        `test_rejects_unsupported_file`, `test_reopened_store_loads_released_collection`):
+        3 ERRORS at `service` fixture setup (`No module named 'milvus_lite'`).
+     10. `meta_connector/tests/test_insights.py:61` (`test_old_insights_url_redirects_to_overview_with_range`):
+        FAILED (`AssertionError: 404 != 302`) — tests stale `/dashboard/insights/` (moved to `/meta/`).
+     11. `meta_connector/tests/test_roles_and_reliability.py:74` (`test_no_role_and_anonymous`):
+        FAILED (`AssertionError: '/meta/login/?next=%2Fmeta%2F' != '/meta/login/?next=%2Fdashboard%2F'`).
+
+3. Uncollected `tests.py` Files (ignored by pytest default `test_*.py` pattern):
+   - `backend/core/tests.py` (2 tests): fails with `NoReverseMatch: Reverse for
+     'hub-portal' not found` and imports deprecated `cms.models.InquirySubmission`.
+   - `backend/config/tests.py` (2 tests): fails `NoReverseMatch` (`'hub-portal'`)
+     under pytest; fails `No module named 'pytest'` under `manage.py test`.
+   - `backend/voice_agent/tests.py` (3 tests): fails `manage.py test` with
+     `RuntimeError: Model class voice_agent.models.VoiceBotSession doesn't declare
+     an explicit app_label and isn't in an application in INSTALLED_APPS.`
+
+
+================================================================================
+3. MODULE-BY-MODULE QA MATRIX
+================================================================================
+
+Status Legend:
+  PASS    = Meets checklist criteria in inspected code/templates/tests
+  PARTIAL = Core functionality works, but notable defects or gaps exist
+  FAIL    = Broken behavior, security vulnerability, or missing critical guard
+  INFO    = Observational metric / structural note
+
+--------------------------------------------------------------------------------
+3.1 MODULE: `core` (`/`, `/notifications/`, `/reminders/`, `/follow-ups/`)
+--------------------------------------------------------------------------------
+  Phase     | Checklist Area                          | Status  | Verified Evidence (`file:line` & Explanation)
+  ----------+-----------------------------------------+---------+---------------------------------------------------------------------
+  Phase 2   | Hub Portal (`/`)                        | FAIL    | `config/urls.py:49` mounts `core.urls` at `/`, shadowing `config/views.py:17-43`. `core/views.py:33-107` omits `crm_module` expected by `templates/portal.html:127-178` (included by `core/portal.html:1`), counts deprecated `InquirySubmission`, and breaks `hub-portal` tests.
+  Phase 2   | `/reminders/` UI & 14-day SVG chart     | PARTIAL | `templates/core/reminders.html:87-100,350-401` renders a responsive resize-aware 14-day SVG trend chart, KPI strip, and filters. However, `<svg aria-hidden="true">` lacks `role="img"`/table fallback, `viewBox`, and tooltips.
+  Phase 2   | Global Notification & Reminders bell    | PARTIAL | `templates/base.html:108-203,351-464` implements 45s polling, Notifications/Reminders tabs, +24h snooze, and Done. Fails to catch fetch errors (`load()` shows "You're all caught up" on 500), flashes empty state while loading, and binds unsanitized `item.url`/`fu.related_url`.
+  Phase 2   | AM/PM `g:i A` time formatting           | PASS    | `templates/core/reminders.html:265,289,302,320` uses `g:i A`; `core/reminders.py:114` uses `%I:%M %p`.
+  Phase 2   | Dark/Light mode & responsiveness        | PARTIAL | `_theme_head.html:2-92` & `base.html:38-68,309-334` cleanly handle theme/density. `reminders.html:5-26` sidebar omits `Projects` & `AI Analytics` links and uses `bg-slate-400`/hex colors.
+  Phase 3   | RBAC (`Viewer`/`Agent`/`Admin`) & scope | FAIL    | `HubPortalView` (`core/views.py:33`), `GlobalFollowUpListView` (`207`), `GlobalFollowUpCreateView` (`339`), `FollowUpChannelCreateView` (`387`), and `GlobalFollowUpActionView` (`418`) use `LoginRequiredMixin` only (no `RoleRequiredMixin`). Action view lacks ownership/assignee check; `core/views.py:314` leaks all active usernames.
+  Phase 3   | N+1 queries & transaction atomicity     | PARTIAL | `GlobalFollowUpListView` uses `select_related("channel", "assigned_to", "created_by")` (`core/views.py:222`); `schedule_follow_up` is `@transaction.atomic` (`core/reminders.py:75`). `HubPortalView` runs 13 separate queries (`47-82`); `notify_due_follow_ups` (`147-176`) runs non-atomic check-then-save on GET polls.
+  Phase 4   | `core/ai_tools.py` (`create_global_reminder`) | FAIL | `core/ai_tools.py:15-66` ignores `ctx.timezone`, silently defaults invalid `due_at` to `+24h` instead of `ToolError`, accepts past dates, auto-creates `FollowUpChannel`, and exposes staff bell/DB to anonymous `WebsiteAssistant` visitors (`cms/ai_assistants.py:140`).
+  Phase 5   | Security (XSS, Open Redirect, Input)    | FAIL    | Stored XSS via raw `related_url` (`core/views.py:381`, `reminders.html:314`, `base.html:150,184`); Open Redirect via unvalidated `next` (`core/views.py:347,384,452`); unhandled `ValueError` (HTTP 500) on non-integer `limit`/`hours`/`assigned_to` (`126,370,430,433`).
+  Phase 5   | Code quality (typing, docs, logging)    | PARTIAL | 0 `print()`, 0 bare `except: pass`. `notifications.py` & `reminders.py` well-typed (core AST: 64% typed, 46% pub docstrings, 27% class docstrings). `core/views.py` lacks type hints, computes 101L analytics in `get_context_data` (`236-336`), and `core/meta_ai.py` is dead code breaking pytest collection.
+
+--------------------------------------------------------------------------------
+3.2 MODULE: `crm` (`/crm/`)
+--------------------------------------------------------------------------------
+  Phase     | Checklist Area                          | Status  | Verified Evidence (`file:line` & Explanation)
+  ----------+-----------------------------------------+---------+---------------------------------------------------------------------
+  Phase 2   | Meetings & Transcripts UI               | PARTIAL | `templates/crm/meetings.html:50-292` has KPI tabs, quick-schedule modal, RSVP pills, Meet links, and transcripts table. `templates/crm/meeting_detail.html:1-358` completely omits UI for `pending_proposals` (`propose-time`/`resolve-proposal`) despite backend support (`crm/views.py:984,1058-1082`).
+  Phase 2   | Live Chat UI (`/crm/inbox/`)            | PASS    | `templates/crm/inbox.html:9-42`, `inbox_thread.html:14-126`, `_transcript.html:1-11` provide Waiting/With-the-team/Mine/All tabs, 3s polling, take-over/release, and channel badges.
+  Phase 2   | CRM Settings UI (`/crm/settings/`)      | PASS    | `templates/crm/settings.html:9-56` provides Google OAuth setup steps, redirect URI copy button, encrypted client secret indicator, and connect/disconnect controls.
+  Phase 2   | AM/PM `g:i A` time formatting           | PARTIAL | Django templates use `g:i A` (`meetings.html:136,207`, `meeting_detail.html:21,229`, `customer_detail.html:58,161,244`, `follow_ups.html:63`, `opportunity_detail.html:65`, `overview.html:170`, `settings.html:18`, `_activities.html:42`, `_transcript.html:5`). `inbox_thread.html:81` JS lacks `hour12: true`; backend strings in `crm/services.py:201`, `meetings.py:125`, `google.py:249,407`, `views.py:942` use `%H:%M`.
+  Phase 2   | Dark/Light mode & responsiveness        | PARTIAL | Theme tokens used throughout (`_theme_head.html:60-93`); responsive `sm:`/`lg:` grids and `overflow-x-auto`. Minor: `overview.html:274-276` SVG uses hardcoded hex and lacks `viewBox`/screen-reader fallback; `overview.html:148` bar denominator omits `LOST`/older `WON`.
+  Phase 3   | RBAC (`Viewer`/`Agent`/`Admin`) & scope | PASS    | `CRMView` inherits `RoleRequiredMixin` (`crm/views.py:44`): `VIEWER` reads, `AGENT` writes, `ADMIN` required via `self.require(ADMIN)` for deletes (`362,505,528,1120,1126`) and Google OAuth settings/connect/callback (`647,677,693`).
+  Phase 3   | N+1 queries & DB efficiency             | PARTIAL | `OpportunityListView` (`245`), `CustomerListView` (`377`), `MeetingDetailView` (`976`) prefetch cleanly. `OverviewView` (`172-196`) runs ~50 per-source/per-user `COUNT(*)` queries and mixes DB UTC `__date` with local date; `MeetingListView` (`832,853`) loads all scheduled meetings into Python twice; `import_calendar_events` (`google.py:378-383`) & `pull_files` (`466-468`) run N+1 queries/HTTP calls.
+  Phase 3   | Google Calendar & Drive sync            | PARTIAL | PKCE + signed nonce state (`max_age=600`, `crm/views.py:680-708`), `select_for_update()` folder dedup (`google.py:424-435`), `last_synced_at` guard (`306`). Gaps: no `nextPageToken` pagination (`353`); `MeetingListView.get` syncs in GET and swallows `GoogleError` (`807-812`); `MeetingForm` excludes closed opportunities (`forms.py:108`) and ignores `meeting.timezone` (`94,104-105`).
+  Phase 3   | Data integrity (`OpportunityDetailView`)| FAIL    | `OpportunityDetailView.post_update` (`crm/views.py:345-347`) calls `form.save(commit=False)` then `opp.save()` without `form.save_m2m()`, silently dropping M2M `services` edits.
+  Phase 5   | Security (Secrets, Drive, SQLi, Redir)  | PARTIAL | `GoogleAccount` encrypts secrets (`crm/models.py:378-392`); Drive `share` restricts roles (`google.py:45,517`); raw SQL at `crm/views.py:1138` is parameterized. **Fail:** Open Redirects via unvalidated `next` (`295,302,773,782,795,956-969`); `MeetingTranscriptAPIView` (`1147-1188`) relies on session+CSRF rather than DRF token auth.
+  Phase 5   | Code quality (typing, docs, errors)     | PARTIAL | 0 `print()`, 0 mutable defaults; `services.py` & `meetings.py` well-structured. `except Exception: pass` in `crm/services.py:106,160,218` and `crm/views.py:811`; unguarded `int()`/`pk` 500s (`506,523,595,750,791,1103,1121,1177`); AST: 35% typed, 27% pub docstrings, 9 funcs >40L.
+
+--------------------------------------------------------------------------------
+3.3 MODULE: `pms` (`/pms/`, `/pms/my-tasks/`)
+--------------------------------------------------------------------------------
+  Phase     | Checklist Area                          | Status  | Verified Evidence (`file:line` & Explanation)
+  ----------+-----------------------------------------+---------+---------------------------------------------------------------------
+  Phase 2   | `pmsTree` Alpine bulk outline builder   | PASS    | `templates/pms/project_detail.html:44-218,267-411` supports Enter/Tab/Shift+Tab/Backspace, flex `order` slots (`compute_builder_slots`, `pms/views.py:54-65`), subtree indent/outdent, and `bulk_draft` restore. Minor: negative `level` not clamped in `makeRow` (`277`).
+  Phase 2   | `/pms/` & `/pms/my-tasks/` UI & theme   | PASS    | `project_list.html`, `project_detail.html`, `my_tasks.html`, `task_detail.html`, `project_form.html`, `task_form.html` use CSS theme tokens, `overflow-x-auto`, responsive grids, and consistent `d M Y` date formatting (`_due.html:4`, `task_detail.html:111`, `project_detail.html:17`).
+  Phase 3   | RBAC & `403`/`404` scoping              | PARTIAL | `PMSView(RoleRequiredMixin)` enforces `VIEWER` GET / `AGENT` POST (`pms/views.py:25`); `Project.objects.visible_to` (`pms/models.py:22-28`) scopes to `ADMIN` or `owner`/`members` (404 for outsiders); `ProjectDetailView.post_delete` requires `ADMIN`/owner (`203`). **Gap:** `TaskDetailView.post_delete` (`296-304`) lets any `AGENT` member delete tasks, conflicting with `roles.py:4`.
+  Phase 3   | `create_tree` atomicity & `RestrictedError` | PASS | `pms/services.py:15-93` is `@transaction.atomic`, enforces `MAX_TREE_ROWS=200`, validates structure/indent jumps/`assignee`/`due_date`/non-negative `Decimal` hours, runs `full_clean()`, and sets `is_group=True`. `TaskDetailView.post_delete` (`298-302`) catches `RestrictedError`.
+  Phase 3   | N+1 queries & hours/progress rollups    | FAIL    | `Project.task_rows()` (`models.py:56-117`) loads tree in 1 query; `MyTasksView` (`views.py:312-319`) uses `select_related`. **Bug:** `ProjectListView.get_queryset()` (`views.py:74-83`) chains M2M `visible_to(user)` join with `Sum("tasks__expected_hours")` / `Sum("tasks__actual_hours")`, multiplying summed hours by member count. Also `project_detail.html:224` triggers extra `members.count` query; project progress counts group/cancelled tasks unlike `task_rows()`.
+  Phase 5   | Security (SQLi, XSS, CSRF) & Quality    | PARTIAL | CSRF tokens on all forms; `json_script` for `pmsTree` (`project_detail.html:37-41`); `{{ r.ancestors|safe }}` (`89`) outputs only `int` PKs (prefer `json_script`). 0 `print()`, 0 mutable defaults, 0 bare `except`. `models.py`/`services.py` well-typed; `views.py` unannotated (AST: 25% typed, 13% pub docstrings, 7% class docstrings).
+
+--------------------------------------------------------------------------------
+3.4 MODULE: `meta_connector` (`/meta/`, `/api/meta/`)
+--------------------------------------------------------------------------------
+  Phase     | Checklist Area                          | Status  | Verified Evidence (`file:line` & Explanation)
+  ----------+-----------------------------------------+---------+---------------------------------------------------------------------
+  Phase 2   | `/meta/` & `/meta/approvals/` UI        | PARTIAL | `dashboard/index.html`, `account_detail.html`, `contact_detail.html`, `settings.html`, `approvals.html` use theme tokens, responsive grids, live polling (`dashboard/base.html:75-106`), and `g:i A` (`contact_detail.html:48,67,78,102`, `account_detail.html:230,312`, `index.html:163,200`, `_token_alerts.html:13`). Gaps: `approvals.html` lacks `{% if can_reply %}`, `Failed` tab, retry button, & pagination links; `index.html:446,452` heatmap uses 24h.
+  Phase 3   | RBAC (`Viewer`/`Agent`/`Admin`)         | PARTIAL | Main views use `RoleRequiredMixin` (`VIEWER`/`AGENT`); `SettingsView` & `WebhookActionsView` require `ADMIN` (`settings_views.py:17,34`); DRF views use `HasRole` (`api_views.py:21,53,102`). **Bug:** `ApprovalQueueView` & `ApprovalActionView` (`approval_views.py:14,35`) set dead `required_role = AGENT`, letting `VIEWER` open `/meta/approvals/`.
+  Phase 3   | N+1 queries & DB stability              | PARTIAL | `ContactListAPIView` + `ContactSerializer.get_message_count` (`serializers.py:71-72`) runs N+1 `obj.messages.count()`. `dashboard_views.py:24`, `account_views.py:31`, `settings_views.py:43` call `TokenService.refresh_stale()` synchronously in GET. Unguarded `int()`/PK 500s (`api_views.py:64`, `contact_views.py:40`, `settings_views.py:39,94`). `dashboard_nav` (`context_processors.py:6-65`) runs 4+ queries on every HTML page.
+  Phase 4   | `/meta/approvals/` HITL workflow        | PARTIAL | `ai_reply.py:114-123` queues `PendingAIReply` when `ai_require_approval=True`. `ApprovalActionView.post` (`approval_views.py:37-76`) lacks `transaction.atomic()`/`select_for_update()` (concurrent approve clicks send duplicate replies), strands `STATUS_FAILED` drafts, and lacks platform char-limit checks.
+  Phase 5   | Webhook signature & encryption security | PARTIAL | `meta_webhook_view` (`webhook_views.py:51-61`) checks raw `request.body` HMAC-SHA256 via `hmac.compare_digest` (`utils.py:71-95`), fails closed (503) when `META_REQUIRE_SIGNATURE=True` (`production.py:32`), and uses `hmac.compare_digest` for `verify_token` (`35`). Gaps: weak SHA-256 fallback in `utils.py:30-39` if key invalid; `verify_meta_signature` accepts hashes without `sha256=` prefix (`86-87`).
+  Phase 5   | Security & Code Quality                 | PARTIAL | 0 SQLi, 0 `print()`, 0 mutable defaults. **Issues:** Open Redirects on `next` (`approval_views.py:39-76`); `SendMessageSerializer` omits `facebook` & has unused `async_send` (`serializers.py:111-114,134-138`); `account_views.py:29-124` embeds 95L service logic & unencoded `after` cursor (`66`); AST: 39% typed, 42% pub docstrings, 14 funcs >40L.
+
+--------------------------------------------------------------------------------
+3.5 MODULE: `cms` (`/api/cms/`, `/admin/cms/`)
+--------------------------------------------------------------------------------
+  Phase     | Checklist Area                          | Status  | Verified Evidence (`file:line` & Explanation)
+  ----------+-----------------------------------------+---------+---------------------------------------------------------------------
+  Phase 3   | `InquiryCreateAPIView` & `InquirySubmissionAdmin` removed | PASS | `grep` confirmed 0 occurrences of `InquiryCreateAPIView` and `InquirySubmissionAdmin` across `backend/` (`cms/views.py`, `cms/urls.py`, `cms/admin.py`).
+  Phase 3   | Website inquiries route directly to CRM | PARTIAL | `WebsiteAssistant.create_inquiry` (`cms/ai_tools.py:235-277`) calls `crm.services.create_opportunity(..., source=Source.WEBSITE_CHAT, form_type="AI Chat Assistant", thread=thread)`. However, `cms/ai_tools.py:55,134-192,245` still queries/checks deprecated `cms.InquirySubmission`.
+  Phase 3   | Public vs auth permissions & `403`/`404`| PASS    | Public read endpoints use `permissions.AllowAny`, filter `is_active=True` / `is_published=True` (`cms/views.py:115-449`), and return 404 on unpublished slugs (`437,468,507`).
+  Phase 3   | N+1 queries & DB atomicity/races        | FAIL    | `ProjectDetailAPIView` prefetches `sections` (`236`). **Bug:** `BlogPostEngagementAPIView.post` (`cms/views.py:534-544`) has a non-atomic check-then-create race on `BlogLike` (can raise `IntegrityError` -> 500) and overwrites `BlogPost.likes_count`, clobbering `BlogPostLikeAPIView` (`465`).
+  Phase 5   | Security (Throttling, IP, Validation)   | FAIL    | `ScopedRateThrottle` (`engagement`: `30/hour`, `config/settings/base.py:148`) is NOT attached to `BlogPostLikeAPIView` or `BlogPostEngagementAPIView`. `get_visitor_info` (`cms/views.py:476-483`) trusts spoofable `HTTP_X_FORWARDED_FOR` with hardcoded salt. `BlogComment.author_name` (`575-582`) lacks strip/100-char validation.
+  Phase 5   | Code quality (typing, docs, caching)    | PARTIAL | 0 `print()`, 0 `except: pass`, 0 mutable defaults; clean `check_maintenance` helper (`70-112`). Unbounded list endpoints (`pagination_class = None`), MD5 ETag (`51`), 74L fat `BlogPostEngagementAPIView.post`, unused `InquirySubmissionSerializer` (`serializers.py:125-141`); AST: 23% typed, 19% pub docstrings.
+
+--------------------------------------------------------------------------------
+3.6 MODULE: `hello_guy_ai` (`/chat/`, `/ai/analytics/`, `/api/ai/`)
+--------------------------------------------------------------------------------
+  Phase     | Checklist Area                          | Status  | Verified Evidence (`file:line` & Explanation)
+  ----------+-----------------------------------------+---------+---------------------------------------------------------------------
+  Phase 2   | Floating AI Chat Widget (`base.html`)   | FAIL    | `templates/base.html:234-306,466-562` lacks `paused` and `stopped` SSE listeners, hanging indefinitely on "Thinking…" on approval-gated tools; `toggle()` swallows assistant fetch errors; `send()` no-ops silently when `!assistantId`; closes `EventSource` on transient `error`; renders plain `x-text`.
+  Phase 2   | `/chat/` & `/ai/analytics/` UI & mobile | PARTIAL | `analytics.html:424` uses `g:i A`; dark mode & `liveAgentsMonitor` polling work well. Gaps: `/ai/analytics/` Pause/Resume/Delete buttons trigger silent 404 on other users' reminders (`analytics.html:433-442,539`); `chat.html:210` links non-staff users to 403 `/ai/analytics/`; `chat.html:47` fixed height cramps mobile; `closeNav()` (`265`) & `$("menu")` (`268`) broken/dead.
+  Phase 3   | RBAC / permissions / `403`/`404` scoping | PARTIAL | Thread/Run APIs (`api/internal.py`, `services/chat.py:41-59`, `views.py:58-63`) isolate per-user (404 on foreign threads) and public visitor threads (`uuid4` token, `api/public.py:39-41`). **Gap:** `/chat/` (`views.py:30`) and `/api/ai/` (`api/internal.py:34`) lack `RoleRequiredMixin`/`HasRole`, letting roleless users access `HelloGuyAssistant`.
+  Phase 3   | N+1 queries & DB efficiency             | PASS    | `analytics.py` uses single-query aggregations (`70-81,140-159,240-255`) and `select_related("thread", "thread__created_by")` (`181,191,345`); `chat_messages` uses `select_related("run")` (`services/chat.py:63`).
+  Phase 4   | `WebsiteAssistant` & `LLMModel` prefix  | PARTIAL | `LLMModelForm.clean_model_id` (`admin.py:69-80`) validates prefixes with `litellm.get_llm_provider`; `cms/ai_tools.py:235-277` `create_inquiry` validates email, deduplicates per run, checks maintenance, and calls CRM. **Fail:** `WebsiteAssistant` exposes `create_global_reminder` (`cms/ai_assistants.py:140` -> see `core` Phase 4).
+  Phase 4   | RAG/Milvus, Dramatiq, Scheduler, Safety | PASS    | `PromptBuilder` (`core/prompt.py:24-32`) marks RAG/tool outputs untrusted; `Trigger` uses AST `safe_expr.py` & blocks `auto_approve` on public-writable models (`services/triggers.py:253`); `AgentRunner` & `Reminder` use atomic CAS (`core/engine.py:232-265`, `services/reminders.py:175-183`); `VectorStore` isolates `kb_id` + DB `READY` re-check (`services/rag.py:90-93`). (Note: `milvus-lite` missing from `.venv`.)
+  Phase 5   | Security (`FIELD_ENCRYPTION_KEY`, XSS)  | PARTIAL | `PasswordInput(render_value=False)` masks keys; `markdown.js:19-67` uses `textContent` + `SAFE_URL` + same-origin image restriction; ORM tools block relation hops & sensitive fields (`tools/orm.py:256,282`). **Gap:** `crypto.py:27-30` falls back to SHA-256 key derivation if `FIELD_ENCRYPTION_KEY` is invalid format even when `DEBUG=False`, and `decrypt()` returns `""` on `InvalidToken` (`42-44`).
+  Phase 5   | Code quality (typing, docs, errors)     | PARTIAL | Highest typing discipline in repo (77% typed, 34% pub docstrings, 0 `print()`). Minor issues: mutable default `terminal: set[str] = TERMINAL_EVENTS` (`core/events.py:86,105`), unlogged `except Exception` (`analytics.py:276`, `memory.py:135`, `engine.py:273`, `api/__init__.py:56`, `reminders.py:204`), and 296L `build_ai_analytics` (`analytics.py:54`).
+
+--------------------------------------------------------------------------------
+3.7 CROSS-CUTTING (`templates/base.html`, `config/`, AST Code Quality, `voice_agent/`)
+--------------------------------------------------------------------------------
+  Phase     | Checklist Area                          | Status  | Verified Evidence (`file:line` & Explanation)
+  ----------+-----------------------------------------+---------+---------------------------------------------------------------------
+  Phase 2   | `templates/base.html` & `portal.html`   | FAIL    | Display popover (`base.html:49-68,309-334`) works well; `portal.html` uses minimal toggle without density/bell/PMS/Reminders/AI cards and receives no `crm_module`. Bell (`base.html:142-184,383-398`) swallows fetch errors & binds unsanitized URLs. Floating widget (`234-306,466-562`) hangs on `paused` and shares `z-40` with `#navOverlay` (`13`).
+  Phase 5   | `.gitignore`, `.env`, Production Config | PARTIAL | `.env` & `db.sqlite3` untracked in git; `wsgi.py:15`/`asgi.py:15` default `DJANGO_ENV=production`; `production.py` enforces SSL/HSTS/XFO/secure cookies/`META_REQUIRE_SIGNATURE`. Gap: `hello_guy_ai.E001` only checks non-empty `.strip()`, allowing placeholder key -> SHA-256 fallback.
+  Phase 5   | AST Sweep (235 non-migration `.py` files)| PARTIAL | `0` `print()` calls; `0` mutable `[]`/`{}` arg defaults (except `set[str] = TERMINAL_EVENTS`); `1` parameterized raw SQL (`crm/views.py:1138`); 10 unvalidated `redirect(next)` sites; 14 silent/unlogged `except` handlers; typing/docstring gaps in `cms`/`pms`/`crm`/`meta_connector`/`config`.
+  Phase 1/5 | `config/` & `voice_agent/`              | FAIL    | `config/views.py` is dead code shadowed by `core.urls`; `config/tests.py` fails on `hub-portal`. `voice_agent/` is outside `INSTALLED_APPS` (`config/settings/base.py:24-48`), has unvalidated `next` redirect (`voice_agent/views.py:78`), `%H:%M` strings (`services.py:274,334`), silent `except` (`meet_bot.py:134,161,169`), and broken `voice_agent/tests.py`.
+
+
+================================================================================
+4. PRIORITIZED BUG & ISSUE LIST
+================================================================================
+
+All overlapping findings from Phases 1-5 have been deduplicated and assigned
+unified IDs (`C-01..C-04`, `H-01..H-12`, `M-01..M-21`, `L-01..L-13`).
+
+--------------------------------------------------------------------------------
+CRITICAL SEVERITY (4 Issues)
+--------------------------------------------------------------------------------
+
+[C-01] Stored XSS via unsanitized `related_url` / `url` in Global Reminders & Bell
+  - Severity        : Critical
+  - Perspective     : Security
+  - Location        : backend/core/views.py:381
+                      backend/core/reminders.py:107, 119, 168
+                      backend/templates/core/reminders.html:217, 314
+                      backend/templates/base.html:150, 184
+  - Issue & Repro   : `GlobalFollowUpCreateView` accepts any arbitrary string in
+                      `related_url` (`CharField(max_length=500)`), stores it raw
+                      in `GlobalFollowUp.related_url`, and copies it into
+                      `GlobalNotification.url`. Both `reminders.html:314`
+                      (`href="{{ fu.related_url }}"`) and `base.html:150,184`
+                      (`:href="item.url || '#'"`, `:href="fu.related_url || '/reminders/'"`)
+                      render it without scheme validation. Submitting
+                      `related_url="javascript:alert(document.domain)"` at
+                      `/reminders/create/` executes JS in any user's browser who
+                      clicks the link in `/reminders/` or the global bell.
+  - Recommended Fix : Enforce a strict URL allowlist (`http://`, `https://`, or
+                      single-leading-slash relative path `^/(?!/)`) via
+                      `urllib.parse.urlparse` in `GlobalFollowUpCreateView` and
+                      `core.reminders.schedule_follow_up`, and sanitize `:href`
+                      bindings in `base.html` before rendering.
+
+[C-02] Unvalidated `next` parameter Open Redirects across 4 modules
+  - Severity        : Critical
+  - Perspective     : Security
+  - Location        : backend/core/views.py:347, 384, 452
+                      backend/crm/views.py:295, 302, 773, 782, 795, 956, 959, 964, 969
+                      backend/meta_connector/views/approval_views.py:39, 44, 52, 58, 74, 76
+                      backend/voice_agent/views.py:78
+                      (Contrast: backend/meta_connector/views/settings_views.py:29)
+  - Issue & Repro   : Ten POST handlers across `core`, `crm`, `meta_connector`, and
+                      `voice_agent` pass `request.POST.get("next")` directly to
+                      `django.shortcuts.redirect(...)` without host validation.
+                      Submitting `next=https://evil.example` redirects an
+                      authenticated user off-site after form submission.
+  - Recommended Fix : Extract a shared `safe_redirect_url(request, next_url, fallback)`
+                      helper using `django.utils.http.url_has_allowed_host_and_scheme(
+                      next_url, allowed_hosts={request.get_host()},
+                      require_https=request.is_secure())` and apply it at all
+                      redirect sites.
+
+[C-03] Public visitors can spam staff Notification Bell & pollute `FollowUpChannel` via `WebsiteAssistant -> create_global_reminder`
+  - Severity        : Critical
+  - Perspective     : AI/Agentic
+  - Location        : backend/cms/ai_assistants.py:140
+                      backend/core/ai_tools.py:15-66
+                      backend/core/reminders.py:70-71
+  - Issue & Repro   : `WebsiteAssistant.builtin_tools` includes `"create_global_reminder"`.
+                      When an anonymous visitor calls `/api/ai/public/threads/<id>/messages`
+                      (running as `website-bot`, `is_staff=False`), `core/ai_tools.py:45-47`
+                      assigns reminders to the primary staff/superuser and calls
+                      `schedule_follow_up(..., notify_now=True)`. There is no
+                      `check_maintenance("inquiries")`, no per-run dedup (unlike
+                      `create_inquiry` at `cms/ai_tools.py:247`), no confirmation,
+                      and `_resolve_channel` (`core/reminders.py:70-71`) creates
+                      arbitrary new `FollowUpChannel` DB rows for any string.
+                      Visitors can flood the staff Notification Bell and DB.
+  - Recommended Fix : Remove `"create_global_reminder"` from `WebsiteAssistant.builtin_tools`
+                      (route callback requests via CRM `create_inquiry` /
+                      `crm.services.schedule_follow_up` with maintenance + per-run
+                      dedup checks), and disable `FollowUpChannel` auto-creation
+                      for unprivileged callers (`create_missing=False`).
+
+[C-04] `/` Hub Portal routes to stale `core.views.HubPortalView`, omitting `crm_module`, bypassing RBAC, and breaking tests
+  - Severity        : Critical
+  - Perspective     : Backend/DB
+  - Location        : backend/config/urls.py:49
+                      backend/core/urls.py:16
+                      backend/core/views.py:33-107
+                      backend/config/views.py:17-43
+                      backend/templates/portal.html:34-36, 68-230, 264-270
+                      backend/templates/core/portal.html:1
+                      backend/core/tests.py:18-54
+                      backend/config/tests.py:13-29
+  - Issue & Repro   : `config/urls.py:49` includes `core.urls` at `''`, shadowing
+                      `config.views.HubPortalView` (dead code). Visiting `/` runs
+                      `core.views.HubPortalView`, which: (a) inherits only
+                      `LoginRequiredMixin` (allowing roleless users onto `/`);
+                      (b) counts deprecated `InquirySubmission` instead of CRM
+                      `Opportunity`; (c) omits `crm_module` expected by
+                      `templates/portal.html:133-174` (leaving CRM KPIs blank and
+                      `Open CRM` `href=""`); (d) omits PMS, Reminders, AI Chat,
+                      and AI Analytics cards plus Notification Bell; and (e)
+                      breaks `reverse('hub-portal')` in `core/tests.py` & `config/tests.py`.
+  - Recommended Fix : Consolidate into a single `HubPortalView` enforcing
+                      `RoleRequiredMixin`, providing `crm_module` + PMS/Reminders/
+                      AI links, removing `InquirySubmission` queries, deleting
+                      the duplicate view, and aligning the URL name (`hub-portal`
+                      vs `core:portal`) and tests.
+
+--------------------------------------------------------------------------------
+HIGH SEVERITY (12 Issues)
+--------------------------------------------------------------------------------
+
+[H-01] `core` Reminders & Channels views bypass RBAC (`RoleRequiredMixin`) and lack ownership scoping
+  - Severity        : High
+  - Perspective     : Permissions
+  - Location        : backend/core/views.py:207-235, 314, 339-452
+                      (Contrast: backend/meta_connector/roles.py:39-50)
+  - Issue & Repro   : `GlobalFollowUpListView`, `GlobalFollowUpCreateView`,
+                      `FollowUpChannelCreateView`, and `GlobalFollowUpActionView`
+                      only inherit `LoginRequiredMixin`. Any logged-in user with
+                      no dashboard role or `Viewer` role can view all users'
+                      reminders, enumerate all active usernames (`314`), create
+                      channels/reminders, and complete/snooze/cancel ANY
+                      `GlobalFollowUp` by ID (`get_object_or_404(GlobalFollowUp, pk=pk)`
+                      at `423`).
+  - Recommended Fix : Inherit `RoleRequiredMixin` (`role = VIEWER`, `edit_role = AGENT`)
+                      on all four views and restrict `GlobalFollowUpActionView` to
+                      `Q(assigned_to=request.user) | Q(created_by=request.user)`
+                      unless the user is `ADMIN`.
+
+[H-02] `ApprovalQueueView` & `ApprovalActionView` use dead `required_role = AGENT`, exposing `/meta/approvals/` to Viewers
+  - Severity        : High
+  - Perspective     : Permissions
+  - Location        : backend/meta_connector/views/approval_views.py:14, 35
+                      backend/templates/dashboard/approvals.html:57-76
+                      backend/meta_connector/roles.py:41-47
+  - Issue & Repro   : `RoleRequiredMixin` checks `self.role` (default `VIEWER`) on
+                      GET and `self.edit_role` (default `AGENT`) on POST, ignoring
+                      `required_role`. Because `ApprovalQueueView` sets
+                      `required_role = AGENT`, a `VIEWER` gets HTTP 200 on
+                      `GET /meta/approvals/` and sees editable reply textareas and
+                      Reject/Approve buttons (lacking `{% if can_reply %}`), only
+                      failing with 403 upon POST.
+  - Recommended Fix : Replace `required_role = AGENT` with `role = AGENT` on
+                      `ApprovalQueueView` and `role = edit_role = AGENT` on
+                      `ApprovalActionView`, and wrap controls in `approvals.html`
+                      with `{% if can_reply %}`.
+
+[H-03] Concurrent race condition in `ApprovalActionView.post` can send duplicate AI replies
+  - Severity        : High
+  - Perspective     : AI/Agentic
+  - Location        : backend/meta_connector/views/approval_views.py:37-75
+  - Issue & Repro   : `ApprovalActionView.post` fetches `PendingAIReply` without row
+                      locking (`select_for_update()`), checks `item.status !=
+                      STATUS_PENDING`, calls external Meta `send_message(...)`,
+                      and only afterward saves `STATUS_APPROVED`. Two agents
+                      approving concurrently (or double-clicking) both pass the
+                      check and send duplicate Meta messages to the customer.
+  - Recommended Fix : Atomically claim the row first via `transaction.atomic()` +
+                      `select_for_update()` transitioning to an intermediate
+                      `sending` state (or conditional `filter(pk=pk, status=STATUS_PENDING).update(...)`)
+                      before calling `send_message(...)`, then finalize status.
+
+[H-04] `OpportunityDetailView.post_update` silently drops M2M `services` changes
+  - Severity        : High
+  - Perspective     : Backend/DB
+  - Location        : backend/crm/views.py:345-347
+                      backend/crm/forms.py:46-53
+  - Issue & Repro   : `OpportunityForm.save(commit=True)` calls `instance.services.set(selected)`
+                      only when `commit=True` (`forms.py:50-52`). `OpportunityDetailView.post_update`
+                      calls `opp = form.save(commit=False)` at line 345, then calls
+                      `opp.save()` at line 347 without `form.save_m2m()`. Editing
+                      multi-select `services` on `/crm/opportunities/<pk>/` silently
+                      discards all M2M `services` changes while updating only `opp.service`.
+  - Recommended Fix : Call `form.save_m2m()` immediately after `opp.save()` at
+                      `crm/views.py:348`.
+
+[H-05] `ProjectListView` multiplies summed task hours by project member count
+  - Severity        : High
+  - Perspective     : Backend/DB
+  - Location        : backend/pms/views.py:74-83
+                      backend/pms/models.py:22-28
+  - Issue & Repro   : `Project.objects.visible_to(user)` filters non-Admins via
+                      `self.filter(Q(owner=user) | Q(members=user)).distinct()`,
+                      adding a `LEFT OUTER JOIN` on `pms_project_members`.
+                      `ProjectListView.get_queryset()` then annotates
+                      `Sum("tasks__expected_hours")` and `Sum("tasks__actual_hours")`
+                      directly. For a project owned by `U` with `M` members and a
+                      10h task, `WHERE owner_id = U OR members.user_id = U` matches
+                      all `M` member rows, inflating `SUM` to `10 * M` hours.
+  - Recommended Fix : Compute task counts and hour sums with correlated `Subquery` /
+                      `OuterRef` expressions on `Task`, or rewrite `visible_to` to
+                      use `Exists(...)` instead of an M2M join filter.
+
+[H-06] Floating AI Chat Widget hangs permanently on `paused` tool approvals & hides load errors
+  - Severity        : High
+  - Perspective     : UI/UX
+  - Location        : backend/templates/base.html:248-254, 476-562
+                      backend/hello_guy_ai/views.py:167
+  - Issue & Repro   : (a) `toggle()` swallows fetch errors (`catch (_) {}`) when
+                      loading `/api/ai/assistants`, and `send()` silently returns
+                      when `!this.assistantId`. (b) `EventSource` in `send()`
+                      (`base.html:530-554`) handles `token`, `tool_start`, `tool_end`,
+                      `done`, `error`, but has NO listener for `paused` or
+                      `stopped` (unlike `chat-view.js:287`). Triggering any
+                      `requires_confirmation=True` tool (`create_reminder`,
+                      `create_blog_draft`, `db_*`, `update_opportunity_status`)
+                      leaves the widget frozen at `busy = true` ("Thinking…") and
+                      subsequent turns fail with 409 `ThreadBusy`. Also closes
+                      `EventSource` on transient `error` and omits `assistant` from
+                      `fullPageUrl()`.
+  - Recommended Fix : Render an inline error/retry banner on assistant fetch failure,
+                      disable Send until `assistantId` is ready, handle `paused`
+                      (render Approve/Deny controls or link to `/chat/?assistant=...&thread=...`
+                      and clear `busy`), handle `stopped`, and check `readyState ===
+                      EventSource.CLOSED` on `error`.
+
+[H-07] `BlogPostEngagementAPIView` lacks rate limiting, trusts spoofable `X-Forwarded-For`, and races on `BlogLike`
+  - Severity        : High
+  - Perspective     : Security
+  - Location        : backend/cms/views.py:451-595
+                      backend/cms/models/blog.py:70
+                      backend/config/settings/base.py:148
+  - Issue & Repro   : (1) `config/settings/base.py:148` defines `'engagement': '30/hour'`,
+                      but neither `BlogPostLikeAPIView` nor `BlogPostEngagementAPIView`
+                      sets `throttle_classes = [ScopedRateThrottle]` / `throttle_scope = 'engagement'`.
+                      (2) `get_visitor_info` (`476-483`) blindly trusts
+                      `HTTP_X_FORWARDED_FOR.split(',')[0]` (with `NUM_PROXIES=0`)
+                      and uses a hardcoded salt `"njtechstudio_cms_engagement_salt"`,
+                      letting attackers bypass the 15s comment cooldown and forge likes.
+                      (3) Concurrent `action == 'like'` requests race between `.first()`
+                      and `.create()` (`535-541`), raising `IntegrityError` (HTTP 500)
+                      on `unique_together = ('post', 'author_hash')`, and line 544
+                      overwrites `BlogPost.likes_count` with `BlogLike.objects.count()`,
+                      erasing increments from `BlogPostLikeAPIView` (`465`).
+  - Recommended Fix : Attach `ScopedRateThrottle` (`throttle_scope = 'engagement'`) to
+                      both views; honor `NUM_PROXIES` for IP extraction and use
+                      HMAC/SECRET_KEY salt; wrap like toggle in `@transaction.atomic`
+                      catching `IntegrityError` (or `get_or_create`), and unify
+                      both like endpoints.
+
+[H-08] `/ai/analytics/` Scheduled Tasks table triggers silent HTTP 404 on other users' reminders
+  - Severity        : High
+  - Perspective     : UI/UX
+  - Location        : backend/hello_guy_ai/analytics.py:343-347
+                      backend/hello_guy_ai/templates/hello_guy_ai/analytics.html:433-442, 530-540
+                      backend/hello_guy_ai/api/internal.py:145-165
+                      backend/hello_guy_ai/services/reminders.py:104-131
+  - Issue & Repro   : `build_ai_analytics` loads `Reminder` rows across all users, and
+                      `analytics.html` renders Pause/Resume/Delete buttons for every
+                      row. Those buttons call `/api/ai/reminders/{id}/{action}`,
+                      which filters strictly by `user=request.user`. Clicking a
+                      button on another user's reminder returns 404 while
+                      `aiReminderAction` (`if (res.ok) location.reload();`) silently
+                      ignores the failure.
+  - Recommended Fix : Hide action buttons when `r.user_id != request.user.pk` (or add
+                      superuser scoping on an admin action) and display error
+                      feedback on non-2xx responses.
+
+[H-09] Missing UI for Proposed Times on CRM Meeting Detail page
+  - Severity        : High
+  - Perspective     : UI/UX
+  - Location        : backend/templates/crm/meeting_detail.html:1-358
+                      backend/crm/views.py:984, 989-990, 1058-1082
+                      backend/templates/crm/meetings.html:63-68, 193-197
+  - Issue & Repro   : `MeetingListView` and `meetings.html` expose a "Proposed Times —
+                      Awaiting your decision" KPI card, filter tab, and badge, and
+                      `MeetingDetailView` supplies `propose_form`, `proposals`, and
+                      `pending_proposals` plus `post_propose_time` / `post_resolve_proposal`
+                      handlers, yet `meeting_detail.html` renders none of them.
+  - Recommended Fix : Add a "Proposed Times" section in `meeting_detail.html` with
+                      Accept & Reschedule / Decline POST forms (`action="resolve-proposal"`)
+                      and a "Log guest proposed time" form (`action="propose-time"`).
+
+[H-10] Weak `FIELD_ENCRYPTION_KEY` SHA-256 fallback accepted in production (`DEBUG=False`)
+  - Severity        : High
+  - Perspective     : Security
+  - Location        : backend/meta_connector/utils.py:13, 30-39
+                      backend/hello_guy_ai/crypto.py:18, 24-30
+                      backend/hello_guy_ai/checks.py:29-40
+                      backend/.env.example:4
+  - Issue & Repro   : Both `meta_connector/utils.py:30-39` and `hello_guy_ai/crypto.py:27-30`
+                      catch invalid `FIELD_ENCRYPTION_KEY` formats (`Exception` /
+                      `ValueError`) and silently derive a Fernet key via `sha256(raw)`
+                      even when `DEBUG=False`. Because `checks.py:32` only verifies
+                      `.strip()` is non-empty, leaving `.env.example`'s placeholder
+                      `"replace-with-fernet-key"` in production passes deploy checks
+                      and encrypts API keys/tokens with a low-entropy known key.
+  - Recommended Fix : When `not settings.DEBUG`, validate `Fernet(raw)` directly in
+                      `hello_guy_ai/checks.py` and raise `ImproperlyConfigured` on
+                      `ValueError` in `crypto.py` and `meta_connector/utils.py`.
+
+[H-11] Global Notification Bell swallows fetch errors & flashes empty state during load
+  - Severity        : High
+  - Perspective     : UI/UX
+  - Location        : backend/templates/base.html:142-147, 175-181, 383-398
+  - Issue & Repro   : `globalNotifications().load()` uses `try { ... } finally { this.loading = false; }`
+                      with no `catch` block and no `error` state; if `/notifications/`
+                      fails or returns 500, `!loading && items.length === 0` displays
+                      `"You're all caught up"`. Meanwhile the Reminders tab checks
+                      `followups.length === 0` without `!loading`, flashing
+                      `"No pending reminders"` during fetch.
+  - Recommended Fix : Track `error: ''` in `globalNotifications()`, populate it on
+                      `!res.ok` or `catch`, and guard empty-state banners with
+                      `!loading && !error`.
+
+[H-12] Broken default `pytest` runner & global test collection crash in `core/test_meta_ai.py`
+  - Severity        : High
+  - Perspective     : Test/Build Config
+  - Location        : backend/pyproject.toml:1-45
+                      backend/requirements.txt
+                      backend/config/settings/test.py:1
+                      backend/core/test_meta_ai.py:9
+                      backend/core/meta_ai.py:50
+  - Issue & Repro   : (1) `../.venv/bin/python -m pytest` fails with `No module named
+                      pytest` because `pytest`, `pytest-django`, `fakeredis`, and
+                      `milvus-lite` are absent from `.venv` and `pyproject.toml`.
+                      (2) `pyproject.toml` omits `[tool.pytest.ini_options]`
+                      referenced by `config/settings/test.py:1`, causing collection
+                      to fail without manual `DJANGO_SETTINGS_MODULE`.
+                      (3) `core/test_meta_ai.py:9` imports `core.meta_ai`, which
+                      re-registers Dramatiq actor `reply_with_ai` (`core/meta_ai.py:50`),
+                      crashing `pytest` collection across the entire `backend/` repo.
+  - Recommended Fix : Add dev/test dependencies (`pytest`, `pytest-django`, `fakeredis`,
+                      `milvus-lite`) and `[tool.pytest.ini_options]` (`DJANGO_SETTINGS_MODULE
+                      = "config.settings.test"`) to `pyproject.toml`, and remove
+                      orphaned `core/meta_ai.py` / `core/test_meta_ai.py` (or fix actor naming).
+
+--------------------------------------------------------------------------------
+MEDIUM SEVERITY (21 Issues)
+--------------------------------------------------------------------------------
+
+[M-01] `create_global_reminder` ignores browser timezone and silently defaults invalid/past `due_at`
+  - Severity        : Medium
+  - Perspective     : AI/Agentic
+  - Location        : backend/core/ai_tools.py:31-41
+                      (Contrast: backend/hello_guy_ai/tools/reminders.py:15,
+                                 backend/hello_guy_ai/services/reminders.py:53-70)
+  - Issue & Repro   : Uses `timezone.get_current_timezone()` instead of `ZoneInfo(ctx.timezone)`,
+                      catches `ValueError` to silently schedule `+24h` instead of
+                      raising `ToolError`, and accepts past timestamps without error.
+  - Recommended Fix : Localize naive `due_at` with `ZoneInfo(ctx.timezone or settings.TIME_ZONE)`
+                      and raise `ToolError` on invalid ISO strings or past timestamps.
+
+[M-02] `cms/ai_tools.py` inquiry tools & permissions still target deprecated `cms.InquirySubmission`
+  - Severity        : Medium
+  - Perspective     : AI/Agentic
+  - Location        : backend/cms/ai_tools.py:17, 55, 57, 134-149, 165-171, 180-192, 245
+                      backend/cms/ai_assistants.py:191-192
+                      backend/cms/management/commands/setup_website_bot.py:24
+                      backend/cms/serializers.py:13, 125-141
+                      backend/core/views.py:23, 76-77
+  - Issue & Repro   : `create_inquiry` writes to CRM `Opportunity`, yet `site_content_summary`,
+                      `list_inquiries`, `get_inquiry`, and `mark_inquiry_replied`
+                      (used by `HelloGuyAssistant`/`SiteAnalystAssistant`) still query
+                      `cms.InquirySubmission`, missing all new website leads. `create_inquiry`
+                      also checks `_require("add", InquirySubmission)` instead of `Opportunity`.
+  - Recommended Fix : Migrate assistant inquiry tools to `crm.ai_tools` (`Opportunity`),
+                      update permission checks to `Opportunity` (including `setup_website_bot.py:24`),
+                      and retire `InquirySubmission` references/serializer.
+
+[M-03] `/chat/` & `/api/ai/` lack dashboard role enforcement; `chat.html` links non-staff users to 403 `/ai/analytics/`
+  - Severity        : Medium
+  - Perspective     : Permissions
+  - Location        : backend/hello_guy_ai/views.py:30-39
+                      backend/hello_guy_ai/api/internal.py:34
+                      backend/hello_guy_ai/templates/hello_guy_ai/chat.html:208-211
+  - Issue & Repro   : `chat_page` (`@login_required`) and `internal.router` (`django_auth`)
+                      do not check `has_role(user, VIEWER)`, letting roleless users
+                      invoke `HelloGuyAssistant`. Meanwhile `chat.html:208-211` renders
+                      `+N more` linking to `/ai/analytics/` (which requires `is_staff`),
+                      producing a 403 for non-staff users.
+  - Recommended Fix : Enforce `has_role(user, VIEWER)` on `/chat/` and `/api/ai/` internal
+                      routes and hide the `/ai/analytics/` link when `not user.is_staff`.
+
+[M-04] `notify_due_follow_ups` writes DB on every GET bell poll without atomic CAS claiming
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/core/views.py:123, 176
+                      backend/core/reminders.py:147-176
+  - Issue & Repro   : Every 45s GET poll to `/notifications/unread-count/` and `/notifications/`
+                      calls `notify_due_follow_ups(request.user)`, which calls `notifications.notify()`
+                      before saving `notified_at=now` without a conditional `UPDATE ... WHERE
+                      notified_at IS NULL`. Concurrent tabs can emit duplicate notifications.
+  - Recommended Fix : Claim atomically via `GlobalFollowUp.objects.filter(pk=fu.pk,
+                      notified_at__isnull=True).update(notified_at=now)` inside
+                      `transaction.atomic()` and offload periodic polling to the scheduler.
+
+[M-05] Unguarded `int()` and integer `pk` conversions trigger HTTP 500 across `core`, `crm`, and `meta_connector`
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/core/views.py:126, 370, 430, 433, 440
+                      backend/crm/views.py:506, 523, 595, 750, 791, 1103, 1121, 1177
+                      backend/meta_connector/views/api_views.py:64
+                      backend/meta_connector/views/contact_views.py:40
+                      backend/meta_connector/views/settings_views.py:39, 94
+  - Issue & Repro   : Non-numeric query/POST params (`?limit=abc`, `assigned_to=abc`,
+                      `hours=abc`, `?after=abc`, `?contact_id=abc`, `?edit=abc`,
+                      `duration_seconds="abc"`, or non-numeric PKs) raise unhandled
+                      `ValueError` -> HTTP 500. Additionally, `core/views.py:440`
+                      hardcodes `"Reminder snoozed +24h."` regardless of `hours`.
+  - Recommended Fix : Parse integer inputs in `try/except (TypeError, ValueError)` blocks
+                      returning `400`/`404` cleanly, and format `f"Reminder snoozed +{hours}h."`.
+
+[M-06] `BlogComment.author_name` unvalidated length (`>100`) & blank whitespace in `BlogPostEngagementAPIView`
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/cms/views.py:575-582
+                      backend/cms/models/blog.py:46
+  - Issue & Repro   : `author = request.data.get('author') or visitor_name` accepts
+                      whitespace-only strings (`"   "`) and strings >100 chars,
+                      exceeding `CharField(max_length=100)` (HTTP 500 `DataError` on Postgres).
+  - Recommended Fix : Validate via DRF serializer: strip whitespace, fall back to
+                      `visitor_name` if empty, and reject/truncate >100 characters.
+
+[M-07] `import_calendar_events` does not paginate past 100 Google Calendar events
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/crm/google.py:347-355
+  - Issue & Repro   : `events_api.list(..., maxResults=100)` reads only the first page
+                      and ignores `nextPageToken`, silently dropping events/RSVPs when
+                      >100 events fall in `[now - 1d, now + 30d]`.
+  - Recommended Fix : Loop on `payload.get("nextPageToken")` passing `pageToken=...`
+                      (with a reasonable page cap).
+
+[M-08] Synchronous Google Calendar & Meta `/debug_token` HTTP calls in GET views + silent error suppression
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/crm/views.py:807-813
+                      backend/meta_connector/views/dashboard_views.py:24
+                      backend/meta_connector/views/account_views.py:31
+                      backend/meta_connector/views/settings_views.py:43
+  - Issue & Repro   : `MeetingListView.get` runs `google.import_calendar_events()`
+                      synchronously on GET (even for Viewers) and hides `GoogleError`
+                      with `pass`. Meta dashboard/account/settings GET views run
+                      `TokenService.refresh_stale()`, stalling page loads on external HTTP.
+  - Recommended Fix : Move sync/refresh to background Dramatiq/cron jobs (`crm_google_sync`),
+                      or log failures and show a non-blocking warning banner.
+
+[M-09] N+1 queries and per-request query overhead in `crm`, `meta_connector`, and `core`
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/crm/views.py:172-196, 577-579, 832, 853
+                      backend/crm/google.py:378-383, 466-468
+                      backend/meta_connector/serializers.py:71-72
+                      backend/meta_connector/context_processors.py:6-65
+                      backend/config/settings/base.py:91
+                      backend/core/views.py:47-82
+  - Issue & Repro   : `ContactSerializer.get_message_count` runs N+1 `obj.messages.count()`;
+                      `OverviewView` runs ~50 per-source/per-user `COUNT(*)` queries;
+                      `MeetingListView` loads all scheduled meetings into Python twice;
+                      `pull_files` calls Drive per `GoogleFile`; `HubPortalView` runs
+                      13 counts; `dashboard_nav` context processor executes 4+ DB
+                      queries on every HTML response across all modules (even PMS/AI).
+  - Recommended Fix : Annotate `msg_count=Count('messages')` on `ContactListAPIView`,
+                      use `values().annotate()` in `OverviewView`/`HubPortalView`,
+                      and scope or cache `dashboard_nav` queries.
+
+[M-10] Failed AI Approval drafts (`STATUS_FAILED`) stranded with no tab/retry UI; `/meta/approvals/` lacks pagination UI
+  - Severity        : Medium
+  - Perspective     : UI/UX
+  - Location        : backend/meta_connector/views/approval_views.py:17, 19-24, 42-44, 70
+                      backend/templates/dashboard/approvals.html:15-20, 57-91
+  - Issue & Repro   : `SendError` sets `STATUS_FAILED`, yet `approvals.html` only has
+                      `Pending / Approved / Rejected / All` tabs, `ApprovalActionView`
+                      blocks retrying non-`STATUS_PENDING` rows, and `paginate_by = 25`
+                      has no pagination links in the template.
+  - Recommended Fix : Add a `Failed` tab, allow retrying `STATUS_FAILED` drafts (with
+                      editable `reply_text`), and render pagination controls.
+
+[M-11] `TaskDetailView.post_delete` lets any project `AGENT` delete tasks (conflicts with `ProjectDetailView` & `roles.py`)
+  - Severity        : Medium
+  - Perspective     : Permissions
+  - Location        : backend/pms/views.py:296-305
+                      backend/templates/pms/task_detail.html:114-126
+                      (Contrast: backend/pms/views.py:202-204, backend/meta_connector/roles.py:4)
+  - Issue & Repro   : `ProjectDetailView.post_delete` requires `ADMIN` or `project.owner_id`,
+                      and `roles.py:4` defines Agent as "Cannot delete anything", yet
+                      `TaskDetailView.post_delete` permits any `AGENT` project member
+                      to delete tasks.
+  - Recommended Fix : Require `ADMIN` or `project.owner_id == request.user.pk` (and hide
+                      the delete form otherwise), or align `roles.py` documentation.
+
+[M-12] `MeetingForm` `opportunity` queryset excludes closed opportunities, breaking edits of historical meetings
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/crm/forms.py:108-109
+  - Issue & Repro   : `MeetingForm.__init__` restricts `opportunity` to `status__in=Opportunity.OPEN`.
+                      Editing any meeting whose opportunity was later closed (`WON`/`LOST`)
+                      drops/invalidates the linked opportunity.
+  - Recommended Fix : Filter with `Q(status__in=Opportunity.OPEN) | Q(pk=self.instance.opportunity_id)`
+                      when `self.instance.opportunity_id` exists.
+
+[M-13] Silent `except Exception: pass` and unlogged exception swallowing across multiple apps
+  - Severity        : Medium
+  - Perspective     : Code Quality
+  - Location        : backend/crm/services.py:106-107, 160-161, 218-219
+                      backend/crm/views.py:811-812
+                      backend/crm/forms.py:157
+                      backend/meta_connector/context_processors.py:50
+                      backend/hello_guy_ai/analytics.py:276
+                      backend/hello_guy_ai/services/memory.py:135
+                      backend/hello_guy_ai/core/engine.py:273
+                      backend/hello_guy_ai/api/__init__.py:56
+                      backend/hello_guy_ai/services/reminders.py:204
+                      backend/voice_agent/meet_bot.py:134, 161, 169
+  - Issue & Repro   : Production services, views, and helpers swallow errors via
+                      `except Exception: pass` or unlogged broad `except` blocks,
+                      masking configuration and runtime failures.
+  - Recommended Fix : Replace `pass` with `logger.exception(...)` or `logger.warning(..., exc_info=True)`
+                      and narrow caught exception classes where possible.
+
+[M-14] `FollowUpCreateView` & `GlobalFollowUpCreateView` silently fall back to `+24h` on invalid `due_at`; `OverviewView` date-filter timezone mismatch
+  - Severity        : Medium
+  - Perspective     : Backend/DB
+  - Location        : backend/crm/views.py:133-145, 758-763
+                      backend/core/views.py:354-355
+  - Issue & Repro   : (a) Invalid `due_at` strings silently schedule reminders/follow-ups
+                      for `now + 1 day` with a success toast. (b) `OverviewView` filters
+                      `created_at__date__gte=trend_start.date()` in DB UTC while
+                      bucketing by `timezone.localtime(dt).date()`, risking missed
+                      records in the 00:00–05:30 IST window.
+  - Recommended Fix : Return a validation error on malformed `due_at`; filter `OverviewView`
+                      by `created_at__gte=local_midnight_start`.
+
+[M-15] `MeetingTranscriptAPIView` lacks DRF TokenAuth/CSRF exemption for external AI/voice callers
+  - Severity        : Medium
+  - Perspective     : Security
+  - Location        : backend/crm/views.py:1147-1188
+  - Issue & Repro   : `MeetingTranscriptAPIView` is a plain Django `View` subject to
+                      session login and CSRF middleware; external AI/voice agents
+                      calling with `Authorization: Token ...` will be rejected.
+  - Recommended Fix : Convert to a DRF `APIView` with `HasRole` (supporting both
+                      `TokenAuthentication` and `SessionAuthentication`).
+
+[M-16] Fat views mixing ORM mutations, analytics, and external API calls into view layer
+  - Severity        : Medium
+  - Perspective     : Code Quality
+  - Location        : backend/cms/views.py:522-595
+                      backend/core/views.py:236-385
+                      backend/meta_connector/views/approval_views.py:37-76
+                      backend/meta_connector/views/account_views.py:29-124
+                      backend/crm/views.py:1125-1144
+  - Issue & Repro   : Multiple views directly execute multi-model ORM writes, analytics
+                      computations (`GlobalFollowUpListView.get_context_data` = 101 lines),
+                      and external API calls instead of delegating to service modules.
+  - Recommended Fix : Extract blog engagement, reminder analytics, Meta approval
+                      execution, IG media/rule hydration, and meeting deletion cleanup
+                      into service functions.
+
+[M-17] `/chat/` mobile layout height, broken `closeNav()`, and dead `$("menu")` handler
+  - Severity        : Medium
+  - Perspective     : UI/UX
+  - Location        : backend/hello_guy_ai/templates/hello_guy_ai/chat.html:47, 173, 191, 265, 268
+                      backend/templates/base.html:10
+  - Issue & Repro   : Line 47 applies `h-[calc(100vh-8.5rem)]` across all breakpoints,
+                      cramping stacked Chat + History panels on `< lg` mobile screens.
+                      `closeNav()` toggles `document.body.classList.remove("nav-open")`
+                      instead of Alpine's `navOpen = false` in `base.html:10`, and
+                      line 268 references nonexistent `$("menu")`.
+  - Recommended Fix : Use `lg:h-[calc(100vh-8.5rem)]` with `min-h-[420px]` on mobile,
+                      update `closeNav()` to sync Alpine `navOpen`, and remove dead `$("menu")`.
+
+[M-18] 14-day analytics SVG charts lack accessibility fallback, `viewBox`, and tooltips
+  - Severity        : Medium
+  - Perspective     : UI/UX
+  - Location        : backend/templates/core/reminders.html:98-100, 357-400
+                      backend/templates/crm/overview.html:254-294
+  - Issue & Repro   : Both SVG charts set `aria-hidden="true"` without `role="img"`,
+                      `aria-label`, or a screen-reader table fallback (unlike
+                      `dashboard/index.html:77-86`), omit `viewBox`, and have no hover tooltips.
+  - Recommended Fix : Add responsive `viewBox`, `role="img"` + `aria-label` or `sr-only`
+                      data table, and interactive hover tooltips.
+
+[M-19] 24-hour `%H:%M` / locale time formatting inconsistencies vs `g:i A` standard
+  - Severity        : Medium
+  - Perspective     : UI/UX
+  - Location        : backend/templates/crm/inbox_thread.html:81
+                      backend/templates/dashboard/index.html:446, 452
+                      backend/crm/services.py:201
+                      backend/crm/meetings.py:125
+                      backend/crm/google.py:249, 407
+                      backend/crm/views.py:942
+                      backend/voice_agent/services.py:274, 334
+  - Issue & Repro   : Django templates use `g:i A`, but live-chat JS (`toLocaleString`
+                      without `hour12: true`), heatmap hours (`00:00–01:00`), and
+                      backend activity/notification strings format `%H:%M` (24h).
+  - Recommended Fix : Pass `hour12: true` in `inbox_thread.html:81`, format heatmap
+                      labels in 12h AM/PM, and replace `%H:%M` with `%I:%M %p`.
+
+[M-20] Floating AI Chat launcher (`z-40`) overlaps bottom-right controls and matches `#navOverlay` z-index
+  - Severity        : Medium
+  - Perspective     : UI/UX
+  - Location        : backend/templates/base.html:13, 236
+  - Issue & Repro   : `floatingAiChat` uses `fixed bottom-5 right-5 z-40`, colliding
+                      with `#navOverlay` (`z-40`) and covering bottom-right pagination/
+                      form submit buttons on mobile/short viewports.
+  - Recommended Fix : Raise `#navOverlay` or lower widget z-index cleanly relative to
+                      sidebar drawer and add bottom padding (`pb-20`) on mobile main.
+
+[M-21] 11 failing/erroring tests + 3 broken `tests.py` files outside the 7 baseline targets
+  - Severity        : Medium
+  - Perspective     : Test/Build Config
+  - Location        : backend/cms/tests/test_ai_public.py:40-44
+                      backend/crm/tests/test_services.py:32, 60, 77
+                      backend/hello_guy_ai/tests/test_admin_widget.py:30
+                      backend/hello_guy_ai/tests/test_rag.py:17, 103
+                      backend/meta_connector/tests/test_insights.py:60-61
+                      backend/meta_connector/tests/test_roles_and_reliability.py:74
+                      backend/core/tests.py:18, 47
+                      backend/config/tests.py:13, 16, 26
+                      backend/voice_agent/tests.py
+  - Issue & Repro   : Full-repo suite fails 8 tests & errors 3 (`milvus_lite` absent,
+                      stale `/dashboard/` & `hub-portal` & IP-thread & `"Admin ↗"` &
+                      old CMS inquiry endpoint assertions), and `voice_agent/tests.py`
+                      crashes `manage.py test` because `voice_agent` is not in `INSTALLED_APPS`.
+  - Recommended Fix : Update stale test assertions to match current UUID isolation,
+                      `/meta/` routes, CRM inquiry flow, and `core:portal`; install
+                      `milvus-lite`; and either register or exclude `voice_agent`.
+
+--------------------------------------------------------------------------------
+LOW SEVERITY (13 Issues)
+--------------------------------------------------------------------------------
+
+[L-01] Low type-hint & docstring coverage on CBVs/forms plus oversized functions (>40 lines)
+  - Severity        : Low
+  - Perspective     : Code Quality
+  - Location        : backend/pms/views.py:28-319 (25% typed, 13% pub docstrings)
+                      backend/cms/views.py (23% typed, 19% pub docstrings)
+                      backend/crm/views.py:47-1188 (35% typed, 27% pub docstrings)
+                      backend/meta_connector/views/* (39% typed, 42% pub docstrings)
+                      backend/core/views.py:33-453 (64% typed; 101L analytics method)
+                      backend/hello_guy_ai/analytics.py:54 (296L `build_ai_analytics`)
+  - Issue & Repro   : Service modules (`hello_guy_ai`, `crm/services.py`, `pms/services.py`)
+                      are well-typed, whereas CBV/form methods lack annotations and
+                      several functions exceed 40 lines (up to 296 lines).
+  - Recommended Fix : Incrementally add type hints/docstrings to views & forms and
+                      split `build_ai_analytics` and large view methods into helpers.
+
+[L-02] `SendMessageSerializer` omits `facebook` & has unused `async_send`; `MessageService.send_message` return hint inaccurate
+  - Severity        : Low
+  - Perspective     : Backend/DB
+  - Location        : backend/meta_connector/serializers.py:111-114, 134-138
+                      backend/meta_connector/views/api_views.py:104-123
+                      backend/meta_connector/services/message_service.py:59, 77-78
+  - Issue & Repro   : `SendMessageSerializer.platform` omits `facebook`, `async_send`
+                      is never read in `SendMessageAPIView`, and `send_message` is
+                      typed `-> Tuple[Message, bool, str]` even when returning `None`.
+  - Recommended Fix : Add `PLATFORM_FACEBOOK`, wire or remove `async_send`, and type
+                      return value as `Tuple[Optional[Message], bool, str]`.
+
+[L-03] `MeetingForm` parses `datetime-local` in `settings.TIME_ZONE` instead of `meeting.timezone`
+  - Severity        : Low
+  - Perspective     : Backend/DB
+  - Location        : backend/crm/forms.py:94, 104-105
+  - Issue & Repro   : Scheduling a meeting with a timezone other than `Asia/Kolkata`
+                      interprets naive `start_at`/`end_at` using `settings.TIME_ZONE`.
+  - Recommended Fix : Re-interpret naive datetimes in `ZoneInfo(cleaned["timezone"])`
+                      inside `MeetingForm.clean()`.
+
+[L-04] PMS project progress counts group/cancelled tasks (unlike `task_rows()`), and `project_detail.html` runs extra `members.count` query
+  - Severity        : Low
+  - Perspective     : Backend/DB
+  - Location        : backend/pms/views.py:78-79, 130-132
+                      backend/pms/models.py:83-101
+                      backend/templates/pms/project_detail.html:224
+  - Issue & Repro   : Project-level progress includes group/cancelled tasks while subtree
+                      progress excludes them; `{{ project.members.count }}` runs a
+                      redundant `COUNT(*)` despite `prefetch_related("members")`.
+  - Recommended Fix : Use `{{ project.members.all|length }}` in `project_detail.html:224`
+                      and align progress filtering if desired.
+
+[L-05] `OverviewView` Pipeline Stages bar denominator omits `LOST` and older `WON` deals
+  - Severity        : Low
+  - Perspective     : UI/UX
+  - Location        : backend/templates/crm/overview.html:148
+  - Issue & Repro   : `widthratio count stats.open|add:stats.won_this_month|add:1 100`
+                      can exceed 100% for `Lost` or older `Won` stages (clipped by `max-w-full`).
+  - Recommended Fix : Pass `total_opps` in context and use it as denominator.
+
+[L-06] `ApprovalActionView` lacks platform character limits; `pmsTree` `makeRow` allows negative `level`
+  - Severity        : Low
+  - Perspective     : UI/UX
+  - Location        : backend/meta_connector/views/approval_views.py:55
+                      backend/templates/pms/project_detail.html:277
+  - Issue & Repro   : `ApprovalActionView` does not pre-validate 1000-char (IG/FB) or
+                      4096-char (WA) limits; `makeRow` checks `Number.isInteger(level)`
+                      without clamping `>= 0`.
+  - Recommended Fix : Validate platform message length in `ApprovalActionView` and clamp
+                      `Math.max(0, level)` in `makeRow`.
+
+[L-07] `verify_meta_signature` accepts bare hex digest without `sha256=` prefix; `get_fernet_instance` broad `except Exception`
+  - Severity        : Low
+  - Perspective     : Security
+  - Location        : backend/meta_connector/utils.py:32, 86-87
+  - Issue & Repro   : `verify_meta_signature` falls back to comparing raw header if
+                      `sha256=` prefix is absent; `get_fernet_instance` catches `Exception`.
+  - Recommended Fix : Require `signature_header.startswith("sha256=")` and narrow exception
+                      handling to `(ValueError, TypeError)`.
+
+[L-08] `AccountDetailView` (`account_page`) builds `?after={after}` cursor without `urlencode`
+  - Severity        : Low
+  - Perspective     : Backend/DB
+  - Location        : backend/meta_connector/views/account_views.py:66
+  - Issue & Repro   : Cursor string `after` is interpolated directly into Graph API URL.
+  - Recommended Fix : URL-encode `after` with `urllib.parse.quote` / `urlencode`.
+
+[L-09] `reminders.html` sidebar omits `Projects` & `AI Analytics` and uses hardcoded colors/hex
+  - Severity        : Low
+  - Perspective     : UI/UX
+  - Location        : backend/templates/core/reminders.html:5-26, 119, 376-377
+                      backend/templates/crm/overview.html:274-276
+  - Issue & Repro   : Sidebar on `/reminders/` omits `/pms/` and `/ai/analytics/`, and
+                      status dot/SVG strokes hardcode `bg-slate-400` and `#6366f1`/`#10b981`.
+  - Recommended Fix : Align sidebar links across templates and use CSS theme variables.
+
+[L-10] Unbounded list responses (`pagination_class = None`) & MD5 ETag hashing in `cms/views.py`
+  - Severity        : Low
+  - Perspective     : Backend/DB
+  - Location        : backend/cms/views.py:51, 181, 200, 255, 291, 342, 361, 386, 405
+  - Issue & Repro   : CMS list endpoints disable pagination (unbounded payload risk) and
+                      `make_cached_response` computes ETags with `hashlib.md5`.
+  - Recommended Fix : Replace `md5` with `sha256[:16]` and enable bounded pagination on
+                      `/api/cms/blog/` and `/api/cms/projects/`.
+
+[L-11] Code quality nits: mutable `TERMINAL_EVENTS` default, `decrypt()` `""` fallback, and dead files
+  - Severity        : Low
+  - Perspective     : Code Quality
+  - Location        : backend/hello_guy_ai/core/events.py:86, 105
+                      backend/hello_guy_ai/crypto.py:42-44
+                      backend/hello_guy_ai/models/llm.py:56-57
+                      backend/core/meta_ai.py
+                      backend/cms/serializers.py:125-141
+                      backend/config/views.py
+  - Issue & Repro   : `events.py:86,105` defaults `terminal: set[str] = TERMINAL_EVENTS`;
+                      `crypto.py:42-44` returns `""` on `InvalidToken`, causing
+                      `LLMModel.connection_kwargs()` (`56-57`) to pass `api_key=""`
+                      because encrypted `self.api_key` is truthy; `core/meta_ai.py`,
+                      `InquirySubmissionSerializer`, and `config/views.py` are dead code.
+  - Recommended Fix : Use `frozenset` for `TERMINAL_EVENTS`, guard `if decrypted := self.get_api_key():`,
+                      and remove unused dead code.
+
+[L-12] Minor template hardening: `{{ r.ancestors|safe }}` and `target="_blank"` missing `rel`
+  - Severity        : Low
+  - Perspective     : Security
+  - Location        : backend/templates/pms/project_detail.html:89
+                      backend/templates/portal.html:240, 244
+  - Issue & Repro   : `project_detail.html:89` renders `r.ancestors|safe` (integer PKs
+                      currently safe, inconsistent with `json_script` at lines 37-41);
+                      `portal.html:240,244` lacks `rel="noopener noreferrer"`.
+  - Recommended Fix : Switch `r.ancestors` to `json_script` and add `rel="noopener noreferrer"`.
+
+[L-13] Pytest warnings on clean runs (`Testimonial` class name, unordered pagination, Pydantic)
+  - Severity        : Low
+  - Perspective     : Test/Build Config
+  - Location        : backend/cms/models/testimonial.py:6
+                      backend/pms/views.py:74-83
+                      backend/crm/views.py:377
+                      backend/hello_guy_ai/tests/test_reminders.py
+  - Issue & Repro   : `Testimonial` starts with `Test`, triggering `PytestCollectionWarning`;
+                      `ProjectListView` & `CustomerListView` paginate unordered querysets
+                      (`UnorderedObjectListWarning`); `test_reminders.py` logs 3
+                      Pydantic `ReadOnly` warnings.
+  - Recommended Fix : Add `__test__ = False` on `Testimonial` (or set `python_files`/`python_classes`
+                      in `pyproject.toml`), add deterministic `.order_by(...)` before
+                      pagination, and track LiteLLM/Pydantic updates.
+
+
+================================================================================
+5. TEST COVERAGE GAPS
+================================================================================
+
+5.1 BROKEN OR STALE EXISTING TESTS SUMMARY
+------------------------------------------
+  - Global Blocker : `core/test_meta_ai.py` (collection crash via duplicate
+    Dramatiq actor `reply_with_ai` in `core/meta_ai.py`).
+  - Stale / Broken : `core/tests.py` (2 fail: `'hub-portal'`, `InquirySubmission`),
+    `config/tests.py` (2 fail: `'hub-portal'`), `voice_agent/tests.py` (3 error:
+    app missing from `INSTALLED_APPS`), `cms/tests/test_ai_public.py:42` (1 fail:
+    IP-keyed thread assumption), `crm/tests/test_services.py:32,60,77` (3 fail:
+    removed CMS inquiry endpoint & permission/JSON mismatches),
+    `hello_guy_ai/tests/test_admin_widget.py:30` (1 fail: `"Admin ↗"`),
+    `hello_guy_ai/tests/test_rag.py:17,103` (1 fail + 3 errors: missing `milvus_lite`),
+    `meta_connector/tests/test_insights.py:61` & `test_roles_and_reliability.py:74`
+    (2 fail: stale `/dashboard/` assertions).
+
+5.2 MODULE-BY-MODULE TEST COVERAGE GAP MATRIX
+---------------------------------------------
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | Module         | Prod Modules / Area    | Existing Test Files              | Untested / Under-Covered Modules, Endpoints, Tools, Tasks & UI     |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | `core`         | 8 prod files           | `test_notifications.py` (2 pass) | - `core/ai_tools.py` (`create_global_reminder`, `list_global_      |
+  |                | (`ai_tools.py`,        | `test_meta_ai.py` (collection    |   reminders`, `send_global_notification`): 0 tests                 |
+  |                | `views.py`, `models.py`|  ERROR)                          | - `GlobalFollowUpCreateView` (valid/invalid `due_at`,              |
+  |                | `reminders.py`,        | `tests.py` (2 fail, uncollected) |   `new_channel_name`, `related_url` XSS, `next` Open Redirect)     |
+  |                | `notifications.py`,    |                                  | - `GlobalFollowUpActionView` (`snooze`/`cancel`/cross-user 403)    |
+  |                | `meta_ai.py`, etc.)    |                                  | - `GlobalFollowUpListView` 14-day analytics, filters, `/follow-ups/`|
+  |                |                        |                                  | - `HubPortalView` (after fixing `core/tests.py`)                   |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | `crm`          | 13 prod files          | `test_google.py` (11 pass)       | - `crm/ai_assistants.py` (`SalesAssistant`, `LeadManagerAssistant`)|
+  |                | (`ai_assistants.py`,   | `test_meetings.py` (4 pass)      | - `crm/ai_tools.py` (`list_opportunities`, `get_opportunity`,      |
+  |                | `ai_tools.py`, `forms`,| `test_views.py` (3 pass)         |   `update_opportunity_status`, `schedule_follow_up`, etc.)         |
+  |                | `google.py`, `signals`,| `test_live_chat.py` (4 pass)     | - `OpportunityDetailView.post_update` M2M `services` save          |
+  |                | `services.py`, cmds)   | `test_services.py` (3 pass/3fail)| - `MeetingDetailView` (`post_update`, `post_complete`,             |
+  |                |                        |                                  |   `post_propose_time`, `post_save_transcript_doc`, `post_delete`)  |
+  |                |                        |                                  | - `FollowUpListView`/`CreateView`/`ActionView`, `MeetingCreateView`|
+  |                |                        |                                  | - `CustomerDetailView` Drive HTTP POST actions & `post_share`      |
+  |                |                        |                                  | - `GoogleConnectView`/`CallbackView`, `crm_google_sync`, pagination|
+  |                |                        |                                  | - `crm/signals.py`, `crm/forms.py`, `next` redirect & `int()` 400s |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | `pms`          | 7 prod files           | `test_models.py` (3 pass)        | - `pms/services.py`: 0 direct unit tests (`MAX_TREE_ROWS=200`,     |
+  |                | (`models.py`,          | `test_views.py` (4 pass)         |   negative hours, invalid `due_date`, inactive assignee, cross-    |
+  |                | `services.py`, `forms`,|                                  |   project parent, indent jumps, non-dict rows)                     |
+  |                | `views.py`, `admin.py`,|                                  | - `ProjectListView` multi-member `Sum(expected_hours)` fan-out,    |
+  |                | `seed_pms_demo.py`)    |                                  |   `q`/`status` search filters                                      |
+  |                |                        |                                  | - `MyTasksView` (`/pms/my-tasks/`), `pms/forms.py`, `seed_pms_demo`|
+  |                |                        |                                  | - `ProjectDetailView.post_update`/`post_delete` (non-owner 403),   |
+  |                |                        |                                  |   `TaskDetailView.post_update` & `VIEWER` 403 matrix               |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | `meta_connector`| 34 prod files         | 11 test files (68 collected:     | - `meta_connector/views/approval_views.py` (`/meta/approvals/`):   |
+  |                | (models, views,        | 66 pass, 2 fail on stale         |   0 tests (VIEWER 403 check, approve/edit/reject, `STATUS_FAILED`, |
+  |                | services, commands,    | `/dashboard/` assertions)        |   concurrent approval idempotency, `next` redirect)                |
+  |                | `context_processors.py`|                                  | - `ContactDetailView` `create_customer`/`link_customer` POSTs      |
+  |                | `signals.py`, `utils`) |                                  | - `api_views.py` (`ContactListAPIView` N+1, `MessageListAPIView`   |
+  |                |                        |                                  |   bad `contact_id`, `SendMessageAPIView` 201 & 502 error paths)    |
+  |                |                        |                                  | - `META_REQUIRE_SIGNATURE=True` missing `app_secret` -> 503 test   |
+  |                |                        |                                  | - `context_processors.py`, `signals.py`, `process_webhooks.py`     |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | `cms`          | 22 prod files          | `test_cms_api.py` (12 pass)      | - `BlogPostEngagementAPIView` (`/api/cms/blog/<slug>/engagement/`):|
+  |                | (models, commands,     | `test_ai_agents.py` (1 pass)     |   0 tests (GET, POST like/comment, 15s cooldown 429, >100-char     |
+  |                | `ai_tools.py`,         | `test_ai_knowledge.py` (6 pass)  |   author, concurrent like race, interaction with `BlogPostLikeAPIView`)|
+  |                | `ai_assistants.py`,    | `test_ai_public.py` (2pass/1fail)| - `cms/ai_tools.py:create_inquiry` (CRM Customer/Opportunity,      |
+  |                | `views.py`, `admin.py`)| `test_ai_tools.py` (2 pass)      |   per-run dedup, maintenance toggle, email validation)             |
+  |                |                        |                                  | - `create_blog_draft`, `mark_inquiry_replied`, `cms/admin.py`      |
+  |                |                        |                                  | - `seed_cms_data`, `seed_demo_company`, `setup_website_bot`        |
+  |                |                        |                                  | - `test_ai_public.py` needs update for UUID threads + handoff mode |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | `hello_guy_ai` | 42 prod files          | 13 test files (118 collected:    | - `hello_guy_ai/services/rag.py`: 4 of 6 tests fail/error without  |
+  |                | (api, core, models,    | 113 pass, 2 fail, 3 errors)      |   `milvus_lite`                                                    |
+  |                | services, tasks, tools,|                                  | - `hello_guy_ai/views.py:chat_page` RBAC & `thread_stream` SSE     |
+  |                | commands, `analytics`, |                                  | - `analytics.py` `?format=json` live runs, Reminder action cross-  |
+  |                | `crypto.py`, `signals`)|                                  |   user auth, `assistant_cards` tool inspection                     |
+  |                |                        |                                  | - `LLMModelForm.clean_model_id` invalid prefix rejection           |
+  |                |                        |                                  | - `signals.py`, `tools/live_chat.py` (`request_human`),            |
+  |                |                        |                                  |   `hello_guy_reindex.py`, `crypto.py` invalid-key `DEBUG=False`    |
+  |                |                        |                                  | - Frontend JS: `floatingAiChat()` (`paused`/`stopped`/errors) and  |
+  |                |                        |                                  |   `markdown.js` XSS/URL sanitization                               |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+  | `config` &     | `config/` (8 files)    | `config/tests.py` (2 broken)     | - `config/tests.py` stale `hub-portal`; `settings/production.py`   |
+  | `voice_agent`  | `voice_agent/` (8+cmds)| `voice_agent/tests.py` (3 broken)|   env validation untested                                          |
+  | (Out of scope/ |                        |                                  | - `voice_agent`: `meet_bot.py`, `pipecat_worker.py`,               |
+  |  unmounted)    |                        |                                  |   `meet_bot_login.py`, `VoiceBotStart/Stop/StatusAPIView` untested |
+  +----------------+------------------------+----------------------------------+--------------------------------------------------------------------+
+
+================================================================================
+END OF REPORT
+================================================================================

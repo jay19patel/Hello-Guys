@@ -40,7 +40,11 @@ def broker():
 
 @pytest.fixture
 def user(django_user_model):
-    return django_user_model.objects.create_user("jay", "jay@example.com", "pass12345")
+    from meta_connector.roles import VIEWER, set_role
+
+    member = django_user_model.objects.create_user("jay", "jay@example.com", "pass12345")
+    set_role(member, VIEWER)  # the internal chat needs a dashboard role
+    return member
 
 
 @pytest.fixture

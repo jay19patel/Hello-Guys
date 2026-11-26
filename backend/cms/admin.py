@@ -19,7 +19,6 @@ from cms.models import (
     BlogPost,
     BlogComment,
     BlogLike,
-    InquirySubmission,
     WorkflowStep,
     AboutProfile,
     AboutStat,

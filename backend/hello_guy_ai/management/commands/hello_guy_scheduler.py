@@ -55,6 +55,12 @@ class Command(BaseCommand):
         for trigger_id in due_scheduled_triggers():
             fire_trigger.send(trigger_id)
             logger.info("Scheduled trigger %s fired", trigger_id)
+        try:
+            from core.reminders import notify_due_follow_ups  # host app: team follow-ups that reached their due time
+
+            notify_due_follow_ups()
+        except Exception:  # must never stop reminders/triggers from firing
+            logger.exception("Could not notify due follow-ups")
         fail_stale_runs()
         if redis.set(RECONCILE_KEY, "1", nx=True, ex=24 * 3600):  # first tick after deploy, then daily
             reconcile_knowledge.send()

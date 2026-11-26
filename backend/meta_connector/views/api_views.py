@@ -1,6 +1,7 @@
 import logging
 from django.db.models import Q
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -61,7 +62,10 @@ class MessageListAPIView(ListAPIView):
 
         contact_id = self.request.query_params.get('contact_id')
         if contact_id:
-            queryset = queryset.filter(contact_id=contact_id)
+            try:
+                queryset = queryset.filter(contact_id=int(contact_id))
+            except ValueError:
+                raise ValidationError({'contact_id': 'Must be an integer.'})
 
         direction = self.request.query_params.get('direction')
         if direction:

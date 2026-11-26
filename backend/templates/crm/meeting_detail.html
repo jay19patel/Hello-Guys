@@ -1,5 +1,5 @@
 {% extends "crm/base.html" %}
-{% load humanize %}
+{% load humanize tz %}
 {% block title %}{{ meeting.title }} · Meetings · CRM{% endblock %}
 
 {% block content %}
@@ -18,7 +18,7 @@
             </div>
             <p class="text-muted text-[13.5px] mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span class="font-medium text-ink/90 tabular-nums">
-                    <i class="fa-regular fa-calendar mr-1 text-muted"></i>{{ meeting.start_at|date:"D, d M Y · g:i A" }} – {{ meeting.end_at|date:"g:i A" }} ({{ meeting.duration_minutes }} min · {{ meeting.timezone }})
+                    {% timezone meeting.tzinfo %}<i class="fa-regular fa-calendar mr-1 text-muted"></i>{{ meeting.start_at|date:"D, d M Y · g:i A" }} – {{ meeting.end_at|date:"g:i A" }} ({{ meeting.duration_minutes }} min · {{ meeting.timezone }}){% endtimezone %}
                 </span>
                 {% if meeting.customer %}
                 <a href="{% url 'crm:customer' meeting.customer.pk %}" class="text-accent font-medium hover:underline">
@@ -36,12 +36,12 @@
 
     <div class="flex flex-wrap items-center gap-2">
         {% if meeting.meet_url %}
-        <a href="{{ meeting.meet_url }}" target="_blank" rel="noopener" class="btn btn-primary">
+        <a href="{{ meeting.meet_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
             <i class="fa-solid fa-video"></i> Join Google Meet
         </a>
         {% endif %}
         {% if meeting.google_event_url %}
-        <a href="{{ meeting.google_event_url }}" target="_blank" rel="noopener" class="btn btn-ghost">
+        <a href="{{ meeting.google_event_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost">
             <i class="fa-brands fa-google"></i> Open in Calendar
         </a>
         {% endif %}
@@ -132,6 +132,66 @@
             {% endif %}
         </section>
 
+        <!-- Proposed Times -->
+        <section id="proposals" class="card p-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="font-display font-semibold text-[16px] flex items-center gap-2">
+                        <i class="fa-regular fa-calendar-plus text-accent"></i> Proposed Times
+                        {% if pending_proposals %}<span class="pill bg-warn/10 text-warn border border-warn/20">{{ pending_proposals|length }} awaiting your decision</span>{% endif %}
+                    </h2>
+                    <p class="text-[12.5px] text-muted">New times guests suggested, from Google Calendar replies or logged by the team.</p>
+                </div>
+            </div>
+            {% timezone meeting.tzinfo %}
+            {% if proposals %}
+            <ul class="mt-4 divide-y divide-line border border-line rounded-xl overflow-hidden">
+                {% for p in proposals %}
+                <li class="px-4 py-3 flex flex-wrap items-start justify-between gap-3 bg-surface">
+                    <div class="min-w-0 text-[13.5px]">
+                        <p class="font-semibold text-ink">{{ p.name|default:p.email }} <span class="font-normal text-muted text-[12.5px]">{{ p.email }}</span></p>
+                        {% if p.start %}<p class="tabular-nums text-ink/90">{{ p.start|date:"D, d M Y · g:i A" }}{% if p.end %} – {{ p.end|date:"g:i A" }}{% endif %} <span class="text-muted text-[12px]">({{ meeting.timezone }})</span></p>{% endif %}
+                        {% if p.note %}<p class="text-[12.5px] text-ink/80 mt-1 bg-subtle/70 px-2.5 py-1 rounded-lg border border-line/70">{{ p.note }}</p>{% endif %}
+                    </div>
+                    <div class="shrink-0 flex items-center gap-2">
+                        {% if p.status == 'accepted' %}<span class="pill bg-ok/10 text-ok border border-ok/25">Accepted</span>
+                        {% elif p.status == 'declined' %}<span class="pill bg-bad/10 text-bad border border-bad/25">Declined</span>
+                        {% elif can_edit %}
+                        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="resolve-proposal"><input type="hidden" name="proposal_id" value="{{ p.id }}"><input type="hidden" name="decision" value="accepted">
+                            <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-check"></i> {% if p.start %}Accept &amp; Reschedule{% else %}Accept{% endif %}</button></form>
+                        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="resolve-proposal"><input type="hidden" name="proposal_id" value="{{ p.id }}"><input type="hidden" name="decision" value="declined">
+                            <button type="submit" class="btn btn-ghost btn-sm text-bad"><i class="fa-solid fa-xmark"></i> Decline</button></form>
+                        {% else %}<span class="pill bg-warn/10 text-warn border border-warn/25">Pending</span>{% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mt-4 text-[13.5px] text-muted">No proposed times yet.</p>
+            {% endif %}
+            {% if can_edit %}
+            <details class="mt-4" {% if propose_form.errors %}open{% endif %}>
+                <summary class="cursor-pointer text-[13px] font-medium text-accent">Log a guest's proposed time</summary>
+                <form method="post" class="mt-3 flex flex-col gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="propose-time">
+                    <div class="grid sm:grid-cols-2 gap-3">
+                        {% for field in propose_form %}
+                        <div class="field flex flex-col gap-1 {% if field.name == 'note' %}sm:col-span-2{% endif %}">
+                            <label for="{{ field.id_for_label }}" class="caps">{{ field.label }}</label>
+                            {{ field }}
+                            {% for e in field.errors %}<p class="text-[12px] text-bad">{{ e }}</p>{% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% for e in propose_form.non_field_errors %}<p class="text-[12px] text-bad">{{ e }}</p>{% endfor %}
+                    <button type="submit" class="btn btn-primary btn-sm self-start"><i class="fa-solid fa-plus"></i> Log proposed time</button>
+                </form>
+            </details>
+            {% endif %}
+            {% endtimezone %}
+        </section>
+
         <!-- Meeting Transcripts Table & Reader -->
         <section id="transcripts" class="card p-5" x-data="{ addOpen: {% if transcript_form.errors %}true{% else %}false{% endif %}, activeTranscript: {% if transcripts %}{{ transcripts.0.pk }}{% else %}null{% endif %} }">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -214,7 +274,7 @@
                             <td class="cell px-4 text-muted">{{ tr.speaker_names|join:", "|default:"—" }}</td>
                             <td class="cell px-4" @click.stop>
                                 {% if tr.google_doc_url %}
-                                <a href="{{ tr.google_doc_url }}" target="_blank" rel="noopener" class="text-accent hover:underline font-medium">Open Doc</a>
+                                <a href="{{ tr.google_doc_url }}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline font-medium">Open Doc</a>
                                 {% elif can_edit and google_connected and meeting.customer %}
                                 <form method="post">
                                     {% csrf_token %}
@@ -222,6 +282,10 @@
                                     <input type="hidden" name="transcript_id" value="{{ tr.pk }}">
                                     <button type="submit" class="text-[12px] text-accent hover:underline font-medium">Save to Drive</button>
                                 </form>
+                                {% elif not google_connected %}
+                                <span class="text-muted text-[12px]">Connect Google first</span>
+                                {% elif not meeting.customer %}
+                                <span class="text-muted text-[12px]">Link a customer first</span>
                                 {% else %}
                                 <span class="text-muted">—</span>
                                 {% endif %}
@@ -334,13 +398,13 @@
             <form x-show="editOpen" x-transition x-cloak method="post" class="mt-4 flex flex-col gap-3">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="update">
-                {% for field in form %}
+                {% timezone meeting.tzinfo %}{% for field in form %}
                 <div class="field flex flex-col gap-1">
                     <label for="{{ field.id_for_label }}" class="caps">{{ field.label }}</label>
                     {{ field }}
                     {% for e in field.errors %}<p class="text-[12px] text-bad">{{ e }}</p>{% endfor %}
                 </div>
-                {% endfor %}
+                {% endfor %}{% endtimezone %}
                 <button type="submit" class="btn btn-primary btn-sm self-start"><i class="fa-solid fa-floppy-disk"></i> Save &amp; Sync</button>
             </form>
         </section>

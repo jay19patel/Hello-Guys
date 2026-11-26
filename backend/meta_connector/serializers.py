@@ -109,8 +109,8 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class SendMessageSerializer(serializers.Serializer):
     platform = serializers.ChoiceField(
-        choices=[PlatformAccount.PLATFORM_WHATSAPP, PlatformAccount.PLATFORM_INSTAGRAM],
-        help_text="Target platform ('whatsapp' or 'instagram')"
+        choices=[PlatformAccount.PLATFORM_WHATSAPP, PlatformAccount.PLATFORM_INSTAGRAM, PlatformAccount.PLATFORM_FACEBOOK],
+        help_text="Target platform ('whatsapp', 'instagram' or 'facebook')"
     )
     to = serializers.CharField(
         max_length=255,
@@ -130,9 +130,4 @@ class SendMessageSerializer(serializers.Serializer):
         allow_null=True,
         default=None,
         help_text="Optional PlatformAccount ID to send from"
-    )
-    async_send = serializers.BooleanField(
-        required=False,
-        default=False,
-        help_text="Whether to enqueue message sending in Celery background queue"
     )

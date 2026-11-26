@@ -1,6 +1,7 @@
 """CRM dashboard (/crm/). Roles from meta_connector.roles: Viewer reads, Agent works customers/opportunities/chats,
 Admin manages settings and deletes. Detail pages take POSTs with an `action` field; each runs `post_<action>()`."""
 
+import logging
 from datetime import timedelta
 
 from django.contrib import messages
@@ -13,6 +14,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
+from django.utils.dateparse import parse_datetime
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, TemplateView
 
@@ -29,16 +32,39 @@ from crm.models import (
     Activity, Customer, FollowUp, GoogleAccount, GoogleFile, Meeting, MeetingTranscript,
     Opportunity, Service, Source,
 )
+from rest_framework import serializers
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
+
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.exceptions import AssistantNotFound
 from hello_guy_ai.models import Message as AIMessage, Thread
 from hello_guy_ai.services import chat
 from meta_connector.models import Contact, Message as MetaMessage
-from meta_connector.roles import ADMIN, AGENT, RoleRequiredMixin, get_role, has_role
+from meta_connector.roles import ADMIN, AGENT, HasRole, RoleRequiredMixin, get_role, has_role
 from meta_connector.services import SendError, send_message
+
+logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 25
 OAUTH_SALT = "crm.google.oauth"
+
+
+def safe_next(request, fallback: str) -> str:
+    """The POSTed `next` URL when it stays on this site, else `fallback` (a route name or URL)."""
+    url = request.POST.get("next", "")
+    if url and url_has_allowed_host_and_scheme(url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return url
+    return fallback
+
+
+def int_or(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 class CRMView(RoleRequiredMixin):
@@ -223,6 +249,7 @@ class OverviewView(CRMView, TemplateView):
             team_board=team_board,
             do_next_followups=FollowUp.objects.filter(status=FollowUp.Status.PENDING).select_related("customer", "opportunity").order_by("due_at")[:6],
             pipeline=[(label, by_status.get(value, 0), value) for value, label in Opportunity.Status.choices],
+            pipeline_total=max(total_opps, 1),
             recent=opportunities[:8],
             follow_ups=opportunities.filter(status__in=Opportunity.OPEN, next_follow_up__lte=now + timedelta(days=1))
             .order_by("next_follow_up")[:8],
@@ -292,14 +319,14 @@ class OpportunityStageView(CRMView, View):
         if new_status not in Opportunity.Status.values:
             if is_json:
                 return JsonResponse({"ok": False, "error": "Invalid stage"}, status=400)
-            return redirect(request.POST.get("next") or "crm:opportunities")
+            return redirect(safe_next(request, "crm:opportunities"))
         if new_status != opp.status:
             services.set_status(opp, new_status, request.user)
             if not is_json:
                 messages.success(request, f"Moved '{opp.title}' to {opp.get_status_display()}.")
         if is_json:
             return JsonResponse({"ok": True, "status": opp.status, "label": opp.get_status_display()})
-        return redirect(request.POST.get("next") or "crm:opportunities")
+        return redirect(safe_next(request, "crm:opportunities"))
 
 
 class OpportunityCreateView(CRMView, CreateView):
@@ -345,6 +372,7 @@ class OpportunityDetailView(CRMView, ActionsMixin, DetailView):
         opp = form.save(commit=False)
         new_status, opp.status = opp.status, old_status
         opp.save()
+        form.save_m2m()  # the services checkboxes (OpportunityForm.save() only sets them when commit=True)
         if new_status != old_status:
             services.set_status(opp, new_status, self.request.user)  # logs the change on the timeline
         messages.success(self.request, "Opportunity saved.")
@@ -375,7 +403,7 @@ class CustomerListView(CRMView, ListView):
 
     def get_queryset(self):
         qs = Customer.objects.select_related("owner").annotate(
-            open_count=Count("opportunities", filter=Q(opportunities__status__in=Opportunity.OPEN)))
+            open_count=Count("opportunities", filter=Q(opportunities__status__in=Opportunity.OPEN))).order_by("-created_at")
         if q := self.request.GET.get("q", "").strip():
             qs = qs.filter(Q(name__icontains=q) | Q(company__icontains=q) | Q(email__icontains=q)
                            | Q(phone__icontains=q) | Q(instagram_username__icontains=q.lstrip("@")))
@@ -437,7 +465,7 @@ class CustomerDetailView(CRMView, ActionsMixin, DetailView):
             if contacts else []
         )
         return super().get_context_data(
-            opportunities=customer.opportunities.select_related("service"),
+            opportunities=customer.opportunities.select_related("service").prefetch_related("services"),  # service_list reads both
             contacts=contacts,
             channel_messages=channel_messages,
             follow_ups=customer.follow_ups.select_related("opportunity", "assigned_to").order_by("status", "due_at")[:15],
@@ -503,7 +531,7 @@ class CustomerDetailView(CRMView, ActionsMixin, DetailView):
 
     def post_drive_delete(self):
         self.require(ADMIN)
-        gfile = get_object_or_404(GoogleFile, pk=self.request.POST.get("file"), customer=self.object)
+        gfile = get_object_or_404(GoogleFile, pk=int_or(self.request.POST.get("file"), 0), customer=self.object)
         google.delete_file(gfile)
         services.add_note(user=self.request.user, customer=self.object, kind=Activity.Kind.SYSTEM,
                           body=f"Moved {gfile.get_kind_display()} \"{gfile.name}\" to Google Drive trash")
@@ -520,7 +548,7 @@ class CustomerDetailView(CRMView, ActionsMixin, DetailView):
             services.add_note(user=self.request.user, customer=self.object, kind=Activity.Kind.SYSTEM,
                               body=f"Shared the Drive folder with {email} ({role})")
         else:
-            google.share_file(get_object_or_404(GoogleFile, pk=form.cleaned_data["target"], customer=self.object),
+            google.share_file(get_object_or_404(GoogleFile, pk=int_or(form.cleaned_data["target"], 0), customer=self.object),
                               email, role)
         return self.done(f"Shared with {email}.")
 
@@ -592,7 +620,7 @@ class InboxThreadView(CRMView, ActionsMixin, DetailView):
     def get(self, request, *args, **kwargs):
         if request.GET.get("format") != "json":
             return super().get(request, *args, **kwargs)
-        thread, after = self.get_object(), int(request.GET.get("after") or 0)
+        thread, after = self.get_object(), int_or(request.GET.get("after"), 0)
         rows = [dict(m, at=m["at"].isoformat()) for m in transcript(thread) if m["id"] > after]
         return JsonResponse({"messages": rows, "human": thread.human_mode, "waiting": thread.needs_human})
 
@@ -747,8 +775,8 @@ class FollowUpCreateView(CRMView, View):
     role = AGENT
 
     def post(self, request):
-        customer = get_object_or_404(Customer, pk=request.POST.get("customer_id"))
-        opp_id = request.POST.get("opportunity_id")
+        customer = get_object_or_404(Customer, pk=int_or(request.POST.get("customer_id"), 0))
+        opp_id = int_or(request.POST.get("opportunity_id"), 0)
         opportunity = Opportunity.objects.filter(pk=opp_id, customer=customer).first() if opp_id else None
         due_raw = request.POST.get("due_at", "").strip()
         note = request.POST.get("note", "").strip()
@@ -770,7 +798,7 @@ class FollowUpCreateView(CRMView, View):
             created_by=request.user,
         )
         messages.success(request, f"Follow-up scheduled for {customer.name}.")
-        return redirect(request.POST.get("next") or "crm:follow-ups")
+        return redirect(safe_next(request, "crm:follow-ups"))
 
 
 class FollowUpActionView(CRMView, View):
@@ -779,7 +807,7 @@ class FollowUpActionView(CRMView, View):
     def post(self, request, pk: int):
         fu = get_object_or_404(FollowUp.objects.select_related("customer", "opportunity"), pk=pk)
         action = request.POST.get("action")
-        next_url = request.POST.get("next") or "crm:follow-ups"
+        next_url = safe_next(request, "crm:follow-ups")
         if action == "done":
             services.complete_follow_up(fu, user=request.user)
             messages.success(request, "Follow-up marked done.")
@@ -788,7 +816,7 @@ class FollowUpActionView(CRMView, View):
             fu.save(update_fields=["status", "updated_at"])
             messages.info(request, "Follow-up cancelled.")
         elif action == "snooze":
-            hours = int(request.POST.get("hours", 24) or 24)
+            hours = int_or(request.POST.get("hours"), 24)
             fu.due_at = timezone.now() + timedelta(hours=max(1, min(hours, 24 * 30)))
             fu.save(update_fields=["due_at", "updated_at"])
             messages.success(request, "Follow-up rescheduled.")
@@ -808,8 +836,9 @@ class MeetingListView(CRMView, ListView):
         if GoogleAccount.get_solo().is_connected and cache.add("crm_meetings_auto_sync", 1, timeout=300):
             try:
                 google.import_calendar_events()
-            except google.GoogleError:
-                pass
+            except google.GoogleError as exc:
+                logger.warning("Calendar auto-sync failed: %s", exc)
+                messages.warning(request, f"Google Calendar sync failed: {exc}")
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -907,13 +936,13 @@ class MeetingCreateView(CRMView, CreateView):
         initial["start_at"] = timezone.localtime(default_start).strftime("%Y-%m-%dT%H:%M")
         initial["end_at"] = timezone.localtime(default_start + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
         if cid := self.request.GET.get("customer"):
-            customer = Customer.objects.filter(pk=cid).first()
+            customer = Customer.objects.filter(pk=int_or(cid, 0)).first()
             if customer:
                 initial["customer"] = customer
                 if customer.email:
                     initial["attendees"] = [customer.email]
         if oid := self.request.GET.get("opportunity"):
-            opp = Opportunity.objects.select_related("customer").filter(pk=oid).first()
+            opp = Opportunity.objects.select_related("customer").filter(pk=int_or(oid, 0)).first()
             if opp:
                 initial["opportunity"] = opp
                 initial["customer"] = opp.customer
@@ -939,7 +968,7 @@ class MeetingCreateView(CRMView, CreateView):
                 customer=meeting.customer,
                 opportunity=meeting.opportunity,
                 kind=Activity.Kind.MEETING,
-                body=f"Scheduled meeting \"{meeting.title}\" for {timezone.localtime(meeting.start_at):%d %b %Y, %H:%M}.",
+                body=f"Scheduled meeting \"{meeting.title}\" for {timezone.localtime(meeting.start_at):%d %b %Y, %I:%M %p}.",
             )
         return redirect("crm:meeting", meeting.pk)
 
@@ -953,7 +982,7 @@ class MeetingSyncView(CRMView, View):
     http_method_names = ["post"]
 
     def post(self, request):
-        next_url = request.POST.get("next") or reverse("crm:meetings")
+        next_url = safe_next(request, reverse("crm:meetings"))
         if not GoogleAccount.get_solo().is_connected:
             messages.error(request, "Google is not connected. Connect it in CRM > Settings first.")
             return redirect(next_url)
@@ -986,7 +1015,8 @@ class MeetingDetailView(CRMView, ActionsMixin, DetailView):
         return super().get_context_data(
             guests=m.detailed_guests,
             rsvp=m.rsvp_summary,
-            proposals=m.proposed_times or [],
+            proposals=[{**p, "start": parse_datetime(p.get("proposed_start") or ""), "end": parse_datetime(p.get("proposed_end") or "")}
+                       for p in m.proposed_times or []],
             pending_proposals=m.pending_proposals,
             transcripts=m.transcripts.all(),
             google_connected=GoogleAccount.get_solo().is_connected,
@@ -1056,8 +1086,10 @@ class MeetingDetailView(CRMView, ActionsMixin, DetailView):
         return self.done("Meeting cancelled.")
 
     def post_propose_time(self):
-        form = ProposeTimeForm(self.request.POST)
-        if not form.is_valid():
+        with timezone.override(self.object.tzinfo):  # the typed times are in the meeting's timezone, as shown
+            form = ProposeTimeForm(self.request.POST)
+            valid = form.is_valid()
+        if not valid:
             return self.rerender(propose_form=form)
         meetings_svc.propose_meeting_time(
             self.object,
@@ -1100,7 +1132,7 @@ class MeetingDetailView(CRMView, ActionsMixin, DetailView):
         if not self.object.customer_id:
             messages.error(self.request, "Link a customer to this meeting first to save to their Google Drive folder.")
             return self.done()
-        transcript = get_object_or_404(MeetingTranscript, pk=self.request.POST.get("transcript_id"), meeting=self.object)
+        transcript = get_object_or_404(MeetingTranscript, pk=int_or(self.request.POST.get("transcript_id"), 0), meeting=self.object)
         content_parts = [f"# {transcript.title or self.object.title}"]
         if transcript.summary:
             content_parts.append(f"\n## Summary\n{transcript.summary}")
@@ -1118,7 +1150,7 @@ class MeetingDetailView(CRMView, ActionsMixin, DetailView):
 
     def post_delete_transcript(self):
         self.require(ADMIN)
-        transcript = get_object_or_404(MeetingTranscript, pk=self.request.POST.get("transcript_id"), meeting=self.object)
+        transcript = get_object_or_404(MeetingTranscript, pk=int_or(self.request.POST.get("transcript_id"), 0), meeting=self.object)
         transcript.delete()
         return self.done("Transcript deleted.")
 
@@ -1144,10 +1176,10 @@ class MeetingDetailView(CRMView, ActionsMixin, DetailView):
         return redirect("crm:meetings")
 
 
-class MeetingTranscriptAPIView(CRMView, View):
-    """JSON endpoint to store a meeting transcript at the end of a call/meeting."""
-    role = AGENT
-    http_method_names = ["post"]
+class MeetingTranscriptAPIView(APIView):
+    """JSON endpoint to store a meeting transcript at the end of a call/meeting. Agents and Admins only, by
+    `Authorization: Token ...` (external AI/voice callers, no CSRF) or a logged-in session (CSRF enforced by DRF)."""
+    permission_classes = [HasRole]
 
     def post(self, request, pk: int):
         meeting = get_object_or_404(Meeting, pk=pk)
@@ -1155,6 +1187,8 @@ class MeetingTranscriptAPIView(CRMView, View):
             payload = json.loads(request.body.decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
             return JsonResponse({"error": "Invalid JSON body."}, status=400)
+        if not isinstance(payload, dict):
+            return JsonResponse({"error": "JSON object expected."}, status=400)
 
         raw_text = (payload.get("raw_text") or "").strip()
         if not raw_text:
@@ -1174,7 +1208,7 @@ class MeetingTranscriptAPIView(CRMView, View):
             action_items=payload.get("action_items") if isinstance(payload.get("action_items"), list) else None,
             key_decisions=payload.get("key_decisions") if isinstance(payload.get("key_decisions"), list) else None,
             language=(payload.get("language") or "en")[:20],
-            duration_seconds=payload.get("duration_seconds"),
+            duration_seconds=int_or(payload.get("duration_seconds"), 0) or None,
             user=request.user,
         )
         return JsonResponse(
@@ -1186,3 +1220,41 @@ class MeetingTranscriptAPIView(CRMView, View):
             },
             status=201,
         )
+
+
+# ---- public website contact form -------------------------------------------------------------
+
+
+class LeadSerializer(serializers.Serializer):
+    name = serializers.CharField(min_length=2, max_length=150)
+    email = serializers.EmailField(max_length=254)
+    message = serializers.CharField(min_length=5, max_length=5000)
+    phone = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    subject = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    inquiry_type = serializers.CharField(max_length=60, required=False, allow_blank=True)
+
+
+class LeadCreateAPIView(APIView):
+    """POST /crm/api/leads/ - the website's contact form. Public (no login, so no CSRF) and throttled per IP
+    with the `inquiry` rate; saves a customer + opportunity and alerts the team."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "inquiry"
+
+    def post(self, request):
+        from cms.views import check_maintenance  # same switch as the rest of the public API; imported late to avoid a cycle
+
+        if (blocked := check_maintenance("inquiries")) is not None:
+            return blocked
+        serializer = LeadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        opportunity = services.create_opportunity(
+            name=data["name"], email=data["email"], phone=data.get("phone", ""),
+            title=data.get("subject") or data["message"].split("\n")[0][:120], details=data["message"],
+            source=Source.WEBSITE_FORM, form_type=data.get("inquiry_type", ""),
+        )
+        return Response({"status": "ok", "inquiry_id": opportunity.reference,
+                         "message": "Thank you! Your project inquiry has been received. We will get back to you shortly."},
+                        status=201)

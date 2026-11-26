@@ -24,6 +24,7 @@ urlpatterns = [
     path("meetings/<int:pk>/transcript/", views.MeetingTranscriptAPIView.as_view(), name="meeting-transcript-api"),
     path("inbox/", views.InboxView.as_view(), name="inbox"),
     path("inbox/<uuid:thread_id>/", views.InboxThreadView.as_view(), name="inbox-thread"),
+    path("api/leads/", views.LeadCreateAPIView.as_view(), name="lead-create"),  # public website contact form
     path("settings/", views.SettingsView.as_view(), name="settings"),
     path("google/connect/", views.GoogleConnectView.as_view(), name="google-connect"),
     path("google/callback/", views.GoogleCallbackView.as_view(), name="google-callback"),

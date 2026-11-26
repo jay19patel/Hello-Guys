@@ -5,9 +5,9 @@ from uuid import UUID
 from ninja import Router
 from ninja.pagination import paginate
 from ninja.responses import Status
-from ninja.security import django_auth
 from ninja.throttling import AuthRateThrottle
 
+from hello_guy_ai.access import chat_auth
 from hello_guy_ai.services import chat, reminders
 from hello_guy_ai.api.schemas import (
     AssistantOut,
@@ -31,7 +31,7 @@ from hello_guy_ai.api.schemas import (
 from hello_guy_ai.core.engine import public_questions
 from hello_guy_ai.models import Run
 
-router = Router(auth=django_auth, tags=["internal"])
+router = Router(auth=chat_auth, tags=["internal"])
 E404 = {404: ErrorOut}
 
 

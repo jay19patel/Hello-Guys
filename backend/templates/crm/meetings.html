@@ -147,7 +147,7 @@
                         </td>
                         <td class="cell px-5">
                             {% if tr.google_doc_url %}
-                            <a href="{{ tr.google_doc_url }}" target="_blank" rel="noopener" class="pill bg-accent/10 text-accent hover:bg-accent/20">
+                            <a href="{{ tr.google_doc_url }}" target="_blank" rel="noopener noreferrer" class="pill bg-accent/10 text-accent hover:bg-accent/20">
                                 <i class="fa-solid fa-file-lines text-[11px]"></i> Google Doc
                             </a>
                             {% else %}
@@ -240,7 +240,7 @@
 
                 <div class="flex items-center gap-2 shrink-0">
                     {% if m.meet_url and m.status == 'scheduled' %}
-                    <a href="{{ m.meet_url }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
+                    <a href="{{ m.meet_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
                         <i class="fa-solid fa-video"></i> Join Meet
                     </a>
                     {% endif %}

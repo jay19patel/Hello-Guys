@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.views import View
@@ -63,7 +65,7 @@ def account_page(request, pk):
 
     if account.platform == PlatformAccount.PLATFORM_INSTAGRAM:
         after = request.GET.get('after', '')
-        page_url = reverse('dashboard-account', args=[pk]) + (f"?after={after}" if after else '')
+        page_url = reverse('dashboard-account', args=[pk]) + ('?' + urlencode({'after': after}) if after else '')
 
         if request.method == 'POST':
             if request.POST.get('action') == 'remove' and not has_role(request.user, ADMIN):

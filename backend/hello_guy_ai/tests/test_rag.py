@@ -6,6 +6,14 @@ from hello_guy_ai.services import rag
 from hello_guy_ai.services.rag import RagService, TextChunker, VectorStore
 
 
+try:  # Milvus Lite runs the vector store in-process; without it those tests skip instead of failing
+    import milvus_lite  # noqa: F401
+except ImportError:
+    needs_milvus = pytest.mark.skip(reason="milvus-lite not installed")
+else:
+    needs_milvus = lambda f: f  # noqa: E731
+
+
 def fake_embed(texts):
     """Deterministic 8-dim vectors: same text -> same vector."""
     return [[b / 255 + 0.01 for b in hashlib.sha256(t.lower().encode()).digest()[:8]] for t in texts]
@@ -28,6 +36,7 @@ def test_chunker_respects_size_and_overlap():
 
 
 @pytest.mark.django_db
+@needs_milvus
 def test_ingest_search_scoped_by_knowledge_base(service, tmp_path):
     kb1 = KnowledgeBase.objects.create(slug="kb1", name="kb1")
     kb2 = KnowledgeBase.objects.create(slug="kb2", name="kb2")
@@ -50,6 +59,7 @@ def test_ingest_search_scoped_by_knowledge_base(service, tmp_path):
     assert service.search([kb1.pk, kb2.pk], "x", top_k=10, min_score=-1) == []
 
 
+@needs_milvus
 def test_rejects_unsupported_file(service, tmp_path):
     bad = tmp_path / "a.exe"
     bad.write_text("x")
@@ -57,6 +67,7 @@ def test_rejects_unsupported_file(service, tmp_path):
         service.ingest(doc_id=1, kb_id=1, title="a", path=str(bad))
 
 
+@needs_milvus
 def test_reopened_store_loads_released_collection(service, tmp_path):
     path = tmp_path / "a.md"
     path.write_text("Some knowledge.")
@@ -98,6 +109,7 @@ def test_admin_embedding_model_is_used_with_its_key(monkeypatch):
 
 
 @pytest.mark.django_db
+@needs_milvus
 def test_each_embedding_model_gets_its_own_collection_sized_by_its_vectors(tmp_path):
     uri = str(tmp_path / "m.db")
     small, large = VectorStore(uri, "model_a"), VectorStore(uri, "model_b")

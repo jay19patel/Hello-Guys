@@ -8,6 +8,7 @@ Hardening vs Flow: only staff can write *shared* (agent-scope) memories, so one
 user cannot poison what every other user's agent believes.
 """
 
+import logging
 import re
 from typing import Any, Literal
 
@@ -15,6 +16,8 @@ from django.db.models import Q
 
 from hello_guy_ai.core.runtime import Tool, ToolError, build_tool, current_context
 from hello_guy_ai.models import AgentMemory, Run
+
+logger = logging.getLogger(__name__)
 
 INJECT_ALL_CAP = 20  # below this, inject everything; above, keyword search + recent
 SEARCH_TOP_K = 12
@@ -133,6 +136,7 @@ def save_feedback_memory(run: Run, user: Any, comment: str) -> int | None:
     try:
         spec = resolve_agent(run.thread.assistant_id, user)
     except Exception:
+        logger.exception("Could not resolve agent %s to save feedback memory", run.thread.assistant_id)
         return None
     if not spec.memory_enabled:
         return None

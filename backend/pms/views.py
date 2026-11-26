@@ -80,6 +80,7 @@ class ProjectListView(PMSView, ListView):
                 total_expected_hours=Coalesce(Sum("tasks__expected_hours"), Decimal("0.00")),
                 total_actual_hours=Coalesce(Sum("tasks__actual_hours"), Decimal("0.00")),
             )
+            .order_by("-created_at")  # annotate() drops Meta.ordering; pagination needs one
         )
         q = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "").strip()
@@ -128,8 +129,11 @@ class ProjectDetailView(PMSView, ActionsMixin, DetailView):
             r["order"] = 2 * idx + 2
 
         total_tasks = len(rows)
-        done_tasks = sum(1 for r in rows if r["task"].status == Task.Status.DONE)
-        project_progress = round((done_tasks / total_tasks) * 100) if total_tasks else 0
+        # same rule as each row's roll-up: only leaf, non-cancelled tasks count
+        leaves = [r["task"] for r in rows if not r["child_count"] and r["task"].status != Task.Status.CANCELLED]
+        leaf_tasks = len(leaves)
+        done_tasks = sum(1 for t in leaves if t.status == Task.Status.DONE)
+        project_progress = round((done_tasks / leaf_tasks) * 100) if leaf_tasks else 0
         total_expected_hours = sum((r["task"].expected_hours or Decimal("0.00") for r in rows), Decimal("0.00"))
         total_actual_hours = sum((r["task"].actual_hours or Decimal("0.00") for r in rows), Decimal("0.00"))
 
@@ -152,6 +156,7 @@ class ProjectDetailView(PMSView, ActionsMixin, DetailView):
             parent_options=parent_options,
             users=users,
             total_tasks=total_tasks,
+            leaf_tasks=leaf_tasks,
             done_tasks=done_tasks,
             project_progress=project_progress,
             total_expected_hours=total_expected_hours,
@@ -272,6 +277,7 @@ class TaskDetailView(PMSView, ActionsMixin, DetailView):
             ancestors=ancestors,
             subtasks=subtasks,
             has_children=bool(subtasks),
+            can_delete=self.can_delete(),
             status_choices=Task.Status.choices,
             **kwargs,
         )
@@ -293,7 +299,13 @@ class TaskDetailView(PMSView, ActionsMixin, DetailView):
         messages.success(self.request, f"Status set to {self.object.get_status_display()}.")
         return redirect("pms:task", self.object.pk)
 
+    def can_delete(self) -> bool:
+        """Same rule as deleting the project: an Admin or the project owner (Agents cannot delete)."""
+        return has_role(self.request.user, ADMIN) or self.object.project.owner_id == self.request.user.pk
+
     def post_delete(self):
+        if not self.can_delete():
+            raise PermissionDenied("Only an Admin or the project owner can delete tasks.")
         project_pk = self.object.project_id
         try:
             self.object.delete()

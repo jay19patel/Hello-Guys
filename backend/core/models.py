@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from core.safety import safe_url
+
 
 class GlobalNotification(models.Model):
     """Platform-wide in-app notification usable by any Django app (CRM, Meta, AI, CMS, etc.)."""
@@ -118,7 +120,11 @@ class GlobalFollowUp(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.title} ({timezone.localtime(self.due_at):%d %b %H:%M})"
+        return f"{self.title} ({timezone.localtime(self.due_at):%d %b %I:%M %p})"
+
+    @property
+    def safe_related_url(self) -> str:
+        return safe_url(self.related_url)
 
     @property
     def is_overdue(self) -> bool:

@@ -1,5 +1,7 @@
 """REST API (Django Ninja). Mounted at /api/ai/."""
 
+import logging
+
 from django.db import connection
 from ninja import NinjaAPI
 from ninja.responses import Status
@@ -11,6 +13,8 @@ from hello_guy_ai.api.schemas import HealthOut
 from hello_guy_ai.core import events
 from hello_guy_ai.exceptions import AssistantNotFound, NotAllowed, RunConflict, ThreadBusy
 from hello_guy_ai.models import Run, Thread
+
+logger = logging.getLogger(__name__)
 
 api = NinjaAPI(
     title="Hello Guy AI",
@@ -54,6 +58,7 @@ def _ok(probe) -> bool:
     try:
         probe()
     except Exception:
+        logger.warning("Health probe failed", exc_info=True)
         return False
     return True
 

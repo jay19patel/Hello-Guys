@@ -76,3 +76,31 @@ def test_agent_messages_a_customer_on_whatsapp(admin_client, data):
         assert admin_client.post(url, {"action": "message", "contact": contact.pk, "text": "Quote ready"}).status_code == 302
     assert send.call_args.kwargs["to_number"] == "9199" and send.call_args.kwargs["text"] == "Quote ready"
     assert data["customer"].activities.filter(kind="message", body="Quote ready").exists()
+
+
+def test_next_redirects_stay_on_this_site(admin_client, data):
+    url = reverse("crm:opportunity-stage", args=[data["opportunity"].pk])
+    assert admin_client.post(url, {"status": "won", "next": "https://evil.example/x"})["Location"] == reverse("crm:opportunities")
+    assert admin_client.post(url, {"status": "won", "next": "//evil.example"})["Location"] == reverse("crm:opportunities")
+    assert admin_client.post(url, {"status": "won", "next": "/crm/customers/"})["Location"] == "/crm/customers/"
+
+
+def test_bad_numbers_in_requests_do_not_crash(admin_client, data):
+    assert admin_client.get(reverse("crm:inbox-thread", args=[data["thread"].pk]) + "?format=json&after=abc").status_code == 200
+    assert admin_client.post(reverse("crm:follow-up-create"), {"customer_id": "abc"}).status_code == 404
+
+
+def test_editing_an_opportunity_saves_its_services(admin_client, data):
+    from crm.models import Service
+    a, b = Service.objects.create(name="Web"), Service.objects.create(name="Apps")
+    opp = data["opportunity"]
+    res = admin_client.post(reverse("crm:opportunity", args=[opp.pk]), {
+        "action": "update", "customer": data["customer"].pk, "services": [a.pk, b.pk], "title": opp.title,
+        "status": opp.status})
+    assert res.status_code == 302
+    assert set(opp.services.all()) == {a, b}
+
+
+def test_customer_detail_shows_where_the_opportunity_came_from(admin_client, data):
+    Opportunity.objects.filter(pk=data["opportunity"].pk).update(source="website_form", form_type="Contact Form")
+    assert "Website form · Contact Form" in admin_client.get(reverse("crm:customer", args=[data["customer"].pk])).content.decode()

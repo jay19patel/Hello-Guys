@@ -71,7 +71,7 @@ class RoleTests(TestCase):
         self.assertEqual(self.client.post('/api/meta/send/', {'platform': 'instagram', 'to': '1', 'text': 'x'}).status_code, 403)
 
     def test_no_role_and_anonymous(self):
-        self.assertRedirects(self.client.get(reverse('dashboard')), reverse('dashboard-login') + '?next=/dashboard/')
+        self.assertRedirects(self.client.get(reverse('dashboard')), reverse('dashboard-login') + '?next=' + reverse('dashboard'))
         self.client.force_login(User.objects.create_user('nobody', password='pw'))
         self.assertEqual(self.client.get(reverse('dashboard')).status_code, 403)
 

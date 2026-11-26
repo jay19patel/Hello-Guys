@@ -122,7 +122,7 @@ def propose_meeting_time(
     meeting.save(update_fields=["proposed_times", "updated_at"])
 
     if meeting.customer_id:
-        when = timezone.localtime(proposed_start).strftime("%d %b %Y, %H:%M") if proposed_start else "new time"
+        when = timezone.localtime(proposed_start).strftime("%d %b %Y, %I:%M %p") if proposed_start else "new time"
         services.add_note(
             user=user,
             customer=meeting.customer,

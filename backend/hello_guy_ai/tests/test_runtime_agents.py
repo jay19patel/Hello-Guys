@@ -122,3 +122,20 @@ def test_admin_default_llm_drives_code_assistants(user):
     assert list(LLMModel.objects.filter(is_default=True).values_list("name", flat=True)) == ["new"]  # one default
     spec = resolve_agent("demo", user)
     assert spec.model == "mistral/m" and spec.llm_kwargs["api_key"] == "sk-1"
+
+
+def test_llm_model_clean_requires_provider_prefix_and_blocks_reserved_params():
+    from django.core.exceptions import ValidationError
+
+    LLMModel(name="a", model_id="openai/gpt-4o-mini", params={"top_p": 0.9}).clean()
+    with pytest.raises(ValidationError) as bare:
+        LLMModel(name="a", model_id="gpt-nonexistent-model").clean()
+    assert "model_id" in bare.value.message_dict
+    with pytest.raises(ValidationError) as reserved:
+        LLMModel(name="a", model_id="openai/gpt-4o-mini", params={"stream": False, "api_key": "x"}).clean()
+    assert "api_key, stream" in reserved.value.message_dict["params"][0]
+
+
+def test_undecryptable_api_key_is_not_sent_as_empty_string():
+    llm = LLMModel(name="a", model_id="openai/x", api_key="not-a-fernet-token")
+    assert "api_key" not in llm.connection_kwargs()

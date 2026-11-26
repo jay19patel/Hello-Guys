@@ -161,3 +161,83 @@ def test_viewer_cannot_mutate_meetings(client, django_user_model):
     assert client.get(reverse("crm:meeting", args=[m.pk])).status_code == 200
     assert client.post(reverse("crm:meetings-sync")).status_code == 403
     assert client.post(reverse("crm:meeting", args=[m.pk]), {"action": "cancel"}).status_code == 403
+
+
+def test_meeting_form_reads_times_in_the_chosen_timezone_and_keeps_a_closed_opportunity():
+    from zoneinfo import ZoneInfo
+
+    from crm.forms import MeetingForm
+    from crm.models import Opportunity
+
+    customer = Customer.objects.create(name="Acme")
+    opp = Opportunity.objects.create(customer=customer, title="Won deal", status="won")
+    data = {"title": "Call", "customer": customer.pk, "opportunity": opp.pk, "start_at": "2026-03-01T10:00",
+            "end_at": "2026-03-01T11:00", "timezone": "America/New_York"}
+    old = Meeting.objects.create(title="Call", customer=customer, opportunity=opp, start_at=timezone.now(),
+                                 end_at=timezone.now() + timedelta(hours=1))
+    form = MeetingForm(data, instance=old)
+    assert form.is_valid(), form.errors  # editing keeps the meeting's won opportunity
+    meeting = form.save()
+    assert meeting.start_at.astimezone(ZoneInfo("America/New_York")).hour == 10  # not Asia/Kolkata
+
+
+def test_meeting_page_lists_proposed_times_and_resolves_them(admin_client):
+    start = timezone.now() + timedelta(days=2)
+    m = Meeting.objects.create(title="Review", start_at=start, end_at=start + timedelta(hours=1))
+    proposal = meetings_svc.propose_meeting_time(m, email="g@x.com", name="Guest", proposed_start=start + timedelta(hours=5),
+                                                 proposed_end=start + timedelta(hours=6), note="Later please")
+    html = admin_client.get(reverse("crm:meeting", args=[m.pk])).content.decode()
+    assert "Proposed Times" in html and "Later please" in html and "Accept &amp; Reschedule" in html
+    admin_client.post(reverse("crm:meeting", args=[m.pk]),
+                      {"action": "resolve-proposal", "proposal_id": proposal["id"], "decision": "declined"})
+    m.refresh_from_db()
+    assert m.proposed_times[0]["status"] == "declined"
+
+
+def test_transcript_api_takes_a_token_without_csrf_and_rejects_strangers(django_user_model):
+    from rest_framework.authtoken.models import Token
+    from rest_framework.test import APIClient
+
+    agent = django_user_model.objects.create_user("voicebot")
+    set_role(agent, "Agent")
+    start = timezone.now()
+    m = Meeting.objects.create(title="Call", start_at=start, end_at=start + timedelta(hours=1))
+    url = reverse("crm:meeting-transcript-api", args=[m.pk])
+    body = {"raw_text": "Agent: hello", "source": "ai_agent"}
+    client = APIClient(enforce_csrf_checks=True)
+    assert client.post(url, body, format="json").status_code in (401, 403)
+    client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=agent).key}")
+    assert client.post(url, body, format="json").status_code == 201
+    viewer = django_user_model.objects.create_user("viewer")
+    set_role(viewer, VIEWER)
+    client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=viewer).key}")
+    assert client.post(url, body, format="json").status_code == 403
+
+
+def test_calendar_import_follows_next_page_tokens(google_api):
+    start = (timezone.now() + timedelta(days=2)).replace(microsecond=0)
+
+    def event(n):
+        return {"id": f"e{n}", "summary": f"M{n}", "start": {"dateTime": start.isoformat()},
+                "end": {"dateTime": (start + timedelta(hours=1)).isoformat()}}
+
+    list_ = google_api.events.return_value.list
+    list_.return_value.execute.side_effect = [{"items": [event(1)], "nextPageToken": "p2"}, {"items": [event(2)]}]
+    assert google.import_calendar_events()["created"] == 2
+    assert list_.call_args.kwargs["pageToken"] == "p2"
+
+
+def test_a_revoked_token_marks_google_disconnected_and_stops_the_file_pull(google_api):
+    from google.auth.exceptions import RefreshError
+
+    from crm.models import GoogleFile
+
+    customer = Customer.objects.create(name="Acme")
+    for n in range(3):
+        GoogleFile.objects.create(customer=customer, kind="file", google_id=f"f{n}", name=f"f{n}")
+    files = google_api.files.return_value
+    files.get.return_value.execute.side_effect = RefreshError("invalid_grant")
+    with pytest.raises(google.GoogleAuthLost):
+        google.pull_files()
+    assert files.get.call_count == 1  # not one refresh attempt per file
+    assert not GoogleAccount.get_solo().is_connected

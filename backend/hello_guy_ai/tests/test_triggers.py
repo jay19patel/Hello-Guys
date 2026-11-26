@@ -178,6 +178,27 @@ def test_scheduler_command_once(user, broker):
     assert broker.queues[fire_trigger.queue_name].qsize() == 1
 
 
+def test_scheduler_notifies_due_follow_ups_and_survives_its_failure(monkeypatch, caplog, fake_redis):
+    from django.core.management import call_command
+    from hello_guy_ai.management.commands import hello_guy_scheduler as scheduler
+
+    from core import reminders as global_reminders
+
+    monkeypatch.setattr(scheduler, "get_redis", lambda: fake_redis)  # the command binds get_redis at first import
+    calls = []
+    monkeypatch.setattr(global_reminders, "notify_due_follow_ups", lambda *a, **k: calls.append(1) or 0)
+    call_command("hello_guy_scheduler", "--once")
+    assert calls == [1]
+
+    def boom(*a, **k):
+        raise RuntimeError("db blip")
+
+    monkeypatch.setattr(global_reminders, "notify_due_follow_ups", boom)
+    fake_redis.delete(scheduler.LOCK_KEY)  # fakeredis has no EVAL, so release the leader lock instead of renewing it
+    call_command("hello_guy_scheduler", "--once")  # logged, not raised
+    assert "Could not notify due follow-ups" in caplog.text
+
+
 def test_cache_or_broker_outage_never_breaks_saves(user, monkeypatch, django_capture_on_commit_callbacks):
     lead_trigger(user)
 
