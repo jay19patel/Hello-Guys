@@ -14,7 +14,7 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import ListView, TemplateView
 
-from core import followups as global_followups, notifications as global_notifications
+from core import reminders as global_followups, notifications as global_notifications
 from core.models import FollowUpChannel, GlobalFollowUp
 
 from meta_connector.models import PlatformAccount, Contact, Message
@@ -157,7 +157,7 @@ class NotificationListView(_JsonLoginRequiredMixin, View):
                 "due_at": fu.due_at.isoformat(),
                 "is_overdue": fu.due_at < now,
                 "related_label": fu.related_label,
-                "related_url": fu.related_url or "/follow-ups/",
+                "related_url": fu.related_url or "/reminders/",
             }
             for fu in fu_qs[:12]
         ]
@@ -207,7 +207,7 @@ class NotificationMarkReadView(_JsonLoginRequiredMixin, View):
 class GlobalFollowUpListView(LoginRequiredMixin, ListView):
     """Global Follow-ups hub: any topic, any custom channel, integrated with global notifications."""
 
-    template_name = "core/follow_ups.html"
+    template_name = "core/reminders.html"
     context_object_name = "follow_ups"
     paginate_by = 25
     login_url = "dashboard-login"
@@ -343,8 +343,8 @@ class GlobalFollowUpCreateView(LoginRequiredMixin, View):
     def post(self, request):
         title = request.POST.get("title", "").strip()
         if not title:
-            messages.error(request, "Give your follow-up a title.")
-            return redirect(request.POST.get("next") or "core:follow-ups")
+            messages.error(request, "Give your reminder a title.")
+            return redirect(request.POST.get("next") or "core:reminders")
 
         due_raw = request.POST.get("due_at", "").strip()
         try:
@@ -380,8 +380,8 @@ class GlobalFollowUpCreateView(LoginRequiredMixin, View):
             related_label=request.POST.get("related_label", "").strip(),
             related_url=request.POST.get("related_url", "").strip(),
         )
-        messages.success(request, f"Follow-up \"{title}\" added.")
-        return redirect(request.POST.get("next") or "core:follow-ups")
+        messages.success(request, f"Reminder \"{title}\" added.")
+        return redirect(request.POST.get("next") or "core:reminders")
 
 
 class FollowUpChannelCreateView(LoginRequiredMixin, View):
@@ -434,20 +434,20 @@ class GlobalFollowUpActionView(LoginRequiredMixin, View):
 
         if action == "done":
             global_followups.complete_follow_up(fu)
-            msg = "Follow-up marked done."
+            msg = "Reminder marked done."
         elif action == "snooze":
             global_followups.snooze_follow_up(fu, hours=hours)
-            msg = "Follow-up snoozed +24h."
+            msg = "Reminder snoozed +24h."
         elif action == "cancel":
             global_followups.cancel_follow_up(fu)
-            msg = "Follow-up cancelled."
+            msg = "Reminder cancelled."
         else:
             if request.content_type == "application/json" or request.headers.get("Accept") == "application/json":
                 return JsonResponse({"error": "Unknown action"}, status=400)
-            return redirect("core:follow-ups")
+            return redirect("core:reminders")
 
         if request.content_type == "application/json" or request.headers.get("Accept") == "application/json":
             return JsonResponse({"ok": True, "status": fu.status, "due_at": fu.due_at.isoformat()})
         messages.success(request, msg)
-        return redirect(request.POST.get("next") or "core:follow-ups")
+        return redirect(request.POST.get("next") or "core:reminders")
 

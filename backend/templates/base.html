@@ -90,7 +90,7 @@
                     <a href="{% url 'dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/meta' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meta Inbox</a>
                     <a href="{% url 'crm:overview' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/crm' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">CRM</a>
                     <a href="{% url 'pms:projects' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/pms' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Projects</a>
-                    <a href="{% url 'core:follow-ups' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':11' == '/follow-ups' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Follow-ups</a>
+                    <a href="{% url 'core:reminders' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':10' == '/reminders' or request.path|slice:':11' == '/follow-ups' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Reminders</a>
                     <a href="{% url 'hello_guy_ai_analytics' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':13' == '/ai/analytics' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Analytics</a>
                     <a href="{% url 'hello_guy_ai_chat' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/chat' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Chat</a>
                 </div>
@@ -121,14 +121,14 @@
                                 </button>
                                 <button type="button" @click="tab = 'followups'" class="px-2.5 py-1 rounded-md transition-colors"
                                         :class="tab === 'followups' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
-                                    Follow-ups <span x-show="followupsDueCount > 0" x-text="'(' + followupsDueCount + ')'" class="text-bad"></span>
+                                    Reminders <span x-show="followupsDueCount > 0" x-text="'(' + followupsDueCount + ')'" class="text-bad"></span>
                                 </button>
                             </div>
                             <div class="flex items-center gap-1.5">
                                 <button type="button" x-show="tab === 'notifications' && unreadCount > 0" @click="markAllRead()" class="text-[11.5px] text-accent hover:underline font-medium px-1">
                                     Mark read
                                 </button>
-                                <a x-show="tab === 'followups'" href="{% url 'core:follow-ups' %}" class="text-[11.5px] text-accent hover:underline font-medium px-1">
+                                <a x-show="tab === 'followups'" href="{% url 'core:reminders' %}" class="text-[11.5px] text-accent hover:underline font-medium px-1">
                                     Open all →
                                 </a>
                             </div>
@@ -143,7 +143,7 @@
                                 <div class="p-6 text-center">
                                     <i class="fa-regular fa-bell-slash text-muted text-lg mb-1.5"></i>
                                     <p class="text-[13px] font-medium text-ink">You're all caught up</p>
-                                    <p class="text-[12px] text-muted mt-0.5">Notifications from Follow-ups, CRM, Meetings &amp; AI appear here.</p>
+                                    <p class="text-[12px] text-muted mt-0.5">Notifications from Reminders, CRM, Meetings &amp; AI appear here.</p>
                                 </div>
                             </template>
                             <template x-for="item in items" :key="item.id">
@@ -170,18 +170,18 @@
                             </template>
                         </div>
 
-                        <!-- Follow-ups Tab -->
+                        <!-- Reminders Tab -->
                         <div x-show="tab === 'followups'" x-cloak class="max-h-96 overflow-y-auto divide-y divide-line">
                             <template x-if="followups.length === 0">
                                 <div class="p-6 text-center">
                                     <i class="fa-regular fa-circle-check text-ok text-lg mb-1.5"></i>
-                                    <p class="text-[13px] font-medium text-ink">No pending follow-ups</p>
-                                    <a href="{% url 'core:follow-ups' %}" class="inline-block mt-2 text-[12.5px] text-accent font-medium hover:underline">+ Add a follow-up</a>
+                                    <p class="text-[13px] font-medium text-ink">No pending reminders</p>
+                                    <a href="{% url 'core:reminders' %}" class="inline-block mt-2 text-[12.5px] text-accent font-medium hover:underline">+ Add a reminder</a>
                                 </div>
                             </template>
                             <template x-for="fu in followups" :key="fu.id">
                                 <div class="px-4 py-3 hover:bg-subtle/40 transition-colors flex items-start justify-between gap-2.5">
-                                    <a :href="fu.related_url || '/follow-ups/'" class="min-w-0 flex-1">
+                                    <a :href="fu.related_url || '/reminders/'" class="min-w-0 flex-1">
                                         <div class="flex items-center gap-1.5 flex-wrap">
                                             <span class="font-semibold text-[13px] text-ink truncate" x-text="fu.title"></span>
                                             <span x-show="fu.is_overdue" class="pill bg-bad/10 text-bad text-[10px] px-1.5 py-0">Overdue</span>
@@ -214,7 +214,7 @@
                         <a href="{% url 'crm:opportunity-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-filter w-4 text-ok"></i> New Opportunity</a>
                         <a href="{% url 'pms:project-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-diagram-project w-4 text-accent"></i> New Project</a>
                         <a href="{% url 'crm:meeting-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-calendar-plus w-4 text-accent"></i> Schedule Meeting</a>
-                        <a href="{% url 'core:follow-ups' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> Follow-ups</a>
+                        <a href="{% url 'core:reminders' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> New Reminder</a>
                     </div>
                 </div>
             </div>
@@ -398,7 +398,7 @@
             },
             async followUpAction(id, action) {
                 try {
-                    const res = await fetch(`/follow-ups/${id}/action/`, {
+                    const res = await fetch(`/reminders/${id}/action/`, {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: {

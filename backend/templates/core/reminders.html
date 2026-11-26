@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% load humanize %}
-{% block title %}Follow-ups · Hello Guys{% endblock %}
+{% block title %}Reminders · Hello Guys{% endblock %}
 
 {% block sidebar_nav %}
 <div class="caps px-3 pt-1 pb-1">Workspace</div>
 <a href="{% url 'core:portal' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
     <i class="fa-solid fa-shapes w-4 text-center shrink-0"></i> Hub Portal
 </a>
-<a href="{% url 'core:follow-ups' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg bg-accent/10 text-accent font-semibold">
-    <i class="fa-regular fa-clock w-4 text-center shrink-0"></i> Follow-ups
+<a href="{% url 'core:reminders' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg bg-accent/10 text-accent font-semibold">
+    <i class="fa-regular fa-clock w-4 text-center shrink-0"></i> Reminders
     {% if stats.overdue %}<span class="ml-auto pill bg-bad/10 text-bad">{{ stats.overdue }}</span>{% endif %}
 </a>
 <a href="{% url 'crm:overview' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
@@ -31,13 +31,13 @@
     <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
             <div class="flex items-center gap-2.5 flex-wrap">
-                <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight text-ink">Follow-ups</h1>
+                <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight text-ink">Reminders</h1>
                 {% if stats.overdue %}
                 <span class="pill bg-bad/10 text-bad border border-bad/25">{{ stats.overdue }} overdue</span>
                 {% endif %}
             </div>
             <p class="text-[13.5px] text-muted mt-1">
-                Track follow-ups for anything across your workspace — create custom channels, link any item, and get alerted in the Notification Bell.
+                Track reminders for anything across your workspace — create custom channels, link any item, and get alerted in the Notification Bell.
             </p>
         </div>
 
@@ -57,7 +57,7 @@
         <div class="card p-4 flex flex-col gap-1">
             <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Pending</span>
             <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.pending }}</span>
-            <span class="text-[11.5px] text-muted">Active follow-ups</span>
+            <span class="text-[11.5px] text-muted">Active reminders</span>
         </div>
         <div class="card p-4 flex flex-col gap-1 {% if stats.overdue %}border-bad/35 bg-bad/5{% endif %}">
             <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-rose-500"></span> Overdue</span>
@@ -87,8 +87,8 @@
         <div class="card p-5 flex flex-col gap-3 min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                    <h2 class="font-display font-semibold text-[15.5px] text-ink">14-Day Follow-up Activity</h2>
-                    <p class="text-[12px] text-muted">Scheduled vs completed follow-ups over the last 2 weeks.</p>
+                    <h2 class="font-display font-semibold text-[15.5px] text-ink">14-Day Reminder Activity</h2>
+                    <p class="text-[12px] text-muted">Scheduled vs completed reminders over the last 2 weeks.</p>
                 </div>
                 <div class="flex items-center gap-3 text-[12px] text-muted">
                     <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-indigo-500"></span> Scheduled</span>
@@ -103,7 +103,7 @@
         <div class="card p-5 flex flex-col gap-4">
             <div>
                 <h2 class="font-display font-semibold text-[15.5px] text-ink">Channel &amp; Priority Breakdown</h2>
-                <p class="text-[12px] text-muted">Where your follow-ups happen and what needs focus.</p>
+                <p class="text-[12px] text-muted">Where your reminders happen and what needs focus.</p>
             </div>
 
             {% if stats.total %}
@@ -153,7 +153,7 @@
     <section class="card p-5">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
             <div>
-                <h2 class="font-display font-semibold text-[16px]">New Follow-up</h2>
+                <h2 class="font-display font-semibold text-[16px]">New Reminder</h2>
                 <p class="text-[12.5px] text-muted">Select any channel or create a custom channel on the spot.</p>
             </div>
             <button type="button" @click="showNewChannel = !showNewChannel" class="btn btn-ghost btn-sm">
@@ -161,12 +161,12 @@
             </button>
         </div>
 
-        <form method="post" action="{% url 'core:follow-up-create' %}" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3.5 items-end">
+        <form method="post" action="{% url 'core:reminder-create' %}" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3.5 items-end">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
 
             <div class="field flex flex-col gap-1 sm:col-span-2">
-                <label for="fu-title" class="caps">What to follow up on</label>
+                <label for="fu-title" class="caps">What to remind about</label>
                 <input type="text" id="fu-title" name="title" required placeholder="e.g. Confirm invoice #104 payment, Send design deck, Call supplier…">
             </div>
 
@@ -222,7 +222,7 @@
                 <input type="text" id="fu-note" name="note" placeholder="Extra context or next steps…">
             </div>
 
-            <button type="submit" class="btn btn-primary h-[40px]"><i class="fa-solid fa-plus"></i> Add Follow-up</button>
+            <button type="submit" class="btn btn-primary h-[40px]"><i class="fa-solid fa-plus"></i> Add Reminder</button>
         </form>
     </section>
 
@@ -245,7 +245,7 @@
             <input type="hidden" name="status" value="{{ status_filter }}">
             {% if channel_filter %}<input type="hidden" name="channel" value="{{ channel_filter }}">{% endif %}
             <div class="field w-60">
-                <input type="search" name="q" value="{{ q }}" placeholder="Search follow-ups…" class="!py-1.5 !text-[13px]">
+                <input type="search" name="q" value="{{ q }}" placeholder="Search reminders…" class="!py-1.5 !text-[13px]">
             </div>
             {% if q %}<a href="?status={{ status_filter }}{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}" class="btn btn-ghost btn-sm">Clear</a>{% endif %}
         </form>
@@ -306,7 +306,7 @@
             {% endfor %}
         </ul>
         {% else %}
-        {% include "components/_empty_state.html" with icon="fa-clock" title="No follow-ups here" subtitle="Add a follow-up above on any channel — due items will also alert you in the Notification Bell." %}
+        {% include "components/_empty_state.html" with icon="fa-clock" title="No reminders here" subtitle="Add a reminder above on any channel — due items will also alert you in the Notification Bell." %}
         {% endif %}
     </section>
 </div>

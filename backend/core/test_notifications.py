@@ -6,7 +6,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from core import followups, notifications
+from core import reminders as followups, notifications
 from core.models import FollowUpChannel, GlobalFollowUp, GlobalNotification
 
 pytestmark = pytest.mark.django_db
@@ -87,16 +87,16 @@ def test_global_followups_custom_channel_and_notification_bell(client, django_us
         notify_now=False,
     )
 
-    assert client.get(reverse("core:follow-ups")).status_code == 200
+    assert client.get(reverse("core:reminders")).status_code == 200
     bell = client.get(reverse("core:notifications")).json()
     assert bell["followups_due_count"] == 1
     assert len(bell["followups"]) == 1
     assert bell["followups"][0]["channel"] == "Slack DM"
-    assert any(i["category"] == "followup" and "Follow-up due" in i["title"] for i in bell["items"])
+    assert any(i["category"] == "followup" and "Reminder due" in i["title"] for i in bell["items"])
 
     # 1-click mark done from the Notification Bell
     done_res = client.post(
-        reverse("core:follow-up-action", args=[fu.pk]),
+        reverse("core:reminder-action", args=[fu.pk]),
         data={"action": "done"},
         content_type="application/json",
     )

@@ -110,13 +110,13 @@ def schedule_follow_up(
     )
 
     if notify_now and fu.assigned_to:
-        ch_name = fu.channel.name if fu.channel else "Follow-up"
+        ch_name = fu.channel.name if fu.channel else "Reminder"
         when = timezone.localtime(fu.due_at).strftime("%d %b, %H:%M")
         notifications.notify(
             user=fu.assigned_to,
-            title=f"Follow-up: {fu.title}",
+            title=f"Reminder: {fu.title}",
             body=f"{ch_name} · Due {when}" + (f" — {fu.note[:120]}" if fu.note else ""),
-            url=fu.related_url or "/follow-ups/",
+            url=fu.related_url or "/reminders/",
             category="followup",
             level="info",
             metadata={"followup_id": fu.pk},
@@ -160,12 +160,12 @@ def notify_due_follow_ups(user: Any = None) -> int:
         recipient = fu.assigned_to or fu.created_by
         if not recipient:
             continue
-        ch_name = fu.channel.name if fu.channel else "Follow-up"
+        ch_name = fu.channel.name if fu.channel else "Reminder"
         notifications.notify(
             user=recipient,
-            title=f"Follow-up due: {fu.title}",
+            title=f"Reminder due: {fu.title}",
             body=f"{ch_name}" + (f" · {fu.related_label}" if fu.related_label else "") + (f" — {fu.note[:120]}" if fu.note else ""),
-            url=fu.related_url or "/follow-ups/",
+            url=fu.related_url or "/reminders/",
             category="followup",
             level="warning",
             metadata={"followup_id": fu.pk},

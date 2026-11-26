@@ -163,7 +163,7 @@ def schedule_follow_up(*, customer: Customer, due_at, note: str = "", opportunit
         body=f"Follow-up scheduled for {timezone.localtime(due_at):%d %b %Y, %H:%M}" + (f": {note}" if note else ""),
     )
     try:
-        from core import followups as global_followups
+        from core import reminders as global_followups
         global_followups.schedule_follow_up(
             title=note.strip()[:200] or f"Follow up with {customer.name}",
             due_at=due_at,

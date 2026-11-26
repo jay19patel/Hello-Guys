@@ -234,7 +234,7 @@
         <section class="card p-5 text-[13.5px]">
             <div class="flex items-center justify-between">
                 <h2 class="caps">Follow-ups</h2>
-                <a href="{% url 'core:follow-ups' %}" class="text-[12px] text-accent hover:underline">All Follow-ups</a>
+                <a href="{% url 'core:reminders' %}" class="text-[12px] text-accent hover:underline">All Reminders</a>
             </div>
             <ul class="mt-2.5 flex flex-col gap-2">
                 {% for fu in follow_ups %}
