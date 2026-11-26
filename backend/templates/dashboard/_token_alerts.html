@@ -10,7 +10,7 @@
                 <b>{{ acc.display_name }}</b> —
                 {% if acc.token_health == 'missing' %}no access token saved, so sending and auto-DM can't work.
                 {% elif acc.token_health == 'invalid' %}token is not valid{% if acc.token_error %} ({{ acc.token_error|truncatechars:140 }}){% endif %}. Paste a new token.
-                {% elif acc.token_health == 'expired' %}token stopped working on {{ acc.token_deadline|date:"d M Y, H:i" }}. Paste a new token.
+                {% elif acc.token_health == 'expired' %}token stopped working on {{ acc.token_deadline|date:"d M Y, g:i A" }}. Paste a new token.
                 {% elif acc.token_health == 'expiring' %}token stops working on {{ acc.token_deadline|date:"d M Y" }} (in {{ acc.token_deadline|timeuntil }}). Renew it before then.
                 {% endif %}
                 {% if acc.missing_scopes %}Missing permissions: <code class="text-[12.5px] bg-surface px-1.5 py-0.5 rounded">{{ acc.missing_scopes|join:", " }}</code>.{% endif %}

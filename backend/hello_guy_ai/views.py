@@ -39,6 +39,13 @@ def ai_analytics(request: HttpRequest) -> HttpResponse:
         return render(request, "403.html", status=403)
     period = request.GET.get("period", "30d")
     ctx = build_ai_analytics(period=period)
+    if request.GET.get("format") == "json":
+        from django.http import JsonResponse
+        return JsonResponse({
+            "live_runs": ctx["live_runs"],
+            "active_runs": ctx["health"]["active_runs"],
+            "paused_runs": ctx["health"]["paused_runs"],
+        })
     return render(request, "hello_guy_ai/analytics.html", ctx)
 
 

@@ -71,7 +71,7 @@ def match_customer(*, email: str = "", phone: str = "", instagram_username: str 
 
 @transaction.atomic
 def get_or_create_customer(*, name: str, email: str = "", phone: str = "", instagram_username: str = "",
-                           company: str = "", contact=None, source: str = Source.MANUAL, created_by=None) -> Customer:
+                           company: str = "", notes: str = "", contact=None, source: str = Source.MANUAL, created_by=None) -> Customer:
     """One person = one customer across channels: reuse the customer with the same email, phone, Instagram handle
     or inbox contact (filling in details they lacked), else create one. Links the inbox contact for messaging."""
     ig = (instagram_username or (getattr(contact, "username", "") if contact else "")).strip().lstrip("@")[:100]
@@ -82,12 +82,30 @@ def get_or_create_customer(*, name: str, email: str = "", phone: str = "", insta
         "phone": resolved_phone,
         "instagram_username": ig,
         "company": company.strip()[:150],
+        "notes": notes.strip()[:2000],
     }
     customer = match_customer(email=resolved_email, phone=resolved_phone, instagram_username=ig, contact=contact)
     if customer is None:
         customer = Customer.objects.create(name=name.strip()[:150] or "Unknown", source=source, **details)
-        Activity.objects.create(customer=customer, kind=Activity.Kind.SYSTEM, created_by=created_by,
-                                body=f"Customer added ({customer.get_source_display()})")
+        Activity.objects.create(
+            customer=customer,
+            kind=Activity.Kind.SYSTEM,
+            created_by=created_by,
+            body=f"Customer created from {customer.get_source_display()}" + (f": {notes.strip()[:300]}" if notes.strip() else ""),
+        )
+        def _notify_new_customer():
+            try:
+                from core import notifications as global_notifications
+                global_notifications.notify_staff(
+                    title=f"New customer from {customer.get_source_display()}: {customer.name}",
+                    body=notes.strip()[:160] or resolved_email or resolved_phone,
+                    url=reverse("crm:customer", args=[customer.pk]),
+                    category="crm",
+                    level="success",
+                )
+            except Exception:
+                pass
+        transaction.on_commit(_notify_new_customer)
     elif missing := [field for field, value in details.items() if value and not getattr(customer, field)]:
         for field in missing:
             setattr(customer, field, details[field])
@@ -110,8 +128,8 @@ def create_opportunity(*, title: str, customer: Customer | None = None, name: st
         source = THREAD_SOURCES.get((thread.external_id or "").split(":", 1)[0], source)
         contact = contact or contact_for_thread(thread)
     if customer is None:
-        customer = get_or_create_customer(name=name, email=email, phone=phone, company=company, contact=contact,
-                                          source=source, created_by=created_by)
+        customer = get_or_create_customer(name=name, email=email, phone=phone, company=company, notes=details,
+                                          contact=contact, source=source, created_by=created_by)
     opportunity = Opportunity.objects.create(
         customer=customer, service=service, title=title.strip()[:255] or "Enquiry", details=details.strip()[:5000],
         source=source, form_type=form_type[:60], thread=thread,
@@ -121,6 +139,26 @@ def create_opportunity(*, title: str, customer: Customer | None = None, name: st
                             body=f"New opportunity: {opportunity.title} ({opportunity.get_source_display()})")
     transaction.on_commit(lambda: notify_team(f"New opportunity: {customer.name}", opportunity.title,
                                               reverse("crm:opportunity", args=[opportunity.pk])))
+    try:
+        from core import reminders as global_reminders
+        from django.contrib.auth import get_user_model
+        assignee = opportunity.assigned_to or get_user_model().objects.filter(is_active=True, is_staff=True).order_by("-is_superuser", "id").first()
+        if assignee:
+            global_reminders.schedule_follow_up(
+                title=f"Follow up: {customer.name} ({opportunity.title[:60]})",
+                due_at=timezone.now() + timezone.timedelta(hours=24),
+                channel="Email" if customer.email else "WhatsApp",
+                note=opportunity.details[:300],
+                assigned_to=assignee,
+                created_by=created_by,
+                related_label=customer.name,
+                related_url=reverse("crm:opportunity", args=[opportunity.pk]),
+                entity_type="opportunity",
+                entity_id=str(opportunity.pk),
+                notify_now=True,
+            )
+    except Exception:
+        pass
     return opportunity
 
 

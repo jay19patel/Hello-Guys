@@ -60,7 +60,7 @@
                     {% if fu.is_overdue %}
                     <span class="pill bg-bad/10 text-bad border border-bad/20">Overdue · {{ fu.due_at|naturaltime }}</span>
                     {% else %}
-                    <span class="text-[12.5px] text-muted tabular-nums">{{ fu.due_at|date:"D d M, H:i" }}</span>
+                    <span class="text-[12.5px] text-muted tabular-nums">{{ fu.due_at|date:"D d M, g:i A" }}</span>
                     {% endif %}
                 </div>
                 {% if fu.note %}<p class="text-[13.5px] text-muted mt-0.5">{{ fu.note }}</p>{% endif %}

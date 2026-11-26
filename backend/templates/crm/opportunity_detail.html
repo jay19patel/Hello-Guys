@@ -62,7 +62,7 @@
             {% if customer.email %}<a href="mailto:{{ customer.email }}" class="hover:text-accent break-all flex items-center gap-2"><i class="fa-solid fa-envelope w-4 text-muted"></i> {{ customer.email }}</a>{% endif %}
             {% if customer.phone %}<span class="flex items-center gap-2"><i class="fa-solid fa-phone w-4 text-muted"></i> {{ customer.phone }}</span>{% endif %}
             <span class="text-muted">Owner: {% include "crm/_user.html" with u=opp.assigned_to empty="unassigned" %}</span>
-            {% if opp.next_follow_up %}<span class="text-muted">Follow up: {{ opp.next_follow_up|date:"D d M, H:i" }}</span>{% endif %}
+            {% if opp.next_follow_up %}<span class="text-muted">Follow up: {{ opp.next_follow_up|date:"D d M, g:i A" }}</span>{% endif %}
         </section>
 
         {% if transcript %}

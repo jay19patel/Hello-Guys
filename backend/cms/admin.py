@@ -341,41 +341,6 @@ class BlogLikeAdmin(admin.ModelAdmin):
 
 
 # ==============================================================================
-# 9. Inquiry Submissions / Leads CRM
-# ==============================================================================
-
-@admin.register(InquirySubmission)
-class InquirySubmissionAdmin(admin.ModelAdmin):
-    """Contact form submissions and project inquiry leads."""
-
-    fieldsets = (
-        ("Lead Information", {
-            'fields': ('inquiry_id', 'name', 'email', 'phone', 'inquiry_type'),
-        }),
-        ("Inquiry Details", {
-            'fields': ('subject', 'message'),
-        }),
-        ("Status & Follow-up", {
-            'fields': ('is_replied', 'replies'),
-            'description': "Mark as replied and add follow-up notes in JSON format.",
-        }),
-        ("Timestamps", {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',),
-        }),
-    )
-
-    list_display = ('inquiry_id', 'name', 'email', 'phone', 'inquiry_type', 'is_replied', 'created_at')
-    list_display_links = ('inquiry_id', 'name')
-    list_filter = ('inquiry_type', 'is_replied', 'created_at')
-    list_editable = ('is_replied',)
-    search_fields = ('name', 'email', 'phone', 'subject', 'message', 'inquiry_id')
-    readonly_fields = ('inquiry_id', 'created_at', 'updated_at')
-    date_hierarchy = 'created_at'
-    ordering = ('-created_at',)
-
-
-# ==============================================================================
 # 10. Workflow Steps (Startup & AI Execution Flow)
 # ==============================================================================
 

@@ -45,7 +45,7 @@
                 {% endif %}
             </h2>
             {% if window_open %}
-            <span class="pill bg-ok/10 text-ok" title="Meta allows free-form replies until {{ window_closes|date:'d M, H:i' }}"><i class="fa-regular fa-clock"></i> Reply window open · closes {{ window_closes|naturaltime }}</span>
+            <span class="pill bg-ok/10 text-ok" title="Meta allows free-form replies until {{ window_closes|date:'d M, g:i A' }}"><i class="fa-regular fa-clock"></i> Reply window open · closes {{ window_closes|naturaltime }}</span>
             {% elif has_dm %}
             <span class="pill bg-warn/10 text-warn" title="The contact last messaged more than 24 hours ago"><i class="fa-regular fa-clock"></i> Reply window closed</span>
             {% endif %}
@@ -64,7 +64,7 @@
                     <div class="max-w-[85%] sm:max-w-[70%] rounded-2xl rounded-bl-md border border-dashed border-ig/40 bg-surface px-4 py-2.5 flex flex-col gap-1 shadow-soft">
                         <span class="text-[12px] font-semibold text-ig flex items-center gap-1.5"><i class="fa-regular fa-comment"></i> Commented on a post</span>
                         <p class="whitespace-pre-line break-words">{{ msg.message_text|default:"(empty comment)" }}</p>
-                        <time class="text-[11px] text-muted self-end" datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>
+                        <time class="text-[11px] text-muted self-end" datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"g:i A" }}</time>
                     </div>
                 </li>
                 {% elif msg.direction == 'outgoing' %}
@@ -75,7 +75,7 @@
                             {% if msg.sent_by %}<span title="Sent by {{ msg.sent_by.username }}">{% if msg.sent_by == request.user %}You{% else %}{{ msg.sent_by.get_full_name|default:msg.sent_by.username }}{% endif %} ·</span>
                             {% elif msg.raw_payload.auto_dm %}<span><i class="fa-solid fa-robot"></i> Auto-DM ·</span>
                             {% elif msg.raw_payload.is_echo %}<span title="Sent from the Instagram / WhatsApp app"><i class="fa-solid fa-mobile-screen"></i> Phone ·</span>{% endif %}
-                            <time datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>
+                            <time datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"g:i A" }}</time>
                             <i class="fa-solid {% if msg.status == 'failed' %}fa-circle-exclamation{% elif msg.status == 'read' %}fa-check-double{% elif msg.status == 'delivered' %}fa-check-double opacity-70{% else %}fa-check{% endif %}" title="{{ msg.get_status_display }}" aria-hidden="true"></i>
                             {% if msg.status == 'failed' %}<span>Not delivered</span>{% else %}<span class="sr-only">{{ msg.get_status_display }}</span>{% endif %}
                         </span>
@@ -99,7 +99,7 @@
                         </p>
                         {% if msg.media_url %}<a href="{{ msg.media_url }}" target="_blank" rel="noopener" class="text-[13px] text-accent hover:underline">Open attachment</a>{% endif %}
                         {% endif %}
-                        <time class="text-[11px] text-muted self-end" datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"H:i" }}</time>
+                        <time class="text-[11px] text-muted self-end" datetime="{{ msg.created_at|date:'c' }}">{{ msg.created_at|date:"g:i A" }}</time>
                     </div>
                 </li>
                 {% endif %}
@@ -198,7 +198,7 @@
                 {% if contact.phone %}<div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">Phone</dt><dd class="tabular-nums font-medium">+{{ contact.phone }}</dd></div>{% endif %}
                 <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">Email</dt>
                     <dd class="truncate">{% if contact.email %}<a href="mailto:{{ contact.email }}" class="text-accent hover:underline">{{ contact.email }}</a>{% else %}<span class="text-muted">Not shared yet</span>{% endif %}</dd></div>
-                <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">First seen</dt><dd title="{{ contact.first_seen|date:'d M Y, H:i' }}">{{ contact.first_seen|date:"d M Y" }}</dd></div>
+                <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">First seen</dt><dd title="{{ contact.first_seen|date:'d M Y, g:i A' }}">{{ contact.first_seen|date:"d M Y" }}</dd></div>
                 <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">Last active</dt><dd>{% if contact.last_message_at %}{{ contact.last_message_at|naturaltime }}{% else %}—{% endif %}</dd></div>
                 <div class="flex items-center justify-between gap-4 px-4 py-3"><dt class="text-muted">User ID</dt><dd class="font-mono text-[12.5px] truncate" title="{{ contact.platform_user_id }}">{{ contact.platform_user_id }}</dd></div>
             </dl>

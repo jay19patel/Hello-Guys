@@ -26,12 +26,6 @@
     <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> AI Chat
 </a>
 
-<div class="caps px-3 pt-3 pb-1">Workspace</div>
-<button id="info-btn" type="button" aria-controls="info" aria-expanded="false" class="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors text-left">
-    <i class="fa-solid fa-circle-info w-4 text-center shrink-0"></i>
-    <span class="truncate">Agent details</span>
-</button>
-
 <div class="caps px-3 pt-3 pb-1">Agents</div>
 <nav id="agents" class="agents" aria-label="Agents"></nav>
 {% endblock %}
@@ -65,20 +59,6 @@
 
         <div class="content flex-1 min-h-0">
             <div id="messages" aria-live="polite"></div>
-            <aside id="info" class="info-panel" aria-label="Agent details" hidden>
-                <div class="info-head">
-                    <h2 id="info-name"></h2>
-                    <button id="info-close" class="hg-act" type="button" aria-label="Close agent details">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                    </button>
-                </div>
-                <p id="info-desc" class="info-desc"></p>
-                <dl class="info-meta">
-                    <dt>Model</dt><dd id="info-model"></dd>
-                </dl>
-                <h3 class="info-sub">Tools <span id="info-count"></span></h3>
-                <ul id="info-tools" class="info-tools"></ul>
-            </aside>
         </div>
 
         <div class="composer-wrap shrink-0">
@@ -169,7 +149,6 @@
     if (!agents.length) throw new Error("No agent is available for your account.");
     if (!agents.some((a) => a.id === assistantId)) assistantId = agents[0].id;
     renderAgents();
-    renderInfo();
   }
 
   function renderAgents() {
@@ -191,42 +170,9 @@
     assistantId = id;
     threadId = null;
     renderAgents();
-    renderInfo();
     closeNav();
     await loadThreads();
     openThread(null);
-  }
-
-  function renderInfo() {
-    const a = agent();
-    $("info-name").textContent = a.name || "";
-    $("info-desc").textContent = a.description || "No description.";
-    $("info-model").textContent = a.model || "Default";
-    const tools = a.tools || [];
-    $("info-count").textContent = tools.length;
-    $("info-tools").replaceChildren(...(tools.length ? tools.map((t) => {
-      const li = el("li", "info-tool");
-      const top = li.appendChild(el("div", "info-tool-top"));
-      top.appendChild(el("span", "info-tool-name", HG.toolTitle(t.name)));
-      if (t.requires_confirmation) top.appendChild(el("span", "badge-warn", "Needs approval"));
-      li.appendChild(el("code", "info-tool-id", t.name));
-      if (t.description) li.appendChild(el("p", "info-tool-desc", t.description));
-      return li;
-    }) : [el("li", "info-tool", "This agent only chats; it has no tools.")]));
-  }
-
-  const PANELS = ["info", "notif", "sched"];
-
-  function showPanel(id, open) {
-    PANELS.forEach((p) => {
-      const on = p === id && open;
-      $(p).hidden = !on;
-      $(`${p}-btn`).setAttribute("aria-expanded", String(on));
-    });
-  }
-
-  function toggleInfo(open = $("info").hidden) {
-    showPanel("info", open);
   }
 
   // ---- threads --------------------------------------------------------------------------
@@ -260,9 +206,8 @@
       const chips = box.appendChild(el("div", "welcome-tools"));
       tools.slice(0, 6).forEach((t) => chips.appendChild(el("span", "hg-chip", HG.toolTitle(t.name))));
       if (tools.length > 6) {
-        const more = chips.appendChild(el("button", "hg-chip chip-more", `+${tools.length - 6} more`));
-        more.type = "button";
-        more.onclick = () => toggleInfo(true);
+        const more = chips.appendChild(el("a", "hg-chip chip-more", `+${tools.length - 6} more`));
+        more.href = "{% url 'hello_guy_ai_analytics' %}";
       }
     }
     const grid = box.appendChild(el("div", "suggestions"));
@@ -322,8 +267,6 @@
   $("new").onclick = () => { if (view.isBusy()) return; closeNav(); openThread(null); loadThreads(); $("input").focus(); };
   if ($("menu")) $("menu").onclick = () => document.body.classList.toggle("nav-open");
   document.body.addEventListener("click", (e) => { if (e.target === document.body) closeNav(); }); // tap on the dimmed overlay
-  $("info-btn").onclick = () => toggleInfo();
-  $("info-close").onclick = () => toggleInfo(false);
   const refreshCounts = () => {
     window.dispatchEvent(new CustomEvent("notifications:refresh"));
   };
@@ -339,7 +282,7 @@
     submit($("input").value);
   };
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { showPanel(null, false); closeNav(); }
+    if (e.key === "Escape") { closeNav(); }
   });
 
   loadAgents()

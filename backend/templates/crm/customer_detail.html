@@ -55,7 +55,7 @@
                             {% if m.pending_proposals %}<span class="pill bg-warn/15 text-warn">{{ m.pending_proposals|length }} proposed</span>{% endif %}
                         </div>
                         <p class="text-[12.5px] text-muted mt-0.5 tabular-nums">
-                            {{ m.start_at|date:"D, d M Y · H:i" }} – {{ m.end_at|date:"H:i" }}
+                            {{ m.start_at|date:"D, d M Y · g:i A" }} – {{ m.end_at|date:"g:i A" }}
                             {% with rsvp=m.rsvp_summary %}
                             {% if rsvp.total %} · {{ rsvp.accepted }} Yes, {{ rsvp.tentative }} Maybe, {{ rsvp.declined }} No{% endif %}
                             {% endwith %}
@@ -158,7 +158,7 @@
                                 {% if msg.direction == 'incoming' %}{{ customer.name }}{% else %}Team / AI{% endif %}
                                 <span class="text-muted font-normal">via {{ msg.platform_account.get_platform_display }}</span>
                             </span>
-                            <span class="text-[11.5px] text-muted">{{ msg.created_at|date:"d M, H:i" }}</span>
+                            <span class="text-[11.5px] text-muted">{{ msg.created_at|date:"d M, g:i A" }}</span>
                         </div>
                         <p class="text-ink mt-0.5 break-words">{{ msg.message_text|default:"(Media / attachment)" }}</p>
                     </div>
@@ -241,7 +241,7 @@
                 <li class="flex items-center justify-between gap-2 py-1 border-b border-line/60 last:border-0">
                     <div class="min-w-0">
                         <p class="font-medium truncate {% if fu.status == 'done' %}line-through text-muted{% endif %}">{{ fu.note|default:fu.get_channel_display }}</p>
-                        <p class="text-[11.5px] {% if fu.is_overdue %}text-bad font-semibold{% else %}text-muted{% endif %}">{{ fu.due_at|date:"d M, H:i" }} · {{ fu.get_status_display }}</p>
+                        <p class="text-[11.5px] {% if fu.is_overdue %}text-bad font-semibold{% else %}text-muted{% endif %}">{{ fu.due_at|date:"d M, g:i A" }} · {{ fu.get_status_display }}</p>
                     </div>
                     {% if can_edit and fu.status == 'pending' %}
                     <form method="post" action="{% url 'crm:follow-up-action' fu.pk %}">

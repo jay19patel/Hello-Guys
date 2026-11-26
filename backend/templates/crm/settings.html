@@ -15,7 +15,7 @@
         <span class="pill bg-subtle border border-line text-muted">Not connected</span>
         {% endif %}
     </div>
-    {% if account.connected_at %}<p class="text-[13px] text-muted">Connected {{ account.connected_at|date:"d M Y, H:i" }}.</p>{% endif %}
+    {% if account.connected_at %}<p class="text-[13px] text-muted">Connected {{ account.connected_at|date:"d M Y, g:i A" }}.</p>{% endif %}
     {% if account.last_error %}<p class="text-[13.5px] text-bad"><i class="fa-solid fa-circle-exclamation"></i> Last error: {{ account.last_error }}</p>{% endif %}
 
     <details class="rounded-xl border border-line p-4 bg-subtle/30" {% if not account.is_configured %}open{% endif %}>

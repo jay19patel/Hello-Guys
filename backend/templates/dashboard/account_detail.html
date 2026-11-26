@@ -227,7 +227,7 @@
                         <span class="pill {% if log.status == 'sent' %}bg-ok/10 text-ok{% elif log.status == 'failed' %}bg-bad/10 text-bad{% else %}bg-subtle text-muted{% endif %}">{{ log.get_status_display }}</span>
                     </span>
                     <span class="w-12 text-[13px]">{% if log.permalink %}<a href="{{ log.permalink }}" target="_blank" rel="noopener" class="text-accent hover:underline font-medium">Post</a>{% endif %}</span>
-                    <time class="w-24 text-right text-[12.5px] text-muted tabular-nums" datetime="{{ log.created_at|date:'c' }}">{{ log.created_at|date:"d M, H:i" }}</time>
+                    <time class="w-24 text-right text-[12.5px] text-muted tabular-nums" datetime="{{ log.created_at|date:'c' }}">{{ log.created_at|date:"d M, g:i A" }}</time>
                 </div>
             </li>
             {% endfor %}
@@ -309,7 +309,7 @@
                             </a>
                         </span>
                         <time class="text-muted tabular-nums text-[12px]" datetime="{{ msg.created_at|date:'c' }}">
-                            {{ msg.created_at|date:"d M, H:i" }}
+                            {{ msg.created_at|date:"d M, g:i A" }}
                         </time>
                     </div>
                     <p class="text-[13.5px] text-ink leading-snug break-words line-clamp-2" title="{{ msg.message_text }}">

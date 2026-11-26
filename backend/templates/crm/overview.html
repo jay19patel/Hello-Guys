@@ -167,7 +167,7 @@
                 <div class="min-w-0">
                     <a href="{% url 'crm:customer' fu.customer.pk %}" class="font-medium text-[13.5px] text-ink hover:text-accent truncate block">{{ fu.customer.name }} · {{ fu.note|default:fu.get_channel_display }}</a>
                     <p class="text-[12px] {% if fu.is_overdue %}text-bad font-semibold{% else %}text-muted{% endif %}">
-                        {{ fu.get_channel_display }} · {% if fu.is_overdue %}Overdue ({{ fu.due_at|naturaltime }}){% else %}{{ fu.due_at|date:"d M, H:i" }}{% endif %}
+                        {{ fu.get_channel_display }} · {% if fu.is_overdue %}Overdue ({{ fu.due_at|naturaltime }}){% else %}{{ fu.due_at|date:"d M, g:i A" }}{% endif %}
                     </p>
                 </div>
                 {% if can_edit %}

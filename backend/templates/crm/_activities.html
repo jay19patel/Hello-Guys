@@ -39,7 +39,7 @@
                         </span>
                         <span class="text-[12px] text-muted">· {% include "crm/_user.html" with u=a.created_by empty="System" %}</span>
                     </div>
-                    <time class="text-[11.5px] text-muted tabular-nums" datetime="{{ a.created_at|date:'c' }}" title="{{ a.created_at|date:'d M Y, H:i' }}">
+                    <time class="text-[11.5px] text-muted tabular-nums" datetime="{{ a.created_at|date:'c' }}" title="{{ a.created_at|date:'d M Y, g:i A' }}">
                         {{ a.created_at|timesince }} ago
                     </time>
                 </div>

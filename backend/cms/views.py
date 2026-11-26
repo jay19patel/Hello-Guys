@@ -36,7 +36,6 @@ from cms.serializers import (
     BlogPostListSerializer,
     BlogPostDetailSerializer,
     BlogCommentSerializer,
-    InquirySubmissionSerializer,
     WorkflowStepSerializer,
     AboutProfileSerializer,
     AboutStatSerializer,
@@ -468,29 +467,6 @@ class BlogPostLikeAPIView(APIView):
             return Response({'status': 'ok', 'likes_count': post.likes_count})
         except BlogPost.DoesNotExist:
             return Response({'error': 'Article not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-
-class InquiryCreateAPIView(generics.CreateAPIView):
-    """
-    Accepts new project inquiries & contact submissions.
-    Endpoint: POST /api/cms/inquiries/
-    """
-    serializer_class = InquirySubmissionSerializer
-    permission_classes = [permissions.AllowAny]
-
-    def create(self, request, *args, **kwargs):
-        blocked = check_maintenance('inquiries')
-        if blocked:
-            return blocked
-
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        inquiry = serializer.save()
-        return Response({
-            'status': 'ok',
-            'message': 'Thank you! Your project inquiry has been received. We will get back to you shortly.',
-            'inquiry_id': inquiry.inquiry_id,
-        }, status=status.HTTP_201_CREATED)
 
 
 def get_visitor_info(request) -> tuple[str, str]:

@@ -1,54 +1,15 @@
 {% extends "base.html" %}
 {% load humanize %}
-{% block title %}AI Analytics · Hello Guy AI<script>
-async function aiReminderAction(id, action) {
-    const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
-    const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;
-    const method = action === 'delete' ? 'DELETE' : 'POST';
-    const res = await fetch(url, {
-        method,
-        credentials: 'same-origin',
-        headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
-    });
-    if (res.ok) location.reload();
-}
-</script>
-{% endblock %}
+{% block title %}AI Analytics · Hello Guy AI{% endblock %}
 
 {% block sidebar_brand %}
 <a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-2.5">
     <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
     <span class="font-display font-bold text-[15px] text-ink">Hello Guy AI</span>
 </a>
-<script>
-async function aiReminderAction(id, action) {
-    const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
-    const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;
-    const method = action === 'delete' ? 'DELETE' : 'POST';
-    const res = await fetch(url, {
-        method,
-        credentials: 'same-origin',
-        headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
-    });
-    if (res.ok) location.reload();
-}
-</script>
 {% endblock %}
 
-{% block nav_aria_label %}Hello Guy AI<script>
-async function aiReminderAction(id, action) {
-    const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
-    const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;
-    const method = action === 'delete' ? 'DELETE' : 'POST';
-    const res = await fetch(url, {
-        method,
-        credentials: 'same-origin',
-        headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
-    });
-    if (res.ok) location.reload();
-}
-</script>
-{% endblock %}
+{% block nav_aria_label %}Hello Guy AI{% endblock %}
 
 {% block sidebar_nav %}
 <div class="caps px-3 pt-1 pb-1">Monitoring</div>
@@ -58,19 +19,6 @@ async function aiReminderAction(id, action) {
 <a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
     <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> AI Chat
 </a>
-<script>
-async function aiReminderAction(id, action) {
-    const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
-    const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;
-    const method = action === 'delete' ? 'DELETE' : 'POST';
-    const res = await fetch(url, {
-        method,
-        credentials: 'same-origin',
-        headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
-    });
-    if (res.ok) location.reload();
-}
-</script>
 {% endblock %}
 
 {% block sidebar_system %}
@@ -80,35 +28,9 @@ async function aiReminderAction(id, action) {
         <i class="fa-solid fa-database w-4 text-center shrink-0"></i> AI Models &amp; Data
     </a>
 </div>
-<script>
-async function aiReminderAction(id, action) {
-    const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
-    const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;
-    const method = action === 'delete' ? 'DELETE' : 'POST';
-    const res = await fetch(url, {
-        method,
-        credentials: 'same-origin',
-        headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
-    });
-    if (res.ok) location.reload();
-}
-</script>
 {% endblock %}
 
-{% block user_role_label %}{% if request.user.is_superuser %}Superuser{% else %}Staff{% endif %}<script>
-async function aiReminderAction(id, action) {
-    const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
-    const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;
-    const method = action === 'delete' ? 'DELETE' : 'POST';
-    const res = await fetch(url, {
-        method,
-        credentials: 'same-origin',
-        headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
-    });
-    if (res.ok) location.reload();
-}
-</script>
-{% endblock %}
+{% block user_role_label %}{% if request.user.is_superuser %}Superuser{% else %}Staff{% endif %}{% endblock %}
 
 {% block content %}
 <header class="flex flex-wrap items-end justify-between gap-4">
@@ -143,6 +65,153 @@ async function aiReminderAction(id, action) {
         <i class="fa-solid fa-bolt text-[10px]"></i>
         {{ health.active_runs }} active · {{ health.paused_runs }} paused
     </span>
+</section>
+
+<!-- Live Active Agents & Running Tasks -->
+<section class="card p-5 flex flex-col gap-3" x-data="liveAgentsMonitor()" x-init="init()">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+            <span class="relative flex h-2.5 w-2.5">
+                <span x-show="runs.length > 0" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ok opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5" :class="runs.length > 0 ? 'bg-ok' : 'bg-muted/40'"></span>
+            </span>
+            <h2 class="font-display text-[16px] font-semibold text-ink">Live Running Agents</h2>
+            <span class="pill bg-subtle border border-line text-[11.5px]" x-text="runs.length + ' active'"></span>
+        </div>
+        <span class="text-[12px] text-muted">Auto-refreshes every 5s</span>
+    </div>
+
+    <div x-show="runs.length === 0" class="rounded-xl border border-line bg-subtle/30 px-4 py-3 text-[13px] text-muted flex items-center gap-2">
+        <i class="fa-regular fa-circle-check text-ok"></i>
+        <span>All AI assistants are idle and ready for incoming chats.</span>
+    </div>
+
+    <div x-show="runs.length > 0" x-cloak class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <template x-for="r in runs" :key="r.id">
+            <div class="rounded-xl border border-accent/30 bg-accent/5 p-3.5 flex flex-col gap-1.5">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="font-semibold text-[13.5px] text-ink truncate" x-text="r.assistant_name"></span>
+                    <span class="pill text-[11px]"
+                          :class="r.status === 'paused' ? 'bg-warn/15 text-warn' : 'bg-ok/15 text-ok'"
+                          x-text="r.status_label"></span>
+                </div>
+                <p class="text-[12.5px] text-muted truncate" x-text="'Chat: ' + r.thread_name"></p>
+                <div class="flex items-center justify-between text-[11.5px] text-muted pt-1 border-t border-line/60">
+                    <span x-text="'User: ' + r.user"></span>
+                    <span class="tabular-nums" x-text="r.elapsed"></span>
+                </div>
+            </div>
+        </template>
+    </div>
+</section>
+{{ live_runs|json_script:"live-runs-initial" }}
+
+<!-- Today / 30 Days / All Time Comparison -->
+<section class="grid sm:grid-cols-3 gap-4" aria-label="Timeframe breakdown">
+    <div class="card p-4 flex flex-col gap-1">
+        <span class="caps">Today</span>
+        <div class="flex items-baseline justify-between">
+            <span class="font-display text-[24px] font-bold tabular-nums text-ink">{{ timeframes.today.total }} runs</span>
+            <span class="text-[12px] text-muted tabular-nums">{{ timeframes.today.tokens|intcomma }} tok</span>
+        </div>
+        <span class="text-[12px] text-muted">{{ timeframes.today.done }} done · {{ timeframes.today.failed }} failed · ${{ timeframes.today.cost|floatformat:4 }}</span>
+    </div>
+    <div class="card p-4 flex flex-col gap-1">
+        <span class="caps">Last 30 Days</span>
+        <div class="flex items-baseline justify-between">
+            <span class="font-display text-[24px] font-bold tabular-nums text-ink">{{ timeframes.month.total }} runs</span>
+            <span class="text-[12px] text-muted tabular-nums">{{ timeframes.month.tokens|intcomma }} tok</span>
+        </div>
+        <span class="text-[12px] text-muted">{{ timeframes.month.done }} done · {{ timeframes.month.failed }} failed · ${{ timeframes.month.cost|floatformat:4 }}</span>
+    </div>
+    <div class="card p-4 flex flex-col gap-1">
+        <span class="caps">All Time</span>
+        <div class="flex items-baseline justify-between">
+            <span class="font-display text-[24px] font-bold tabular-nums text-ink">{{ timeframes.all.total }} runs</span>
+            <span class="text-[12px] text-muted tabular-nums">{{ timeframes.all.tokens|intcomma }} tok</span>
+        </div>
+        <span class="text-[12px] text-muted">{{ timeframes.all.done }} done · {{ timeframes.all.failed }} failed · ${{ timeframes.all.cost|floatformat:4 }}</span>
+    </div>
+</section>
+
+<!-- AI Assistants Fleet Cards -->
+<section class="flex flex-col gap-3">
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="font-display text-[16px] font-semibold text-ink">AI Assistants</h2>
+            <p class="text-[12.5px] text-muted">All registered assistants, live activity, tools, and Today / 30d / All-Time stats.</p>
+        </div>
+        <span class="pill bg-subtle border border-line text-[12px]">{{ assistant_cards|length }} agents</span>
+    </div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for a in assistant_cards %}
+        <div class="card p-4 flex flex-col justify-between gap-3 {% if a.live_count %}border-ok/40 ring-1 ring-ok/20{% endif %}" x-data="{ detailsOpen: false }">
+            <div>
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <h3 class="font-display font-semibold text-[15px] text-ink">{{ a.name }}</h3>
+                        <code class="text-[11px] text-muted">{{ a.id }}</code>
+                    </div>
+                    {% if a.live_count %}
+                    <span class="pill bg-ok/15 text-ok border border-ok/25 text-[11px]"><i class="fa-solid fa-circle text-[7px] mr-1"></i> Running ({{ a.live_count }})</span>
+                    {% else %}
+                    <span class="pill bg-subtle border border-line text-muted text-[11px]">Ready</span>
+                    {% endif %}
+                </div>
+                <p class="text-[12.5px] text-muted mt-2 line-clamp-2">{{ a.description }}</p>
+                <div class="mt-2 text-[11.5px] text-muted flex items-center gap-1.5">
+                    <i class="fa-solid fa-microchip text-[10px]"></i>
+                    <code class="truncate">{{ a.model }}</code>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <button type="button" @click="detailsOpen = !detailsOpen" class="pill bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer">
+                        <i class="fa-solid fa-wrench text-[9px]"></i> {{ a.tools_count }} tools
+                        <i class="fa-solid fa-chevron-down text-[9px] transition-transform" :class="detailsOpen ? 'rotate-180' : ''"></i>
+                    </button>
+                    {% if a.has_rag %}<span class="pill bg-violet-500/10 text-violet-600 dark:text-violet-300">RAG</span>{% endif %}
+                    {% if a.success_rate is not None %}<span class="pill bg-ok/10 text-ok">{{ a.success_rate }}% ok</span>{% endif %}
+                </div>
+                <a href="{% url 'hello_guy_ai_chat' %}?assistant={{ a.id }}" class="text-accent hover:underline font-medium text-[12px]">Chat →</a>
+            </div>
+
+            <!-- Expandable Agent Tools & Details -->
+            <div x-show="detailsOpen" x-transition x-cloak class="rounded-xl border border-line bg-subtle/40 p-3 flex flex-col gap-2 max-h-56 overflow-y-auto">
+                {% if a.knowledge_bases %}
+                <div class="text-[11px] text-muted">Knowledge bases: <span class="font-medium text-ink">{{ a.knowledge_bases|join:", " }}</span></div>
+                {% endif %}
+                {% for t in a.tools %}
+                <div class="text-[12px] border-b border-line/60 last:border-0 pb-1.5 last:pb-0">
+                    <div class="flex items-center justify-between gap-1.5">
+                        <code class="font-semibold text-ink">{{ t.name }}</code>
+                        {% if t.requires_confirmation %}<span class="pill bg-warn/15 text-warn text-[10px] px-1.5 py-0">Approval</span>{% endif %}
+                    </div>
+                    {% if t.description %}<p class="text-[11.5px] text-muted mt-0.5 line-clamp-2">{{ t.description }}</p>{% endif %}
+                </div>
+                {% empty %}
+                <p class="text-[12px] text-muted">No tools attached.</p>
+                {% endfor %}
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 pt-2.5 border-t border-line text-center text-[12px]">
+                <div>
+                    <div class="text-muted text-[10.5px] uppercase">Today</div>
+                    <div class="font-bold text-ink tabular-nums">{{ a.runs_today }}</div>
+                </div>
+                <div>
+                    <div class="text-muted text-[10.5px] uppercase">30 Days</div>
+                    <div class="font-bold text-ink tabular-nums">{{ a.runs_30d }}</div>
+                </div>
+                <div>
+                    <div class="text-muted text-[10.5px] uppercase">All Time</div>
+                    <div class="font-bold text-ink tabular-nums">{{ a.runs_all }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </section>
 
 <!-- Top KPIs -->
@@ -352,7 +421,7 @@ async function aiReminderAction(id, action) {
                         </span>
                     </td>
                     <td class="cell px-5 tabular-nums text-muted whitespace-nowrap">
-                        {{ r.due_at|date:"d M Y, H:i" }}
+                        {{ r.due_at|date:"d M Y, g:i A" }}
                         <div class="text-[11px]">{{ r.timezone }}</div>
                     </td>
                     <td class="cell px-5 text-muted">
@@ -439,6 +508,25 @@ async function aiReminderAction(id, action) {
     {% endif %}
 </section>
 <script>
+function liveAgentsMonitor() {
+    const initial = JSON.parse(document.getElementById('live-runs-initial').textContent || '[]');
+    return {
+        runs: initial,
+        init() {
+            setInterval(() => this.poll(), 5000);
+        },
+        async poll() {
+            try {
+                const res = await fetch('?format=json', { credentials: 'same-origin' });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.runs = data.live_runs || [];
+                }
+            } catch (_) {}
+        },
+    };
+}
+
 async function aiReminderAction(id, action) {
     const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
     const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;

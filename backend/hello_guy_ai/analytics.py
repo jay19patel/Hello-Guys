@@ -181,6 +181,118 @@ def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
         for r in runs_qs.select_related("thread").order_by("-created_at")[:15]
     ]
 
+    from hello_guy_ai.assistants import AIAssistant
+    registered_assistants = list(AIAssistant.registry().values())
+    assistant_names = {cls.id: cls.name for cls in registered_assistants}
+
+    # Active / Live runs right now
+    active_runs_qs = (
+        Run.objects.filter(status__in=[Run.Status.QUEUED, Run.Status.RUNNING, Run.Status.PAUSED])
+        .select_related("thread", "thread__created_by")
+        .order_by("-created_at")[:20]
+    )
+    live_runs = []
+    live_by_assistant: dict[str, int] = {}
+    for run in active_runs_qs:
+        aid = run.thread.assistant_id
+        live_by_assistant[aid] = live_by_assistant.get(aid, 0) + 1
+        elapsed = max(0, int((now - run.created_at).total_seconds()))
+        live_runs.append({
+            "id": str(run.pk),
+            "assistant_id": aid,
+            "assistant_name": assistant_names.get(aid, aid),
+            "status": run.status,
+            "status_label": run.get_status_display(),
+            "thread_id": str(run.thread_id),
+            "thread_name": run.thread.name or "Untitled chat",
+            "user": run.thread.created_by.get_username() if run.thread.created_by else "Visitor",
+            "elapsed": f"{elapsed}s" if elapsed < 60 else f"{elapsed // 60}m {elapsed % 60}s",
+        })
+
+    # Today / 30d / All-Time summary
+    today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = now - timedelta(days=30)
+
+    def _window_stats(qs_win):
+        agg = qs_win.aggregate(
+            total=Count("id"),
+            done=Count("id", filter=Q(status=Run.Status.SUCCEEDED)),
+            failed=Count("id", filter=Q(status=Run.Status.FAILED)),
+            p_tok=Sum("prompt_tokens"),
+            c_tok=Sum("completion_tokens"),
+            cost=Sum("cost_usd"),
+        )
+        return {
+            "total": agg["total"] or 0,
+            "done": agg["done"] or 0,
+            "failed": agg["failed"] or 0,
+            "tokens": (agg["p_tok"] or 0) + (agg["c_tok"] or 0),
+            "cost": agg["cost"] or Decimal("0"),
+        }
+
+    timeframes = {
+        "today": _window_stats(Run.objects.filter(created_at__gte=today_start)),
+        "month": _window_stats(Run.objects.filter(created_at__gte=month_start)),
+        "all": _window_stats(Run.objects.all()),
+    }
+
+    # Assistant Fleet Cards (all registered assistants)
+    today_by_ast = dict(
+        Run.objects.filter(created_at__gte=today_start).values_list("thread__assistant_id").annotate(c=Count("id"))
+    )
+    month_by_ast = {
+        r["thread__assistant_id"]: r
+        for r in Run.objects.filter(created_at__gte=month_start)
+        .values("thread__assistant_id")
+        .annotate(c=Count("id"), cost=Sum("cost_usd"))
+    }
+    all_by_ast = {
+        r["thread__assistant_id"]: r
+        for r in Run.objects.values("thread__assistant_id").annotate(
+            c=Count("id"),
+            done=Count("id", filter=Q(status=Run.Status.SUCCEEDED)),
+        )
+    }
+    assistant_cards = []
+    default_chat_model = LLMModel.default(LLMModel.Kind.CHAT)
+    default_model_label = default_chat_model.model_id if default_chat_model else "Default"
+    for cls in registered_assistants:
+        aid = cls.id
+        m_row = month_by_ast.get(aid, {})
+        a_row = all_by_ast.get(aid, {})
+        all_cnt = a_row.get("c", 0)
+        done_cnt = a_row.get("done", 0)
+        try:
+            inst = cls(user=None)
+            tools_list = [
+                {
+                    "name": t.name,
+                    "description": (t.description or "").strip(),
+                    "requires_confirmation": bool(t.requires_confirmation),
+                }
+                for t in inst.get_tools()
+            ]
+            model_name = inst.get_model() or default_model_label
+        except Exception:
+            tools_list = [{"name": n, "description": "", "requires_confirmation": False} for n in (getattr(cls, "builtin_tools", []) or [])]
+            model_name = getattr(cls, "model", "") or default_model_label
+        assistant_cards.append({
+            "id": aid,
+            "name": cls.name,
+            "description": cls.description,
+            "model": model_name,
+            "tools": tools_list,
+            "tools_count": len(tools_list),
+            "has_rag": bool(getattr(cls, "has_rag", False)),
+            "knowledge_bases": list(getattr(cls, "knowledge_bases", []) or []),
+            "live_count": live_by_assistant.get(aid, 0),
+            "runs_today": today_by_ast.get(aid, 0),
+            "runs_30d": m_row.get("c", 0),
+            "cost_30d": m_row.get("cost") or Decimal("0"),
+            "runs_all": all_cnt,
+            "success_rate": round((done_cnt / all_cnt) * 100) if all_cnt else None,
+        })
+
     return {
         "period": period,
         "health": {
@@ -190,6 +302,9 @@ def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
             "active_runs": run_totals["active"] or 0,
             "paused_runs": run_totals["paused"] or 0,
         },
+        "live_runs": live_runs,
+        "timeframes": timeframes,
+        "assistant_cards": assistant_cards,
         "kpis": {
             "total_runs": total_runs,
             "succeeded": succeeded,

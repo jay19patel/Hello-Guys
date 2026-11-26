@@ -160,7 +160,7 @@
                         <td class="px-5 cell hidden lg:table-cell">{% if c.email %}<span class="truncate">{{ c.email }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                         <td class="px-5 cell hidden sm:table-cell text-right tabular-nums font-medium">{{ c.msg_count }}</td>
                         <td class="px-5 cell hidden md:table-cell whitespace-nowrap text-muted text-[13px]">
-                            {% if c.last_message_at %}<span title="{{ c.last_message_at|date:'d M Y, H:i' }}">{{ c.last_message_at|naturaltime }}</span>{% else %}—{% endif %}
+                            {% if c.last_message_at %}<span title="{{ c.last_message_at|date:'d M Y, g:i A' }}">{{ c.last_message_at|naturaltime }}</span>{% else %}—{% endif %}
                         </td>
                         <td class="pr-4 cell text-right"><i class="fa-solid fa-chevron-right text-[12px] text-muted group-hover:text-ink transition-colors"></i></td>
                     </tr>
@@ -197,7 +197,7 @@
                         <span class="flex-1 min-w-0 flex flex-col gap-0.5">
                             <span class="flex items-baseline gap-2">
                                 <span class="font-semibold truncate">{{ c.name|default:c.username|default:c.phone|default:c.platform_user_id }}</span>
-                                <time class="ml-auto shrink-0 text-[12px] text-muted whitespace-nowrap" datetime="{{ msg.created_at|date:'c' }}" title="{{ msg.created_at|date:'d M Y, H:i' }}">{{ msg.created_at|naturaltime }}</time>
+                                <time class="ml-auto shrink-0 text-[12px] text-muted whitespace-nowrap" datetime="{{ msg.created_at|date:'c' }}" title="{{ msg.created_at|date:'d M Y, g:i A' }}">{{ msg.created_at|naturaltime }}</time>
                             </span>
                             <span class="flex items-center gap-1.5 min-w-0 text-[13.5px] {% if msg.direction == 'outgoing' %}text-muted{% endif %}">
                                 {% if msg.message_type == 'comment' %}

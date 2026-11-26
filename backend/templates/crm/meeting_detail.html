@@ -18,7 +18,7 @@
             </div>
             <p class="text-muted text-[13.5px] mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span class="font-medium text-ink/90 tabular-nums">
-                    <i class="fa-regular fa-calendar mr-1 text-muted"></i>{{ meeting.start_at|date:"D, d M Y · H:i" }} – {{ meeting.end_at|date:"H:i" }} ({{ meeting.duration_minutes }} min · {{ meeting.timezone }})
+                    <i class="fa-regular fa-calendar mr-1 text-muted"></i>{{ meeting.start_at|date:"D, d M Y · g:i A" }} – {{ meeting.end_at|date:"g:i A" }} ({{ meeting.duration_minutes }} min · {{ meeting.timezone }})
                 </span>
                 {% if meeting.customer %}
                 <a href="{% url 'crm:customer' meeting.customer.pk %}" class="text-accent font-medium hover:underline">
@@ -226,7 +226,7 @@
                                 <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
-                            <td class="cell px-4 text-muted whitespace-nowrap">{{ tr.created_at|date:"d M, H:i" }}</td>
+                            <td class="cell px-4 text-muted whitespace-nowrap">{{ tr.created_at|date:"d M, g:i A" }}</td>
                             <td class="cell px-4 text-right" @click.stop>
                                 <div class="flex items-center justify-end gap-1">
                                     <button type="button" @click="activeTranscript = {{ tr.pk }}" class="btn btn-ghost btn-sm">Read</button>

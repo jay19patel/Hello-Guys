@@ -251,48 +251,82 @@
         </form>
     </div>
 
-    <!-- Follow-ups List -->
+    <!-- Reminders List -->
     <section class="card overflow-hidden">
         {% if follow_ups %}
         <ul class="divide-y divide-line">
             {% for fu in follow_ups %}
-            <li class="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-subtle/40 transition-colors">
-                <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <span class="font-semibold text-[14.5px] text-ink {% if fu.status == 'done' %}line-through text-muted{% endif %}">{{ fu.title }}</span>
-                        {% if fu.channel %}
-                        <span class="pill bg-subtle border border-line text-[11.5px]">
-                            <i class="{{ fu.channel.icon }} text-[10.5px] text-accent"></i> {{ fu.channel.name }}
-                        </span>
-                        {% endif %}
-                        {% if fu.priority == 'urgent' %}
-                        <span class="pill bg-bad/10 text-bad border border-bad/25">Urgent</span>
-                        {% elif fu.priority == 'high' %}
-                        <span class="pill bg-warn/10 text-warn border border-warn/25">High</span>
-                        {% endif %}
-                        {% if fu.is_overdue %}
-                        <span class="pill bg-bad/10 text-bad border border-bad/25">Overdue · {{ fu.due_at|naturaltime }}</span>
-                        {% else %}
-                        <span class="text-[12.5px] text-muted tabular-nums">{{ fu.due_at|date:"D d M, H:i" }}</span>
-                        {% endif %}
+            <li class="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-subtle/40 transition-colors {% if fu.is_overdue %}border-l-4 border-l-bad bg-bad/5{% elif fu.priority == 'urgent' %}border-l-4 border-l-warn{% endif %}">
+                <div class="flex items-start gap-3.5 min-w-0 flex-1">
+                    <!-- Due Date Tile -->
+                    <div class="w-14 h-14 rounded-2xl border flex flex-col items-center justify-center shrink-0 text-center {% if fu.is_overdue %}border-bad/30 bg-bad/10{% else %}border-line bg-subtle/60{% endif %}">
+                        <span class="text-[10px] font-bold uppercase tracking-wider {% if fu.is_overdue %}text-bad{% else %}text-accent{% endif %}">{{ fu.due_at|date:"M" }}</span>
+                        <span class="font-display text-[19px] leading-tight font-bold tabular-nums text-ink">{{ fu.due_at|date:"d" }}</span>
+                        <span class="text-[10px] text-muted tabular-nums">{{ fu.due_at|date:"g:i A" }}</span>
                     </div>
-                    {% if fu.note %}<p class="text-[13px] text-muted mt-1">{{ fu.note }}</p>{% endif %}
-                    <div class="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-muted">
-                        {% if fu.related_label %}
-                            {% if fu.related_url %}
-                            <a href="{{ fu.related_url }}" class="text-accent hover:underline font-medium"><i class="fa-solid fa-link mr-1"></i>{{ fu.related_label }}</a>
-                            {% else %}
-                            <span><i class="fa-solid fa-tag mr-1"></i>{{ fu.related_label }}</span>
+
+                    <div class="min-w-0 flex-1">
+                        <!-- Title + Badges -->
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-display font-semibold text-[15px] text-ink {% if fu.status == 'done' %}line-through text-muted{% endif %}">{{ fu.title }}</span>
+                            {% if fu.channel %}
+                            <span class="pill bg-subtle border border-line text-[11.5px]">
+                                <i class="{{ fu.channel.icon }} text-[10.5px] text-accent"></i> {{ fu.channel.name }}
+                            </span>
                             {% endif %}
+                            {% if fu.entity_type %}
+                            <span class="pill bg-accent/10 text-accent text-[11px] uppercase tracking-wider">{{ fu.entity_type }}</span>
+                            {% endif %}
+                            {% if fu.priority == 'urgent' %}
+                            <span class="pill bg-bad/10 text-bad border border-bad/25">Urgent</span>
+                            {% elif fu.priority == 'high' %}
+                            <span class="pill bg-warn/10 text-warn border border-warn/25">High</span>
+                            {% endif %}
+                            {% if fu.is_overdue %}
+                            <span class="pill bg-bad/15 text-bad border border-bad/30 font-semibold"><i class="fa-solid fa-triangle-exclamation text-[10px] mr-1"></i>Overdue · {{ fu.due_at|naturaltime }}</span>
+                            {% else %}
+                            <span class="pill bg-ok/10 text-ok border border-ok/20 text-[11.5px] tabular-nums">
+                                <i class="fa-regular fa-clock text-[10px] mr-1"></i>Due {{ fu.due_at|date:"D d M, g:i A" }} ({{ fu.due_at|naturaltime }})
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Notes -->
+                        {% if fu.note %}
+                        <p class="text-[13px] text-ink/80 mt-1.5 bg-subtle/50 border border-line/60 rounded-lg px-3 py-1.5 whitespace-pre-line">{{ fu.note }}</p>
                         {% endif %}
-                        {% if fu.assigned_to %}
-                        <span><i class="fa-regular fa-user mr-1"></i>{{ fu.assigned_to.get_full_name|default:fu.assigned_to.username }}</span>
-                        {% endif %}
+
+                        <!-- Provenance & Audit Info -->
+                        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted">
+                            <span title="When this reminder was scheduled">
+                                <i class="fa-regular fa-calendar-plus mr-1"></i>Set {{ fu.created_at|date:"d M Y, g:i A" }} ({{ fu.created_at|naturaltime }})
+                            </span>
+                            <span>
+                                <i class="fa-solid fa-user-pen mr-1"></i>By: <strong class="text-ink/80">{% if fu.created_by %}{{ fu.created_by.get_full_name|default:fu.created_by.username }}{% else %}System / AI{% endif %}</strong>
+                            </span>
+                            {% if fu.assigned_to %}
+                            <span>
+                                <i class="fa-regular fa-user mr-1"></i>For: <strong class="text-ink/80">{{ fu.assigned_to.get_full_name|default:fu.assigned_to.username }}</strong>
+                            </span>
+                            {% endif %}
+                            {% if fu.related_label %}
+                                {% if fu.related_url %}
+                                <a href="{{ fu.related_url }}" class="text-accent hover:underline font-medium"><i class="fa-solid fa-arrow-up-right-from-square mr-1 text-[10.5px]"></i>{{ fu.related_label }}</a>
+                                {% else %}
+                                <span><i class="fa-solid fa-tag mr-1"></i>{{ fu.related_label }}</span>
+                                {% endif %}
+                            {% endif %}
+                            {% if fu.completed_at %}
+                            <span class="text-ok"><i class="fa-solid fa-circle-check mr-1"></i>Done {{ fu.completed_at|date:"d M, g:i A" }}</span>
+                            {% elif fu.notified_at %}
+                            <span><i class="fa-regular fa-bell mr-1 text-accent"></i>Alerted {{ fu.notified_at|naturaltime }}</span>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
 
                 {% if fu.status == 'pending' %}
-                <form method="post" action="{% url 'core:follow-up-action' fu.pk %}" class="flex items-center gap-2 shrink-0">
+                <form method="post" action="{% url 'core:reminder-action' fu.pk %}" class="flex items-center gap-2 shrink-0">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
                     <button type="submit" name="action" value="snooze" class="btn btn-ghost btn-sm" title="Snooze 24 hours">+24h</button>

@@ -15,7 +15,6 @@ from cms.views import (
     BlogPostDetailAPIView,
     BlogPostLikeAPIView,
     BlogPostEngagementAPIView,
-    InquiryCreateAPIView,
 )
 
 app_name = 'cms'
@@ -53,8 +52,5 @@ urlpatterns = [
     path('blog/<slug:slug>/', BlogPostDetailAPIView.as_view(), name='blog-detail'),
     path('blog/<slug:slug>/like/', BlogPostLikeAPIView.as_view(), name='blog-like'),
     path('blog/<slug:slug>/engagement/', BlogPostEngagementAPIView.as_view(), name='blog-engagement'),
-
-    # Inquiries / Contact Form Leads
-    path('inquiries/', InquiryCreateAPIView.as_view(), name='inquiry-create'),
 ]
 

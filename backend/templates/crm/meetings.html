@@ -133,7 +133,7 @@
                         <td class="cell px-5">
                             <a href="{% url 'crm:meeting' tr.meeting.pk %}" class="font-semibold text-ink hover:text-accent block">{{ tr.meeting.title }}</a>
                             <span class="text-[12px] text-muted">
-                                {% if tr.meeting.customer %}{{ tr.meeting.customer.name }} · {% endif %}{{ tr.meeting.start_at|date:"d M Y, H:i" }}
+                                {% if tr.meeting.customer %}{{ tr.meeting.customer.name }} · {% endif %}{{ tr.meeting.start_at|date:"d M Y, g:i A" }}
                             </span>
                         </td>
                         <td class="cell px-5 font-medium">{{ tr.title|default:"Transcript" }}</td>
@@ -204,7 +204,7 @@
 
                         <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
                             <span class="tabular-nums font-medium text-ink/80">
-                                <i class="fa-regular fa-clock mr-1 text-muted"></i>{{ m.start_at|date:"D, H:i" }} – {{ m.end_at|date:"H:i" }} ({{ m.duration_minutes }}m)
+                                <i class="fa-regular fa-clock mr-1 text-muted"></i>{{ m.start_at|date:"D, g:i A" }} – {{ m.end_at|date:"g:i A" }} ({{ m.duration_minutes }}m)
                             </span>
                             {% if m.customer %}
                             <a href="{% url 'crm:customer' m.customer.pk %}" class="hover:text-accent font-medium">

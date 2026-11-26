@@ -142,19 +142,6 @@ class CMSAPITests(TestCase):
         self.assertEqual(like_res.status_code, 200)
         self.assertEqual(like_res.data['likes_count'], 1)
 
-    def test_inquiry_create_api(self):
-        payload = {
-            'name': 'API Lead',
-            'email': 'api.lead@example.com',
-            'phone': '+1 555-0987',
-            'subject': 'Website Revamp Inquiry',
-            'message': 'We need custom API integrations for our CRM.',
-            'inquiry_type': 'Project Inquiry Modal',
-        }
-        response = self.client.post(reverse('cms:inquiry-create'), data=payload, format='json')
-        self.assertEqual(response.status_code, 201)
-        self.assertTrue(InquirySubmission.objects.filter(email='api.lead@example.com').exists())
-
     def test_workflow_steps_api(self):
         WorkflowStep.objects.create(
             step_num='01',

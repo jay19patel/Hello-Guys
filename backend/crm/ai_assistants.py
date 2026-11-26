@@ -39,4 +39,13 @@ class SalesAssistant(StaffOnly, AIAssistant):
         "Which customers have open opportunities?",
     ]
     temperature = 0.3
-    builtin_tools = ["list_opportunities", "get_opportunity", "update_opportunity_status", "list_customers"]
+    builtin_tools = [
+        "list_opportunities",
+        "get_opportunity",
+        "update_opportunity_status",
+        "list_customers",
+        "schedule_follow_up",
+        "create_global_reminder",
+        "list_global_reminders",
+        "send_global_notification",
+    ]

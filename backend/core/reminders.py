@@ -111,7 +111,7 @@ def schedule_follow_up(
 
     if notify_now and fu.assigned_to:
         ch_name = fu.channel.name if fu.channel else "Reminder"
-        when = timezone.localtime(fu.due_at).strftime("%d %b, %H:%M")
+        when = timezone.localtime(fu.due_at).strftime("%d %b, %I:%M %p").lstrip("0")
         notifications.notify(
             user=fu.assigned_to,
             title=f"Reminder: {fu.title}",

@@ -234,15 +234,16 @@ def list_services() -> list[dict]:
 
 @tool
 def create_inquiry(name: str, email: str, message: str, phone: str = "", subject: str = "") -> dict:
-    """Submit the visitor's project inquiry / contact request so the team can reply by email.
+    """Submit the visitor's project inquiry / contact request directly into CRM as a Customer + Opportunity.
     Only call it after the visitor has given their name, a valid email and what they need,
-    and has confirmed the details. Returns the inquiry id to share with the visitor."""
+    and has confirmed the details. Returns the inquiry reference to share with the visitor."""
     from cms.views import check_maintenance  # same switch as the website's contact form
+    from crm import services as crm_services
+    from crm.models import Opportunity, Source
+    from hello_guy_ai.models import Message, Thread
 
     _require("add", InquirySubmission)
     ctx = current_context()
-    from hello_guy_ai.models import Message
-
     if ctx.run_id and Message.objects.filter(run_id=ctx.run_id, name="create_inquiry").exists():
         raise ToolError("An inquiry was already submitted in this reply. Do not submit it again.")
     if check_maintenance("inquiries") is not None:
@@ -256,12 +257,21 @@ def create_inquiry(name: str, email: str, message: str, phone: str = "", subject
         raise ToolError("That email address looks invalid. Ask the visitor to check it.") from None
     if len(message) < 5:
         raise ToolError("Ask the visitor to describe what they need.")
-    inquiry = InquirySubmission.objects.create(
+
+    thread = Thread.objects.filter(pk=ctx.thread_id).first() if ctx.thread_id else None
+    opp = crm_services.create_opportunity(
         name=name[:150],
         email=email,
-        phone=phone.strip()[:50] or "Not provided",
-        subject=subject.strip()[:255] or "Website chat inquiry",
-        message=message[:5000],
-        inquiry_type="AI Chat Assistant",
+        phone=phone.strip()[:50],
+        title=(subject.strip() or message.split("\n")[0])[:255],
+        details=message[:5000],
+        source=Source.WEBSITE_CHAT,
+        form_type="AI Chat Assistant",
+        thread=thread,
     )
-    return {"inquiry_id": inquiry.inquiry_id, "status": "received"}
+    return {
+        "inquiry_id": opp.reference,
+        "reference": opp.reference,
+        "customer_id": opp.customer_id,
+        "status": "received",
+    }
