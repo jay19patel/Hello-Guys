@@ -86,24 +86,24 @@ def test_ai_opportunity_from_a_whatsapp_chat_links_contact_thread_and_service(bo
     thread = chat.external_thread(bot, "website_assistant", f"whatsapp:{account.pk}:9199", "dm")
     run = chat.start_agent_run(bot, "website_assistant", "hi")
     with tool_context(ToolContext(user=bot, agent_key="website_assistant", run_id=run.pk, thread_id=thread.pk)):
-        out = json.loads(registered_tools()["create_opportunity"].call(
+        out = json.loads(registered_tools()["create_inquiry"].call(
             {"name": "Ravi", "email": "ravi@x.com", "message": "Need a chatbot", "service": "chatbot"}))
     opp = Opportunity.objects.get(reference=out["reference"])
     assert (opp.source, opp.thread, opp.service) == ("whatsapp", thread, service)
     assert list(opp.customer.contacts.all()) == [contact] and opp.customer.source == "whatsapp"
 
 
-def test_failed_create_opportunity_can_be_retried_but_a_saved_one_cannot(bot):
+def test_failed_create_inquiry_can_be_retried_but_a_saved_one_cannot(bot):
     thread = chat.external_thread(bot, "website_assistant", "web:x", "v")
     run = chat.start_agent_run(bot, "website_assistant", "hi")
-    tool = registered_tools()["create_opportunity"]
+    tool = registered_tools()["create_inquiry"]
     with tool_context(ToolContext(user=bot, agent_key="website_assistant", run_id=run.pk, thread_id=thread.pk)):
         first = tool.call({"name": "Asha", "email": "nope", "message": "Need a site"})
-        Message.objects.create(thread=thread, run=run, role="tool", name="create_opportunity", content=first)
+        Message.objects.create(thread=thread, run=run, role="tool", name="create_inquiry", content=first)
         second = tool.call({"name": "Asha", "email": "asha@x.com", "message": "Need a site"})
-        Message.objects.create(thread=thread, run=run, role="tool", name="create_opportunity", content=second)
+        Message.objects.create(thread=thread, run=run, role="tool", name="create_inquiry", content=second)
         third = tool.call({"name": "Asha", "email": "asha@x.com", "message": "Need a site"})
-    assert first.startswith("Error:") and "reference" in second and third.startswith("Error: The inquiry was already saved")
+    assert first.startswith("Error:") and "reference" in second and third.startswith("Error: An inquiry was already submitted")
     assert Opportunity.objects.count() == 1
 
 
@@ -150,10 +150,10 @@ def test_blank_email_falls_back_to_the_contact_and_whitespace_is_stripped():
 
 def test_a_failing_reminder_is_logged_and_does_not_break_the_opportunity(monkeypatch, caplog, django_user_model):
     django_user_model.objects.create_user("staff", is_staff=True)
-    import core.reminders
+    import core.follow_ups
 
     def boom(**kwargs):
         raise RuntimeError("reminder down")
-    monkeypatch.setattr(core.reminders, "schedule_follow_up", boom)
+    monkeypatch.setattr(core.follow_ups, "schedule_follow_up", boom)
     opp = services.create_opportunity(name="Asha", email="a@x.com", title="Site")
     assert Opportunity.objects.filter(pk=opp.pk).exists() and "reminder down" in caplog.text

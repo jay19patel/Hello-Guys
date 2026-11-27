@@ -7,6 +7,7 @@ class Testimonial(TimeStampedModel):
     """
     Client and collaborator recommendations (testimonials.json).
     """
+    __test__ = False  # prevent pytest from mistaking "Test*" model for a test class
     name = models.CharField(max_length=150, help_text="e.g. Videoly Client, Sayaji Infotech")
     role = models.CharField(max_length=150, help_text="e.g. Operations Manager, CEO, CTO")
     text = models.TextField(help_text="Feedback / review content")

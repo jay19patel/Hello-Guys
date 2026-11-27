@@ -48,13 +48,13 @@ def test_inquiry_tools_read_and_update_crm_opportunities(staff):
     staff = type(staff).objects.get(pk=staff.pk)
 
     assert json.loads(call(staff, "site_content_summary"))["inquiries"] == {"total": 1, "unreplied": 1}
-    [row] = json.loads(call(staff, "list_inquiries", unreplied_only=True, query="ravi"))
-    assert row["inquiry_id"] == opp.reference and row["email"] == "r@example.com" and row["message"] == "Need a bot"
-    assert json.loads(call(staff, "get_inquiry", inquiry_id=opp.reference))["subject"] == "Chatbot"
-    assert call(staff, "get_inquiry", inquiry_id="nope").startswith("Error: No inquiry")
+    [row] = json.loads(call(staff, "list_opportunities", unreplied_only=True, query="ravi"))
+    assert row["reference"] == opp.reference and row["customer__email"] == "r@example.com"
+    assert json.loads(call(staff, "get_opportunity", reference=opp.reference))["title"] == "Chatbot"
+    assert call(staff, "get_opportunity", reference="nope").startswith("Error: No opportunity")
 
-    with tool_context(ToolContext(user=staff, agent_key="hello_guy")):
-        out = registered_tools()["mark_inquiry_replied"].call({"inquiry_id": opp.reference, "note": "emailed"})
+    with tool_context(ToolContext(user=staff, agent_key="sales_assistant")):
+        out = registered_tools()["update_opportunity_status"].call({"reference": opp.reference, "status": "contacted", "note": "emailed"})
     assert json.loads(out)["status"] == "contacted"
-    assert json.loads(call(staff, "list_inquiries", unreplied_only=True)) == []
+    assert json.loads(call(staff, "list_opportunities", unreplied_only=True)) == []
     assert Opportunity.objects.get(pk=opp.pk).status == "contacted"

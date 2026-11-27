@@ -171,6 +171,58 @@
         </section>
 
         <section class="card p-5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-solid fa-envelope text-accent"></i> Emails</h2>
+                {% if can_edit and google_connected %}
+                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync-emails"><button class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrows-rotate"></i> Sync Gmail</button></form>
+                {% endif %}
+            </div>
+            {% if can_edit and customer.email %}
+            <form method="post" class="mt-3 rounded-xl border border-line bg-subtle/30 p-3.5 flex flex-col gap-2.5">{% csrf_token %}
+                <input type="hidden" name="action" value="send-email">
+                <div class="grid sm:grid-cols-2 gap-2.5">
+                    <div class="field flex flex-col gap-1"><label for="{{ email_form.to_email.id_for_label }}" class="caps">To</label>{{ email_form.to_email }}</div>
+                    <div class="field flex flex-col gap-1"><label for="{{ email_form.subject.id_for_label }}" class="caps">Subject</label>{{ email_form.subject }}</div>
+                </div>
+                <div class="field flex flex-col gap-1"><label for="{{ email_form.body.id_for_label }}" class="sr-only">Body</label>{{ email_form.body }}</div>
+                <div class="flex justify-end"><button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-paper-plane"></i> Send Email</button></div>
+            </form>
+            {% endif %}
+            {% if emails %}
+            <ul class="mt-3 divide-y divide-line">
+                {% for em in emails %}
+                <li class="py-2.5 text-[13px]">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="font-semibold text-ink">{{ em.subject }}</span>
+                        <span class="pill bg-subtle border border-line text-[11px]">{{ em.get_direction_display }} · {{ em.sent_at|date:"d M, g:i A" }}</span>
+                    </div>
+                    <p class="mt-1 text-muted whitespace-pre-line">{{ em.body|truncatechars:200 }}</p>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mt-3 text-[13.5px] text-muted">No emails sent or synced yet.</p>
+            {% endif %}
+        </section>
+
+        {% if pms_projects %}
+        <section class="card p-5">
+            <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-solid fa-diagram-project text-accent"></i> Delivery Projects</h2>
+            <ul class="mt-3 divide-y divide-line">
+                {% for proj in pms_projects %}
+                <li class="py-2.5 flex items-center justify-between gap-3">
+                    <div>
+                        <a href="{% url 'pms:project' proj.pk %}" class="font-semibold text-ink hover:text-accent">{{ proj.name }}</a>
+                        <p class="text-[12px] text-muted">{{ proj.get_status_display }}{% if proj.due_date %} · Due {{ proj.due_date|date:"d M Y" }}{% endif %}</p>
+                    </div>
+                    <a href="{% url 'pms:project' proj.pk %}" class="btn btn-ghost btn-sm">Open →</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        <section class="card p-5">
             <div class="flex items-center justify-between">
                 <h2 class="font-display font-semibold text-[16px]">Activity Timeline</h2>
                 <span class="text-[12px] text-muted">{{ activities|length }} event{{ activities|length|pluralize }}</span>
@@ -234,7 +286,7 @@
         <section class="card p-5 text-[13.5px]">
             <div class="flex items-center justify-between">
                 <h2 class="caps">Follow-ups</h2>
-                <a href="{% url 'core:reminders' %}" class="text-[12px] text-accent hover:underline">All Reminders</a>
+                <a href="{% url 'core:follow-ups' %}" class="text-[12px] text-accent hover:underline">All Follow-ups</a>
             </div>
             <ul class="mt-2.5 flex flex-col gap-2">
                 {% for fu in follow_ups %}

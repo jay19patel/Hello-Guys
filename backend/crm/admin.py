@@ -1,6 +1,18 @@
 from django.contrib import admin
 
-from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, MeetingTranscript, Opportunity, Service
+from crm.models import (
+    Activity,
+    Customer,
+    EmailMessage,
+    GoogleAccount,
+    GoogleFile,
+    Meeting,
+    MeetingTranscript,
+    Opportunity,
+    PaymentMilestone,
+    Proposal,
+    Service,
+)
 
 
 class ActivityInline(admin.TabularInline):
@@ -82,3 +94,24 @@ class GoogleAccountAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(Proposal)
+class ProposalAdmin(admin.ModelAdmin):
+    list_display = ("title", "opportunity", "amount", "currency", "status", "valid_until")
+    list_filter = ("status", "currency")
+    search_fields = ("title", "opportunity__title", "opportunity__customer__name")
+
+
+@admin.register(PaymentMilestone)
+class PaymentMilestoneAdmin(admin.ModelAdmin):
+    list_display = ("title", "opportunity", "amount", "currency", "status", "due_date", "invoice_number")
+    list_filter = ("status", "currency")
+    search_fields = ("title", "invoice_number", "opportunity__title")
+
+
+@admin.register(EmailMessage)
+class EmailMessageAdmin(admin.ModelAdmin):
+    list_display = ("subject", "direction", "customer", "recipient", "sent_at")
+    list_filter = ("direction",)
+    search_fields = ("subject", "sender", "recipient", "customer__name")

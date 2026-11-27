@@ -90,6 +90,13 @@ def test_bad_numbers_in_requests_do_not_crash(admin_client, data):
     assert admin_client.post(reverse("crm:follow-up-create"), {"customer_id": "abc"}).status_code == 404
 
 
+def test_invalid_follow_up_due_at_does_not_create_record(admin_client, data):
+    from core.models import FollowUp
+    res = admin_client.post(reverse("crm:follow-up-create"), {"customer_id": data["customer"].pk, "due_at": "not-a-date"})
+    assert res.status_code == 302
+    assert not FollowUp.objects.exists()
+
+
 def test_editing_an_opportunity_saves_its_services(admin_client, data):
     from crm.models import Service
     a, b = Service.objects.create(name="Web"), Service.objects.create(name="Apps")

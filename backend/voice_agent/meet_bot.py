@@ -158,16 +158,16 @@ async def run_meet_bot(session_id: str) -> None:
                     if await d_btn.count() > 0 and await d_btn.is_visible():
                         try:
                             await d_btn.click(timeout=1500)
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Dismiss button click skipped: %s", exc)
 
                 name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i]').first
                 if await name_input.count() > 0 and await name_input.is_visible():
                     try:
                         if not (await name_input.input_value()).strip():
                             await name_input.fill(session.bot_name)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Name input fill skipped: %s", exc)
 
                 if not joined_clicked:
                     for join_sel in (

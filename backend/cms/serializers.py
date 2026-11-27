@@ -10,7 +10,6 @@ from cms.models import (
     YouTubeVideo,
     BlogPost,
     BlogComment,
-    InquirySubmission,
     WorkflowStep,
     AboutProfile,
     AboutStat,
@@ -120,25 +119,6 @@ class BlogCommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlogComment
         fields = ['id', 'author', 'text', 'date']
-
-
-class InquirySubmissionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = InquirySubmission
-        fields = ['inquiry_id', 'name', 'email', 'phone', 'subject', 'message', 'inquiry_type', 'created_at']
-        read_only_fields = ['inquiry_id', 'created_at']
-
-    def validate_name(self, value):
-        val = value.strip()
-        if len(val) < 2:
-            raise serializers.ValidationError("Name must be at least 2 characters long.")
-        return val
-
-    def validate_message(self, value):
-        val = value.strip()
-        if len(val) < 5:
-            raise serializers.ValidationError("Message must be at least 5 characters long.")
-        return val
 
 
 class WorkflowStepSerializer(serializers.ModelSerializer):

@@ -443,13 +443,15 @@ document.addEventListener('click', e => {
             row.forEach((v, hr) => { h += `<div class="cell-hm aspect-square rounded-[4px] transition-transform hover:scale-125 hover:relative hover:z-10" data-d="${d}" data-h="${hr}" style="background:var(--s${step(v)})"></div>`; });
         });
         h += '<div></div>';
-        for (let hr = 0; hr < 24; hr++) h += `<div class="text-[11px] text-muted text-center pt-1">${hr % 3 === 0 ? String(hr).padStart(2, '0') : ''}</div>`;
+        const hrShort = h => `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
+        const hrFull = h => `${h % 12 || 12}:00 ${h < 12 ? 'AM' : 'PM'}`;
+        for (let hr = 0; hr < 24; hr++) h += `<div class="text-[11px] text-muted text-center pt-1">${hr % 3 === 0 ? hrShort(hr) : ''}</div>`;
         const el = document.getElementById('heatmap');
         el.innerHTML = h + '</div>';
         el.querySelectorAll('.cell-hm').forEach(c => {
             c.addEventListener('mousemove', e => {
                 const d = +c.dataset.d, hr = +c.dataset.h;
-                showTip(e, `${hm.weekdays[d]} ${String(hr).padStart(2, '0')}:00–${String((hr + 1) % 24).padStart(2, '0')}:00`, [['Messages', hm.grid[d][hr]]]);
+                showTip(e, `${hm.weekdays[d]} ${hrFull(hr)}–${hrFull((hr + 1) % 24)}`, [['Messages', hm.grid[d][hr]]]);
             });
             c.addEventListener('mouseleave', hideTip);
         });

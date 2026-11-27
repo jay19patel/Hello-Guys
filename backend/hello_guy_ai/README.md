@@ -271,7 +271,7 @@ Hello Guy AI enterprise environments ke liye 7-layer defense provide karta hai:
 ### 7.2 Public Website Chat API (`/api/ai/public/*`)
 - **Access**: External website visitors bina login kiye chat widget me baat kar sakte hain.
 - **Sandboxed Execution**: Har request backend ke unprivileged user `PUBLIC_USER` (`website-bot`) ke context me execute hoti hai.
-- **Agent Pinned**: Sirf `PUBLIC_AGENT` (`website_assistant`) chal sakta hai. Visitor internal assistants (`lead_manager`, `content_writer`) tak nahi pahunch sakta.
+- **Agent Pinned**: Sirf `PUBLIC_AGENT` (`website_assistant`) chal sakta hai. Visitor internal assistants (`sales_assistant`, `content_writer`) tak nahi pahunch sakta.
 - **Rate Throttling**: Anonymous IP rate limiting (`10 requests / min`).
 - **Session Persistence**: Visitor ka `thread_id` (UUID) browser ke `localStorage` me save rehta hai.
 

@@ -117,6 +117,10 @@ def insights_context(days: int) -> dict:
     }
 
 
+def _hour_label(h: int) -> str:
+    return f"{h % 12 or 12} {'AM' if h < 12 else 'PM'}"
+
+
 def _insights(days, cur, before, daily, by_channel, grid, accounts, autodm):
     """Plain-language takeaways, most useful first. Each item: (icon, text)."""
     out = []
@@ -144,7 +148,7 @@ def _insights(days, cur, before, daily, by_channel, grid, accounts, autodm):
     if any(hour_totals):
         h = max(range(24), key=hour_totals.__getitem__)
         wd = max(range(7), key=lambda d: sum(grid[d]))
-        out.append(('fa-regular fa-clock', f"Contacts reach out most between {h:02d}:00 and {(h + 1) % 24:02d}:00, "
+        out.append(('fa-regular fa-clock', f"Contacts reach out most between {_hour_label(h)} and {_hour_label((h + 1) % 24)}, "
                                            f"and most often on {['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'][wd]}. Reply fast then."))
 
     if cur['received'] and cur['sent'] < cur['received']:

@@ -1,4 +1,5 @@
 {% extends "crm/base.html" %}
+{% load humanize %}
 {% block title %}{{ opportunity.title }} · CRM{% endblock %}
 {% block content %}
 {% with opp=opportunity customer=opportunity.customer %}
@@ -9,10 +10,34 @@
             <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight">{{ opp.title }}</h1>
             <p class="text-muted text-[13px] flex flex-wrap items-center gap-2 mt-1">
                 <a href="{% url 'crm:customer' customer.pk %}" class="font-semibold text-ink hover:text-accent">{{ customer }}</a> · {{ opp.reference }}
-                {% include "crm/_status.html" %} {% for svc in opp.service_list %}<span class="pill bg-accent/10 text-accent">{{ svc }}</span>{% endfor %}
+                {% include "crm/_status.html" %}
+                {% if opp.effective_value %}
+                <span class="pill bg-ok/10 text-ok border border-ok/20 font-semibold tabular-nums">{{ opp.currency_symbol }}{{ opp.effective_value|floatformat:0|intcomma }}</span>
+                {% endif %}
+                {% if opp.expected_close_date %}
+                <span class="pill bg-subtle border border-line">Close: {{ opp.expected_close_date|date:"d M Y" }}</span>
+                {% endif %}
+                {% if opp.status == 'lost' and opp.lost_reason %}
+                <span class="pill bg-bad/10 text-bad border border-bad/25">Lost: {{ opp.lost_reason }}</span>
+                {% endif %}
+                {% for svc in opp.service_list %}<span class="pill bg-accent/10 text-accent">{{ svc }}</span>{% endfor %}
                 <span class="pill bg-subtle border border-line">{{ opp.get_source_display }}</span> · {{ opp.created_at|timesince }} ago
             </p>
         </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+        {% if pms_projects %}
+            {% for proj in pms_projects %}
+            <a href="{% url 'pms:project' proj.pk %}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-diagram-project text-accent"></i> Project: {{ proj.name }} →</a>
+            {% endfor %}
+        {% elif can_edit %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="convert-project">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-rocket"></i> Convert to Project</button>
+        </form>
+        {% endif %}
     </div>
 </header>
 
@@ -45,7 +70,7 @@
 
         {% if can_edit %}
         <section class="card p-5">
-            <h2 class="font-display font-semibold text-[16px]">Edit</h2>
+            <h2 class="font-display font-semibold text-[16px]">Edit Deal &amp; Value</h2>
             <form method="post" class="mt-4 flex flex-col gap-4">{% csrf_token %}
                 <input type="hidden" name="action" value="update">
                 <div class="grid sm:grid-cols-2 gap-4">{% include "components/_fields.html" %}</div>
@@ -53,6 +78,164 @@
             </form>
         </section>
         {% endif %}
+
+        <!-- Proposals -->
+        <section class="card p-5 flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-solid fa-file-signature text-accent"></i> Proposals &amp; Quotations</h2>
+                <span class="text-[12px] text-muted">{{ proposals|length }} proposal{{ proposals|length|pluralize }}</span>
+            </div>
+            {% if proposals %}
+            <ul class="divide-y divide-line">
+                {% for prop in proposals %}
+                <li class="py-3 flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-semibold text-ink">{{ prop.title }}</span>
+                            <span class="pill bg-ok/10 text-ok border border-ok/20 font-semibold tabular-nums">{{ prop.currency_symbol }}{{ prop.amount|floatformat:0|intcomma }}</span>
+                            <span class="pill bg-subtle border border-line">{{ prop.get_status_display }}</span>
+                        </div>
+                        <p class="text-[12px] text-muted mt-0.5">
+                            {% if prop.valid_until %}Valid until {{ prop.valid_until|date:"d M Y" }}{% endif %}
+                            {% if prop.document_url %} · <a href="{{ prop.document_url }}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Open doc →</a>{% endif %}
+                        </p>
+                    </div>
+                    {% if can_edit %}
+                    <form method="post" class="flex items-center gap-1.5 shrink-0">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="proposal-status">
+                        <input type="hidden" name="proposal_id" value="{{ prop.pk }}">
+                        {% if prop.status == 'draft' %}<button type="submit" name="status" value="sent" class="btn btn-ghost btn-sm">Mark Sent</button>{% endif %}
+                        {% if prop.status == 'draft' or prop.status == 'sent' %}
+                        <button type="submit" name="status" value="accepted" class="btn btn-primary btn-sm">Accepted</button>
+                        <button type="submit" name="status" value="rejected" class="btn btn-ghost btn-sm text-bad">Rejected</button>
+                        {% endif %}
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-[13px] text-muted">No proposals created yet.</p>
+            {% endif %}
+
+            {% if can_edit %}
+            <details class="rounded-xl border border-line bg-subtle/30 p-3.5">
+                <summary class="font-semibold text-[13.5px] cursor-pointer flex items-center justify-between">+ New Proposal <i class="fa-solid fa-chevron-down text-xs text-muted"></i></summary>
+                <form method="post" class="mt-3 grid sm:grid-cols-2 gap-3">{% csrf_token %}
+                    <input type="hidden" name="action" value="proposal-add">
+                    {% for field in proposal_form %}
+                    <div class="field flex flex-col gap-1 {% if field.name == 'notes' %}sm:col-span-2{% endif %}">
+                        <label for="{{ field.id_for_label }}" class="caps">{{ field.label }}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                    <div class="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <label class="flex items-center gap-2 text-[13px]"><input type="checkbox" name="mark_sent" value="1" class="w-4 h-4"> Mark as Sent immediately</label>
+                        <button type="submit" class="btn btn-primary btn-sm">Save Proposal</button>
+                    </div>
+                </form>
+            </details>
+            {% endif %}
+        </section>
+
+        <!-- Payment Milestones -->
+        <section class="card p-5 flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-solid fa-receipt text-accent"></i> Payment Milestones</h2>
+                <span class="text-[12.5px] tabular-nums text-muted">
+                    Paid: <strong class="text-ok">{{ opp.currency_symbol }}{{ milestone_paid_total|floatformat:0|intcomma }}</strong> · Pending: <strong class="text-ink">{{ opp.currency_symbol }}{{ milestone_pending_total|floatformat:0|intcomma }}</strong>
+                </span>
+            </div>
+            {% if milestones %}
+            <ul class="divide-y divide-line">
+                {% for ms in milestones %}
+                <li class="py-3 flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-semibold text-ink">{{ ms.title }}</span>
+                            <span class="pill bg-subtle border border-line font-semibold tabular-nums">{{ ms.currency_symbol }}{{ ms.amount|floatformat:0|intcomma }}</span>
+                            <span class="pill {% if ms.status == 'paid' %}bg-ok/10 text-ok border border-ok/20{% elif ms.is_overdue %}bg-bad/10 text-bad border border-bad/25{% else %}bg-warn/10 text-warn border border-warn/25{% endif %}">
+                                {% if ms.is_overdue %}Overdue{% else %}{{ ms.get_status_display }}{% endif %}
+                            </span>
+                        </div>
+                        <p class="text-[12px] text-muted mt-0.5">
+                            {% if ms.invoice_number %}Invoice #{{ ms.invoice_number }} · {% endif %}
+                            {% if ms.due_date %}Due {{ ms.due_date|date:"d M Y" }}{% endif %}
+                            {% if ms.paid_at %} · Paid {{ ms.paid_at|date:"d M Y" }}{% endif %}
+                        </p>
+                    </div>
+                    {% if can_edit and ms.status != 'paid' and ms.status != 'cancelled' %}
+                    <form method="post" class="flex items-center gap-1.5 shrink-0">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="milestone-status">
+                        <input type="hidden" name="milestone_id" value="{{ ms.pk }}">
+                        {% if ms.status == 'pending' %}<button type="submit" name="status" value="invoiced" class="btn btn-ghost btn-sm">Invoiced</button>{% endif %}
+                        <button type="submit" name="status" value="paid" class="btn btn-primary btn-sm">Mark Paid</button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-[13px] text-muted">No billing milestones added yet.</p>
+            {% endif %}
+
+            {% if can_edit %}
+            <details class="rounded-xl border border-line bg-subtle/30 p-3.5">
+                <summary class="font-semibold text-[13.5px] cursor-pointer flex items-center justify-between">+ Add Payment Milestone <i class="fa-solid fa-chevron-down text-xs text-muted"></i></summary>
+                <form method="post" class="mt-3 grid sm:grid-cols-2 gap-3">{% csrf_token %}
+                    <input type="hidden" name="action" value="milestone-add">
+                    {% for field in milestone_form %}
+                    <div class="field flex flex-col gap-1">
+                        <label for="{{ field.id_for_label }}" class="caps">{{ field.label }}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                    <div class="sm:col-span-2 flex justify-end pt-1">
+                        <button type="submit" class="btn btn-primary btn-sm">Add Milestone</button>
+                    </div>
+                </form>
+            </details>
+            {% endif %}
+        </section>
+
+        <!-- Emails (Two-Way Gmail / SMTP) -->
+        <section class="card p-5 flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-solid fa-envelope text-accent"></i> Emails</h2>
+                {% if can_edit and google_connected %}
+                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync-emails"><button class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrows-rotate"></i> Sync Gmail</button></form>
+                {% endif %}
+            </div>
+            {% if can_edit and customer.email %}
+            <form method="post" class="rounded-xl border border-line bg-subtle/30 p-3.5 flex flex-col gap-2.5">{% csrf_token %}
+                <input type="hidden" name="action" value="send-email">
+                <div class="grid sm:grid-cols-2 gap-2.5">
+                    <div class="field flex flex-col gap-1"><label for="{{ email_form.to_email.id_for_label }}" class="caps">To</label>{{ email_form.to_email }}</div>
+                    <div class="field flex flex-col gap-1"><label for="{{ email_form.subject.id_for_label }}" class="caps">Subject</label>{{ email_form.subject }}</div>
+                </div>
+                <div class="field flex flex-col gap-1"><label for="{{ email_form.body.id_for_label }}" class="sr-only">Body</label>{{ email_form.body }}</div>
+                <div class="flex justify-end"><button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-paper-plane"></i> Send Email</button></div>
+            </form>
+            {% endif %}
+            {% if emails %}
+            <ul class="divide-y divide-line">
+                {% for em in emails %}
+                <li class="py-2.5 text-[13px]">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="font-semibold text-ink">{{ em.subject }}</span>
+                        <span class="pill bg-subtle border border-line text-[11px]">{{ em.get_direction_display }} · {{ em.sent_at|date:"d M, g:i A" }}</span>
+                    </div>
+                    <p class="text-[12px] text-muted">{{ em.sender }} → {{ em.recipient }}</p>
+                    <p class="mt-1 text-ink/85 whitespace-pre-line">{{ em.body|truncatechars:240 }}</p>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-[13px] text-muted">No emails exchanged yet.</p>
+            {% endif %}
+        </section>
     </div>
 
     <aside class="flex flex-col gap-6">

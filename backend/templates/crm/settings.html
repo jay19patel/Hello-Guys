@@ -1,9 +1,11 @@
 {% extends "crm/base.html" %}
 {% block title %}Settings · CRM{% endblock %}
 {% block content %}
-<header>
-    <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">CRM settings</h1>
-    <p class="text-muted">Connect one Google account for customer files in Google Drive (Docs, Sheets, folders, uploads &amp; meeting transcripts).</p>
+<header class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">CRM settings</h1>
+        <p class="text-muted">Connect Google Workspace (Calendar, Drive &amp; Gmail).</p>
+    </div>
 </header>
 
 <section class="card p-6 flex flex-col gap-5">
@@ -21,7 +23,7 @@
     <details class="rounded-xl border border-line p-4 bg-subtle/30" {% if not account.is_configured %}open{% endif %}>
         <summary class="font-semibold text-[14px] flex items-center justify-between">Setup steps <i class="fa-solid fa-chevron-down chev text-muted transition-transform"></i></summary>
         <ol class="mt-3 list-decimal pl-5 flex flex-col gap-2 text-[13.5px]">
-            <li>In <a href="https://console.cloud.google.com/apis/library" target="_blank" rel="noopener noreferrer" class="text-accent font-medium hover:underline">Google Cloud Console</a>, enable the <b>Google Calendar API</b> and the <b>Google Drive API</b>.</li>
+            <li>In <a href="https://console.cloud.google.com/apis/library" target="_blank" rel="noopener noreferrer" class="text-accent font-medium hover:underline">Google Cloud Console</a>, enable the <b>Google Calendar API</b>, <b>Google Drive API</b>, and <b>Gmail API</b>.</li>
             <li>Configure the OAuth consent screen (internal for a Workspace account, or add yourself as a test user).</li>
             <li>Create credentials: <b>OAuth client ID</b> → type <b>Web application</b>.</li>
             <li>Add this <b>Authorized redirect URI</b>:

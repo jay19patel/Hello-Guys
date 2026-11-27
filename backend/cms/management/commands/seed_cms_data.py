@@ -15,7 +15,6 @@ from cms.models import (
     FAQ,
     YouTubeVideo,
     BlogPost,
-    InquirySubmission,
     WorkflowStep,
     AboutProfile,
     AboutStat,
@@ -197,34 +196,7 @@ class Command(BaseCommand):
                     )
             self.stdout.write(f"  [OK] {len(proj_data)} Projects ingested.")
 
-        # 8. Seed sample Inquiry if none exist
-        if not InquirySubmission.objects.exists():
-            InquirySubmission.objects.create(
-                name="Siddharth Rao",
-                email="siddharth.rao@example.com",
-                phone="+91 98234 56789",
-                subject="Fintech Dashboard & WhatsApp Integration",
-                message="Hi Jay, I checked your Trade Buddy Broker project and would like to build a custom real-time trading notifications bot for our retail clients via WhatsApp API.",
-                inquiry_type=InquirySubmission.TYPE_MODAL,
-                is_replied=False,
-            )
-            InquirySubmission.objects.create(
-                name="Emily Watson",
-                email="emily@techventures.io",
-                phone="+1 (415) 890-1234",
-                subject="AI Lead Qualifier Web App",
-                message="We are looking for a full-stack engineer to build our client portal with Meta Connector and automated DMs. Let's schedule a call this week.",
-                inquiry_type=InquirySubmission.TYPE_CONTACT,
-                is_replied=True,
-                replies=[{
-                    "timestamp": "2026-11-20 14:30:00 UTC",
-                    "author": "Jay Patel",
-                    "note": "Sent calendar link for discovery call on Thursday 4 PM IST."
-                }],
-            )
-            self.stdout.write("  [OK] Sample Inquiries created.")
-
-        # 9. Seed Blog Posts
+        # 8. Seed Blog Posts
         posts_to_seed = [
             {
                 "title": "Architecting an Event-Driven Crypto Bot with Celery & Redis",

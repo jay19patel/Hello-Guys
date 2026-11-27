@@ -63,8 +63,8 @@ class FollowUpChannel(models.Model):
         return self.name
 
 
-class GlobalFollowUp(models.Model):
-    """Platform-wide follow-up usable for any task, customer, meeting, payment, or topic."""
+class FollowUp(models.Model):
+    """Unified follow-up usable for any CRM customer, opportunity, meeting, payment, or general task."""
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -94,17 +94,31 @@ class GlobalFollowUp(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="global_follow_ups",
+        related_name="follow_ups",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="created_global_follow_ups",
+        related_name="created_follow_ups",
     )
     related_label = models.CharField(max_length=150, blank=True)
     related_url = models.CharField(max_length=500, blank=True)
+    customer = models.ForeignKey(
+        "crm.Customer",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="follow_ups",
+    )
+    opportunity = models.ForeignKey(
+        "crm.Opportunity",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="follow_ups",
+    )
     entity_type = models.CharField(max_length=40, blank=True, db_index=True)
     entity_id = models.CharField(max_length=64, blank=True)
     notified_at = models.DateTimeField(null=True, blank=True)
@@ -121,6 +135,13 @@ class GlobalFollowUp(models.Model):
 
     def __str__(self) -> str:
         return f"{self.title} ({timezone.localtime(self.due_at):%d %b %I:%M %p})"
+
+    @property
+    def channel_name(self) -> str:
+        return self.channel.name if self.channel else "General"
+
+    def get_channel_display(self) -> str:
+        return self.channel_name
 
     @property
     def safe_related_url(self) -> str:

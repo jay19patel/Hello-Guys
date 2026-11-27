@@ -1,19 +1,45 @@
-"""Global AI tools for Reminders and Notifications (autodiscovered by hello_guy_ai)."""
+"""Global AI tools for Follow-ups and Notifications (autodiscovered by hello_guy_ai)."""
 
 from datetime import timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from django.db.models import Q
 from django.utils import timezone
 
-from core import notifications, reminders
-from core.models import FollowUpChannel, GlobalFollowUp
+from core import follow_ups, notifications
+from core.models import FollowUp, FollowUpChannel
+from crm.services import default_staff_assignee
 from hello_guy_ai import ToolError, current_context, tool
-from hello_guy_ai.services.reminders import plan, zone
+from hello_guy_ai.services.reminders import plan, resolve_requested_slot, zone
+
+
+def _resolve_crm_target(ctx: Any, opportunity_reference: str) -> tuple[Any, Any]:
+    """Resolve optional CRM customer and opportunity from explicit reference or Meta thread context."""
+    from crm import services as crm_services
+    from crm.models import Opportunity
+    from hello_guy_ai.models import Thread
+
+    ref = (opportunity_reference or "").strip()
+    if ref:
+        opp = Opportunity.objects.select_related("customer").filter(reference=ref).first()
+        if opp is None:
+            raise ToolError(f"No opportunity {ref!r}.")
+        return opp.customer, opp
+    if ctx.thread_id and getattr(ctx.user, "is_staff", False):
+        thread = Thread.objects.filter(pk=ctx.thread_id).first()
+        contact = crm_services.contact_for_thread(thread) if thread else None
+        if contact is not None:
+            customer = crm_services.get_or_create_customer(
+                name=contact.name or contact.username or contact.phone or "Lead",
+                contact=contact,
+                source=crm_services.THREAD_SOURCES.get(contact.platform, "manual"),
+            )
+            return customer, None
+    return None, None
 
 
 @tool
-def create_global_reminder(
+def create_follow_up(
     title: str,
     due_at: str = "",
     hours_from_now: int = 24,
@@ -21,24 +47,27 @@ def create_global_reminder(
     note: str = "",
     priority: Literal["low", "normal", "high", "urgent"] = "normal",
     related_label: str = "",
+    opportunity_reference: str = "",
+    time_specified: bool = True,
 ) -> dict:
-    """Create a global Reminder (shown in the Reminders page and Notification Bell) for any topic and channel
-    (e.g. Email, WhatsApp, Call, Meeting, Payment, Slack, General).
-    Pass `due_at` as an ISO datetime in the user's local timezone (e.g. 'YYYY-MM-DDTHH:MM'),
-    or `hours_from_now` if only a relative offset is known. A time that is invalid or already past is an error."""
+    """Create a follow-up (shown in Follow-ups and Notification Bell) for any topic, lead, or channel
+    (e.g. Email, WhatsApp, Phone Call, Meeting, Payment / Invoice, General).
+    Pass `due_at` as an ISO datetime in the user's local timezone (e.g. 'YYYY-MM-DDTHH:MM'), or
+    `YYYY-MM-DD` (with `time_specified=false`) when no time was given — date-only requests automatically
+    schedule a confirmation follow-up the day before at 10:00 AM. Otherwise `hours_from_now` is used."""
     ctx = current_context()
     user = ctx.user
     is_staff = getattr(user, "is_staff", False)
     title = (title or "").strip()[:200]
     if not title:
-        raise ToolError("Give the reminder a title.")
+        raise ToolError("Give the follow-up a title.")
 
     if not is_staff:
-        # Public website visitors: one reminder per run, no new channels, no priority escalation.
+        # Public website visitors: one follow-up per run, no arbitrary channels, no priority escalation.
         from hello_guy_ai.models import Message
 
-        if ctx.run_id and Message.objects.filter(run_id=ctx.run_id, name="create_global_reminder").exists():
-            raise ToolError("A reminder was already created in this reply. Do not create another one.")
+        if ctx.run_id and Message.objects.filter(run_id=ctx.run_id, name="create_follow_up").exists():
+            raise ToolError("A follow-up was already created in this reply. Do not create another one.")
         priority = "normal"
         channel = (
             FollowUpChannel.objects.filter(name__iexact=(channel or "").strip()).values_list("name", flat=True).first()
@@ -47,9 +76,15 @@ def create_global_reminder(
 
     tz = zone(ctx.timezone)
     now = timezone.now()
-    if (due_at or "").strip():
+    due_str = (due_at or "").strip()
+    day_before = False
+    if due_str:
+        date_only = ("T" not in due_str and " " not in due_str) or not time_specified
         try:
-            parsed_due = plan(due_at=due_at, recurrence=None, tz=tz, now=now)
+            if date_only:
+                parsed_due, day_before = resolve_requested_slot(date_str=due_str.split("T")[0], tz=tz, now=now)
+            else:
+                parsed_due = plan(due_at=due_str, recurrence=None, tz=tz, now=now)
         except ValueError as exc:
             raise ToolError(str(exc)) from None
     else:
@@ -57,37 +92,59 @@ def create_global_reminder(
             raise ToolError("hours_from_now must be positive; pass due_at for a specific time.")
         parsed_due = now + timedelta(hours=min(hours_from_now, 24 * 90))
 
-    # If triggered by public website-bot, assign to active staff so the team sees it in the Notification Bell.
-    assigned_to = user
-    if not is_staff:
-        from django.contrib.auth import get_user_model
-        assigned_to = get_user_model().objects.filter(is_active=True, is_staff=True).order_by("-is_superuser", "id").first() or user
+    clean_note = (note or "").strip()
+    if day_before and "time" not in clean_note.lower():
+        clean_note = f"No time specified for {due_str.split('T')[0]} — follow up to confirm preferred time. {clean_note}".strip()
 
-    fu = reminders.schedule_follow_up(
-        title=title,
-        due_at=parsed_due,
-        channel=(channel or "").strip() or "General",
-        note=(note or "").strip()[:500 if not is_staff else 2000],
-        priority=priority,
-        assigned_to=assigned_to,
-        created_by=user,
-        related_label=(related_label or "").strip(),
-        related_url="/reminders/",
-        notify_now=True,
-    )
-    return {
-        "reminder_id": fu.pk,
+    assigned_to = user if is_staff else (default_staff_assignee() or user)
+    customer, opportunity = _resolve_crm_target(ctx, opportunity_reference) if is_staff else (None, None)
+
+    if customer is not None:
+        from crm import services as crm_services
+
+        fu = crm_services.schedule_follow_up(
+            customer=customer,
+            opportunity=opportunity,
+            due_at=parsed_due,
+            channel=(channel or "").strip() or "WhatsApp",
+            note=clean_note[:2000],
+            assigned_to=assigned_to,
+            created_by=user,
+            title=title,
+        )
+    else:
+        fu = follow_ups.schedule_follow_up(
+            title=title,
+            due_at=parsed_due,
+            channel=(channel or "").strip() or "General",
+            note=clean_note[:500 if not is_staff else 2000],
+            priority=priority,
+            assigned_to=assigned_to,
+            created_by=user,
+            related_label=(related_label or "").strip(),
+            related_url="/follow-ups/",
+            notify_now=True,
+        )
+
+    out: dict[str, Any] = {
+        "follow_up_id": fu.pk,
         "title": fu.title,
-        "channel": fu.channel.name if fu.channel else "General",
+        "channel": fu.channel_name,
         "due_at": fu.due_at.isoformat(),
     }
+    if customer is not None:
+        out["customer"] = customer.name
+    if day_before:
+        out["scheduled_for_day_before"] = True
+        out["requested_date"] = due_str.split("T")[0]
+    return out
 
 
 @tool
-def list_global_reminders(status: Literal["pending", "done", "all"] = "pending", limit: int = 15) -> list[dict]:
-    """List global reminders for the current user (pending, done, or all)."""
+def list_follow_ups(status: Literal["pending", "done", "all"] = "pending", limit: int = 15) -> list[dict]:
+    """List follow-ups for the current user (pending, done, or all)."""
     user = current_context().user
-    qs = GlobalFollowUp.objects.select_related("channel").filter(
+    qs = FollowUp.objects.select_related("channel", "customer").filter(
         Q(assigned_to=user) | Q(assigned_to__isnull=True, created_by=user)
     )
     if status != "all":
@@ -97,11 +154,12 @@ def list_global_reminders(status: Literal["pending", "done", "all"] = "pending",
         {
             "id": r.pk,
             "title": r.title,
-            "channel": r.channel.name if r.channel else "General",
+            "channel": r.channel_name,
             "priority": r.priority,
             "status": r.status,
             "due_at": r.due_at.isoformat(),
             "related_label": r.related_label,
+            "customer": r.customer.name if r.customer_id else "",
         }
         for r in rows
     ]

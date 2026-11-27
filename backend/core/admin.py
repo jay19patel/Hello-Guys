@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from core.models import FollowUpChannel, GlobalFollowUp, GlobalNotification
+from core.models import FollowUp, FollowUpChannel, GlobalNotification
 
 
 @admin.register(GlobalNotification)
@@ -18,9 +18,9 @@ class FollowUpChannelAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
 
 
-@admin.register(GlobalFollowUp)
-class GlobalFollowUpAdmin(admin.ModelAdmin):
-    list_display = ("title", "channel", "priority", "status", "due_at", "assigned_to", "related_label")
+@admin.register(FollowUp)
+class FollowUpAdmin(admin.ModelAdmin):
+    list_display = ("title", "channel", "customer", "opportunity", "priority", "status", "due_at", "assigned_to")
     list_filter = ("status", "priority", "channel", "due_at")
-    search_fields = ("title", "note", "related_label")
-    list_select_related = ("channel", "assigned_to", "created_by")
+    search_fields = ("title", "note", "related_label", "customer__name")
+    list_select_related = ("channel", "assigned_to", "created_by", "customer", "opportunity")

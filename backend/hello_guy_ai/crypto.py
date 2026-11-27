@@ -23,13 +23,15 @@ def _fernet() -> Fernet:
     if not raw:
         if not settings.DEBUG:  # a key that is public in the source must never protect real secrets
             raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is required when DEBUG is off.")
+        logger.warning("FIELD_ENCRYPTION_KEY is not set: using the public development key (DEBUG only).")
         return Fernet(_DEV_KEY)
     try:
         return Fernet(raw)
-    except ValueError:  # not a Fernet key
+    except (ValueError, TypeError) as exc:
         if not settings.DEBUG:  # a low-entropy placeholder (e.g. .env.example) must never protect real secrets
-            raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is not a valid Fernet key.") from None
+            raise ImproperlyConfigured("FIELD_ENCRYPTION_KEY is not a valid Fernet key.") from exc
         # DEBUG only: derive one, same as before so old dev ciphertext stays readable
+        logger.warning("Invalid FIELD_ENCRYPTION_KEY (%s); deriving dev fallback Fernet key.", exc)
         return Fernet(base64.urlsafe_b64encode(hashlib.sha256(raw).digest()))
 
 

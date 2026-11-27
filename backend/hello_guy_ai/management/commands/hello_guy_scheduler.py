@@ -56,7 +56,7 @@ class Command(BaseCommand):
             fire_trigger.send(trigger_id)
             logger.info("Scheduled trigger %s fired", trigger_id)
         try:
-            from core.reminders import notify_due_follow_ups  # host app: team follow-ups that reached their due time
+            from core.follow_ups import notify_due_follow_ups  # host app: team follow-ups that reached their due time
 
             notify_due_follow_ups()
         except Exception:  # must never stop reminders/triggers from firing

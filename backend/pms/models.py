@@ -43,6 +43,13 @@ class Project(TimeStamped):
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="owned_projects"
     )
+    customer = models.ForeignKey(
+        "crm.Customer", on_delete=models.SET_NULL, null=True, blank=True, related_name="pms_projects"
+    )
+    opportunity = models.ForeignKey(
+        "crm.Opportunity", on_delete=models.SET_NULL, null=True, blank=True, related_name="pms_projects"
+    )
+    budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     members = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name="pms_projects")
     start_date = models.DateField(null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)

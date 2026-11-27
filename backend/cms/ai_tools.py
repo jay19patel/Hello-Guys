@@ -1,22 +1,13 @@
-"""Read tools for the AI assistant over the website CMS (autodiscovered by hello_guy_ai).
-Visitor inquiries live in CRM (crm.Opportunity + Customer); the inquiry tools here are thin views of them.
-
-One explicit tool per question, like django-ai-assistant's @method_tool: the LLM gets the
-answer in ONE call instead of the generic list -> describe -> read chain (fewer LLM round
-trips = fewer rate-limit hits). Every tool checks the requesting user's Django view perm.
-"""
+"""Read and content tools for the website CMS (autodiscovered by hello_guy_ai)."""
 
 from typing import Any, Literal
 
 from django.contrib.auth import get_permission_codename
-from django.db.models import F, Model, Q
+from django.db.models import Model, Q
 from django.utils.text import slugify
 
-from django.core.validators import validate_email
-
 from cms.models import FAQ, BlogPost, Project, Solution, TechSkill, Testimonial, YouTubeVideo
-from crm import services as crm_services
-from crm.models import Opportunity, Source
+from crm.models import Opportunity
 from hello_guy_ai import ToolError, current_context, tool
 
 MAX_LIMIT = 50
@@ -137,36 +128,6 @@ def search_faqs(query: str = "", limit: int = 20) -> list[dict]:
 
 
 @tool
-def list_inquiries(unreplied_only: bool = False, query: str = "", limit: int = 10) -> list[dict]:
-    """List contact/project inquiries from website visitors, newest first. query matches name, email,
-    subject or message. Contains personal data: only share it with the user who asked."""
-    _require_view(Opportunity)
-    qs = Opportunity.objects.order_by("-created_at")
-    if unreplied_only:
-        qs = qs.filter(status=Opportunity.Status.NEW)
-    if query:
-        qs = qs.filter(
-            Q(customer__name__icontains=query)
-            | Q(customer__email__icontains=query)
-            | Q(title__icontains=query)
-            | Q(details__icontains=query)
-        )
-    return list(
-        qs.values(
-            "status",
-            "created_at",
-            inquiry_id=F("reference"),
-            name=F("customer__name"),
-            email=F("customer__email"),
-            phone=F("customer__phone"),
-            subject=F("title"),
-            message=F("details"),
-            inquiry_type=F("form_type"),
-        )[: _limit(limit)]
-    )
-
-
-@tool
 def top_blog_posts(metric: Literal["views", "likes"] = "views", limit: int = 5) -> list[dict]:
     """Rank blog posts by views or likes, highest first. Use for "most popular" / "best performing" questions."""
     _require_view(BlogPost)
@@ -176,48 +137,6 @@ def top_blog_posts(metric: Literal["views", "likes"] = "views", limit: int = 5) 
             : _limit(limit)
         ]
     )
-
-
-@tool
-def get_inquiry(inquiry_id: str) -> dict:
-    """Get one visitor inquiry with its full message and activity history, by inquiry_id (e.g. opp_74658245fdf5)."""
-    _require_view(Opportunity)
-    opp = Opportunity.objects.select_related("customer").filter(reference=inquiry_id).first()
-    if opp is None:
-        raise ToolError(f"No inquiry {inquiry_id!r}. Use list_inquiries to find the id.")
-    c = opp.customer
-    return {
-        "inquiry_id": opp.reference,
-        "name": c.name,
-        "email": c.email,
-        "phone": c.phone,
-        "subject": opp.title,
-        "message": opp.details,
-        "inquiry_type": opp.form_type,
-        "status": opp.status,
-        "created_at": opp.created_at,
-        "activity": list(opp.activities.values("kind", "body", "created_at")[:20]),
-    }
-
-
-def _confirm_replied(args: dict) -> str:
-    note = f"\nNote: {args['note']}" if args.get("note") else ""
-    return f"Mark inquiry {args['inquiry_id']} as replied.{note}"
-
-
-@tool(requires_confirmation=True, confirm_prompt=_confirm_replied)
-def mark_inquiry_replied(inquiry_id: str, note: str = "") -> dict:
-    """Mark a visitor inquiry as replied and log an optional note. Needs the user's approval."""
-    _require("change", Opportunity)
-    opp = Opportunity.objects.select_related("customer").filter(reference=inquiry_id).first()
-    if opp is None:
-        raise ToolError(f"No inquiry {inquiry_id!r}.")
-    user = current_context().user
-    if opp.status == Opportunity.Status.NEW:  # replied = first contact made; later stages stay as they are
-        crm_services.set_status(opp, Opportunity.Status.CONTACTED, user, note=note[:1000])
-    else:
-        crm_services.add_note(user=user, body=note[:1000] or "Marked as replied", customer=opp.customer, opportunity=opp)
-    return {"inquiry_id": inquiry_id, "status": opp.status}
 
 
 def _confirm_draft(args: dict) -> str:
@@ -258,46 +177,3 @@ def list_services() -> list[dict]:
     """List the services / solutions the studio offers, with tech stack. Use for "what do you do / offer" questions."""
     _require_view(Solution)
     return list(_visible(Solution.objects.order_by("order")).values("title", "tag", "description", "tech_stack", "badge", "slug"))
-
-
-@tool
-def create_inquiry(name: str, email: str, message: str, phone: str = "", subject: str = "") -> dict:
-    """Submit the visitor's project inquiry / contact request directly into CRM as a Customer + Opportunity.
-    Only call it after the visitor has given their name, a valid email and what they need,
-    and has confirmed the details. Returns the inquiry reference to share with the visitor."""
-    from cms.views import check_maintenance  # same switch as the website's contact form
-    from hello_guy_ai.models import Message, Thread
-
-    _require("add", Opportunity)
-    ctx = current_context()
-    if ctx.run_id and Message.objects.filter(run_id=ctx.run_id, name="create_inquiry").exists():
-        raise ToolError("An inquiry was already submitted in this reply. Do not submit it again.")
-    if check_maintenance("inquiries") is not None:
-        raise ToolError("Inquiries are temporarily closed. Ask the visitor to try again later.")
-    name, email, message = name.strip(), email.strip(), message.strip()
-    if len(name) < 2:
-        raise ToolError("Ask the visitor for their name.")
-    try:
-        validate_email(email)
-    except Exception:
-        raise ToolError("That email address looks invalid. Ask the visitor to check it.") from None
-    if len(message) < 5:
-        raise ToolError("Ask the visitor to describe what they need.")
-
-    thread = Thread.objects.filter(pk=ctx.thread_id).first() if ctx.thread_id else None
-    opp = crm_services.create_opportunity(
-        name=name[:150],
-        email=email,
-        phone=phone.strip()[:50],
-        title=(subject.strip() or message.split("\n")[0])[:255],
-        details=message[:5000],
-        source=Source.WEBSITE_CHAT,
-        form_type="AI Chat Assistant",
-        thread=thread,
-    )
-    return {
-        "inquiry_id": opp.reference,
-        "reference": opp.reference,
-        "customer_id": opp.customer_id,
-        "status": "received",
-    }

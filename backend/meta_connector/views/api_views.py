@@ -1,5 +1,5 @@
 import logging
-from django.db.models import Q
+from django.db.models import Count, Q
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
@@ -22,7 +22,7 @@ class ContactListAPIView(ListAPIView):
     permission_classes = [HasRole]
 
     def get_queryset(self):
-        queryset = Contact.objects.select_related('platform_account').all()
+        queryset = Contact.objects.select_related('platform_account').annotate(msg_count=Count('messages'))
 
         platform = self.request.query_params.get('platform')
         if platform:

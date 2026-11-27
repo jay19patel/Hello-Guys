@@ -271,7 +271,7 @@ def generate_call_summary(transcript: list[dict[str, Any]]) -> str:
 
 def _format_transcript_doc(session: VoiceBotSession, meeting_title: str) -> str:
     """Format a clean Minutes of Meeting + Transcript document for Google Drive."""
-    dt = timezone.localtime(session.ended_at or session.created_at).strftime("%d %b %Y, %H:%M")
+    dt = timezone.localtime(session.ended_at or session.created_at).strftime("%d %b %Y, %I:%M %p")
     lines = [
         f"MINUTES OF MEETING & TRANSCRIPT: {meeting_title}",
         f"Date: {dt}",
@@ -331,7 +331,7 @@ def _send_mom_email(session: VoiceBotSession, meeting_title: str, drive_url: str
     if not unique_recipients:
         return []
 
-    dt = timezone.localtime(session.ended_at or session.created_at).strftime("%d %b %Y, %H:%M")
+    dt = timezone.localtime(session.ended_at or session.created_at).strftime("%d %b %Y, %I:%M %p")
     body_lines = [
         f"Minutes of Meeting: {meeting_title}",
         f"Date: {dt}",

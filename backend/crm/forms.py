@@ -6,11 +6,23 @@ from django.core.validators import validate_email
 from django.db.models import Q
 
 from crm.google import MAX_UPLOAD_BYTES, SHARE_ROLES
-from crm.models import Activity, Customer, GoogleAccount, GoogleFile, Meeting, MeetingTranscript, Opportunity, Service
+from crm.models import (
+    Activity,
+    Customer,
+    GoogleAccount,
+    GoogleFile,
+    Meeting,
+    MeetingTranscript,
+    Opportunity,
+    PaymentMilestone,
+    Proposal,
+    Service,
+)
 from meta_connector.models import Contact
 from meta_connector.roles import team
 
 DATETIME = forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")
+DATE_INPUT = forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
 
 
 class TeamChoiceField(forms.ModelChoiceField):
@@ -30,19 +42,41 @@ class OpportunityForm(forms.ModelForm):
 
     class Meta:
         model = Opportunity
-        fields = ["customer", "services", "title", "details", "status", "assigned_to", "next_follow_up"]
-        widgets = {"next_follow_up": DATETIME, "details": forms.Textarea(attrs={"rows": 4})}
+        fields = [
+            "customer",
+            "services",
+            "title",
+            "details",
+            "currency",
+            "estimated_value",
+            "won_value",
+            "expected_close_date",
+            "status",
+            "lost_reason",
+            "assigned_to",
+            "next_follow_up",
+        ]
+        widgets = {
+            "next_follow_up": DATETIME,
+            "expected_close_date": DATE_INPUT,
+            "details": forms.Textarea(attrs={"rows": 4}),
+            "lost_reason": forms.TextInput(attrs={"placeholder": "Optional reason when marked Lost"}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["assigned_to"].queryset = team()
         self.fields["services"].queryset = Service.objects.filter(is_active=True)
+        self.fields["currency"].required = False
         self.fields["next_follow_up"].input_formats = ["%Y-%m-%dT%H:%M"]
         if self.instance.pk and not self.is_bound:
             selected = list(self.instance.services.values_list("pk", flat=True))
             if not selected and self.instance.service_id:
                 selected = [self.instance.service_id]
             self.initial["services"] = selected
+
+    def clean_currency(self):
+        return self.cleaned_data.get("currency") or getattr(self.instance, "currency", None) or "INR"
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -247,3 +281,30 @@ class MessageForm(forms.Form):
     def __init__(self, *args, customer: Customer, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["contact"].queryset = customer.contacts.select_related("platform_account")
+
+
+class ProposalForm(forms.ModelForm):
+    class Meta:
+        model = Proposal
+        fields = ["title", "amount", "currency", "valid_until", "document_url", "notes"]
+        widgets = {
+            "valid_until": DATE_INPUT,
+            "notes": forms.Textarea(attrs={"rows": 2, "placeholder": "Scope summary or terms…"}),
+            "document_url": forms.URLInput(attrs={"placeholder": "https://docs.google.com/… (optional)"}),
+        }
+
+
+class PaymentMilestoneForm(forms.ModelForm):
+    class Meta:
+        model = PaymentMilestone
+        fields = ["title", "amount", "currency", "due_date", "invoice_number", "status"]
+        widgets = {
+            "due_date": DATE_INPUT,
+            "invoice_number": forms.TextInput(attrs={"placeholder": "INV-101"}),
+        }
+
+
+class SendEmailForm(forms.Form):
+    to_email = forms.EmailField(label="To")
+    subject = forms.CharField(max_length=255, widget=forms.TextInput(attrs={"placeholder": "Proposal / Next steps…"}))
+    body = forms.CharField(max_length=20000, widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Write your email…"}))

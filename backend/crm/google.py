@@ -33,6 +33,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.readonly",
 ]
 ROOT_FOLDER_NAME = "CRM Customers"
 FILE_FIELDS = "id,name,webViewLink"

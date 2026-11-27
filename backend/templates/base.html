@@ -90,13 +90,22 @@
                     <a href="{% url 'dashboard' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/meta' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Meta Inbox</a>
                     <a href="{% url 'crm:overview' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/crm' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">CRM</a>
                     <a href="{% url 'pms:projects' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/pms' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Projects</a>
-                    <a href="{% url 'core:reminders' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':10' == '/reminders' or request.path|slice:':11' == '/follow-ups' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Reminders</a>
+                    <a href="{% url 'core:follow-ups' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':10' == '/reminders' or request.path|slice:':11' == '/follow-ups' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Follow-ups</a>
                     <a href="{% url 'hello_guy_ai_analytics' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':13' == '/ai/analytics' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Analytics</a>
                     <a href="{% url 'hello_guy_ai_chat' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/chat' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Chat</a>
                 </div>
             </div>
 
             <div class="flex items-center gap-2 sm:gap-2.5">
+                <!-- Global Quick Search Trigger (Cmd/Ctrl+K) -->
+                <button type="button" onclick="window.dispatchEvent(new CustomEvent('quick-search:open'))"
+                        class="btn btn-ghost btn-sm px-2.5 gap-2 text-muted hover:text-ink border border-line/80 bg-subtle/50"
+                        title="Quick search (Ctrl+K)" aria-label="Quick search">
+                    <i class="fa-solid fa-magnifying-glass text-[12px]"></i>
+                    <span class="hidden md:inline text-[12.5px] font-normal">Search…</span>
+                    <kbd class="hidden lg:inline-block text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-line text-muted">⌘K</kbd>
+                </button>
+
                 {% if approvals_pending %}
                 <a href="{% url 'dashboard-approvals' %}" class="pill bg-warn/15 text-warn border border-warn/30 hover:bg-warn/25 transition-colors" title="AI replies awaiting approval">
                     <i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>
@@ -121,14 +130,14 @@
                                 </button>
                                 <button type="button" @click="tab = 'followups'" class="px-2.5 py-1 rounded-md transition-colors"
                                         :class="tab === 'followups' ? 'bg-surface text-ink shadow-soft font-semibold' : 'text-muted hover:text-ink'">
-                                    Reminders <span x-show="followupsDueCount > 0" x-text="'(' + followupsDueCount + ')'" class="text-bad"></span>
+                                    Follow-ups <span x-show="followupsCount > 0" x-text="'(' + followupsCount + ')'" :class="followupsDueCount > 0 ? 'text-bad' : 'text-accent'"></span>
                                 </button>
                             </div>
                             <div class="flex items-center gap-1.5">
                                 <button type="button" x-show="tab === 'notifications' && unreadCount > 0" @click="markAllRead()" class="text-[11.5px] text-accent hover:underline font-medium px-1">
                                     Mark read
                                 </button>
-                                <a x-show="tab === 'followups'" href="{% url 'core:reminders' %}" class="text-[11.5px] text-accent hover:underline font-medium px-1">
+                                <a x-show="tab === 'followups'" href="{% url 'core:follow-ups' %}" class="text-[11.5px] text-accent hover:underline font-medium px-1">
                                     Open all →
                                 </a>
                             </div>
@@ -150,7 +159,7 @@
                                 <div class="p-6 text-center">
                                     <i class="fa-regular fa-bell-slash text-muted text-lg mb-1.5"></i>
                                     <p class="text-[13px] font-medium text-ink">You're all caught up</p>
-                                    <p class="text-[12px] text-muted mt-0.5">Notifications from Reminders, CRM, Meetings &amp; AI appear here.</p>
+                                    <p class="text-[12px] text-muted mt-0.5">Notifications from Follow-ups, CRM, Meetings &amp; AI appear here.</p>
                                 </div>
                             </template>
                             <template x-for="item in items" :key="item.id">
@@ -178,28 +187,28 @@
                             </template>
                         </div>
 
-                        <!-- Reminders Tab -->
+                        <!-- Follow-ups Tab -->
                         <div x-show="tab === 'followups'" x-cloak class="max-h-96 overflow-y-auto divide-y divide-line">
                             <template x-if="loadError">
                                 <div class="p-6 text-center" role="alert">
                                     <i class="fa-solid fa-triangle-exclamation text-bad text-lg mb-1.5"></i>
-                                    <p class="text-[13px] font-medium text-ink">Couldn't load reminders</p>
+                                    <p class="text-[13px] font-medium text-ink">Couldn't load follow-ups</p>
                                     <button type="button" @click="load()" class="mt-2 text-[12.5px] text-accent font-medium hover:underline">Try again</button>
                                 </div>
                             </template>
                             <template x-if="(loading || !loaded) && !loadError && followups.length === 0">
-                                <div class="p-6 text-center text-[13px] text-muted">Loading reminders…</div>
+                                <div class="p-6 text-center text-[13px] text-muted">Loading follow-ups…</div>
                             </template>
                             <template x-if="loaded && !loading && !loadError && followups.length === 0">
                                 <div class="p-6 text-center">
                                     <i class="fa-regular fa-circle-check text-ok text-lg mb-1.5"></i>
-                                    <p class="text-[13px] font-medium text-ink">No pending reminders</p>
-                                    <a href="{% url 'core:reminders' %}" class="inline-block mt-2 text-[12.5px] text-accent font-medium hover:underline">+ Add a reminder</a>
+                                    <p class="text-[13px] font-medium text-ink">No pending follow-ups</p>
+                                    <a href="{% url 'core:follow-ups' %}" class="inline-block mt-2 text-[12.5px] text-accent font-medium hover:underline">+ Add a follow-up</a>
                                 </div>
                             </template>
                             <template x-for="fu in followups" :key="fu.id">
                                 <div class="px-4 py-3 hover:bg-subtle/40 transition-colors flex items-start justify-between gap-2.5">
-                                    <a :href="safeHref(fu.related_url, '/reminders/')" class="min-w-0 flex-1">
+                                    <a :href="safeHref(fu.related_url, '/follow-ups/')" class="min-w-0 flex-1">
                                         <div class="flex items-center gap-1.5 flex-wrap">
                                             <span class="font-semibold text-[13px] text-ink truncate" x-text="fu.title"></span>
                                             <span x-show="fu.is_overdue" class="pill bg-bad/10 text-bad text-[10px] px-1.5 py-0">Overdue</span>
@@ -232,7 +241,7 @@
                         <a href="{% url 'crm:opportunity-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-filter w-4 text-ok"></i> New Opportunity</a>
                         <a href="{% url 'pms:project-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-diagram-project w-4 text-accent"></i> New Project</a>
                         <a href="{% url 'crm:meeting-create' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-solid fa-calendar-plus w-4 text-accent"></i> Schedule Meeting</a>
-                        <a href="{% url 'core:reminders' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> New Reminder</a>
+                        <a href="{% url 'core:follow-ups' %}" class="flex items-center gap-2.5 px-3.5 py-2 hover:bg-subtle text-ink"><i class="fa-regular fa-clock w-4 text-warn"></i> New Follow-up</a>
                     </div>
                 </div>
             </div>
@@ -246,6 +255,48 @@
                 {% block content %}{% endblock %}
             </div>
         </main>
+    </div>
+</div>
+
+<!-- Global Quick Search Modal (Ctrl/Cmd + K) -->
+<div x-data="quickSearch()" x-init="init()"
+     x-show="open" x-transition.opacity x-cloak
+     @keydown.escape.window="open = false"
+     class="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-start justify-center pt-[12vh] px-4"
+     role="dialog" aria-modal="true" aria-label="Quick search">
+    <div @click.outside="open = false" class="w-full max-w-xl bg-surface border border-line rounded-2xl shadow-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-line flex items-center gap-3">
+            <i class="fa-solid fa-magnifying-glass text-muted text-sm"></i>
+            <input type="search" x-ref="input" x-model="query" @input.debounce.160ms="fetchResults()"
+                   @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter.prevent="goActive()"
+                   placeholder="Search customers, deals, follow-ups, projects, or jump to a page…"
+                   class="w-full bg-transparent text-[14px] text-ink placeholder:text-muted focus:outline-none">
+            <kbd class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-subtle border border-line text-muted">ESC</kbd>
+        </div>
+        <div class="max-h-80 overflow-y-auto divide-y divide-line/60">
+            <template x-if="loading">
+                <div class="p-6 text-center text-[13px] text-muted">Searching…</div>
+            </template>
+            <template x-if="!loading && items.length === 0">
+                <div class="p-6 text-center text-[13px] text-muted">No matching pages or records.</div>
+            </template>
+            <template x-for="(item, idx) in items" :key="item.url + '-' + idx">
+                <a :href="safeHref(item.url, '#')" @mouseenter="active = idx"
+                   class="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors"
+                   :class="active === idx ? 'bg-accent/10 text-ink' : 'hover:bg-subtle/60'">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="w-8 h-8 rounded-xl border border-line bg-subtle/60 flex items-center justify-center shrink-0 text-[12px] text-accent">
+                            <i :class="item.icon"></i>
+                        </span>
+                        <div class="min-w-0">
+                            <div class="text-[13.5px] font-semibold text-ink truncate" x-text="item.title"></div>
+                            <div class="text-[12px] text-muted truncate" x-text="item.sub"></div>
+                        </div>
+                    </div>
+                    <span class="pill bg-subtle border border-line text-[10.5px] shrink-0" x-text="item.group"></span>
+                </a>
+            </template>
+        </div>
     </div>
 </div>
 
@@ -376,6 +427,160 @@
         } catch (_) { return fallback; }
     }
 
+    // Reusable interactive SVG trend chart with crosshair tooltip + clickable legend series toggles.
+    window.renderTrendChart = function (el, { labels = [], series = [], legendEl = null, height = 210, summary = '' }) {
+        if (!el || !labels.length) return;
+        const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const hidden = new Set();
+
+        let tip = document.getElementById('globalChartTip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.id = 'globalChartTip';
+            tip.className = 'fixed z-50 pointer-events-none min-w-[160px] px-3 py-2.5 rounded-xl bg-surface border border-line shadow-card text-[12.5px] leading-snug opacity-0 transition-opacity duration-100';
+            document.body.appendChild(tip);
+        }
+
+        function syncLegend() {
+            if (!legendEl) return;
+            legendEl.innerHTML = series.map((s, idx) => {
+                const off = hidden.has(idx);
+                return `<button type="button" data-series-idx="${idx}" class="flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-transparent hover:border-line transition-opacity ${off ? 'opacity-40 line-through' : ''}">`
+                     + `<span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:${s.color}"></span>`
+                     + `<span>${esc(s.label)}</span></button>`;
+            }).join('');
+            legendEl.querySelectorAll('[data-series-idx]').forEach(btn => {
+                btn.onclick = () => {
+                    const idx = Number(btn.dataset.seriesIdx);
+                    if (hidden.has(idx)) hidden.delete(idx);
+                    else if (hidden.size < series.length - 1) hidden.add(idx);
+                    syncLegend();
+                    draw();
+                };
+            });
+        }
+
+        function draw() {
+            const active = series.filter((_, i) => !hidden.has(i));
+            const W = el.clientWidth || 540, H = el.clientHeight || height;
+            const padL = 28, padR = 14, padT = 14, padB = 26;
+            const iw = Math.max(40, W - padL - padR), ih = Math.max(40, H - padT - padB);
+            const n = labels.length;
+            const maxV = Math.max(...active.flatMap(s => s.vals), 1);
+            const step = Math.max(1, Math.ceil(maxV / 4));
+            const yMax = Math.ceil(maxV / step) * step;
+            const x = i => padL + (n > 1 ? (i / (n - 1)) * iw : iw / 2);
+            const y = v => padT + ih - (v / yMax) * ih;
+            const colW = n > 1 ? iw / (n - 1) : iw;
+
+            let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="block overflow-visible" role="img" aria-label="${esc(summary)}"><title>${esc(summary)}</title>`;
+            for (let v = 0; v <= yMax; v += step) {
+                const yy = Math.round(y(v)) + 0.5;
+                svg += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" stroke="rgb(var(--line))" stroke-width="1"/>`;
+                svg += `<text x="${padL - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="rgb(var(--muted))">${v}</text>`;
+            }
+            svg += `<line data-crosshair x1="0" x2="0" y1="${padT}" y2="${padT + ih}" stroke="rgb(var(--muted))" stroke-dasharray="3 3" stroke-width="1" opacity="0"/>`;
+
+            active.forEach(s => {
+                const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+                const area = `${x(0).toFixed(1)},${padT + ih} ${pts} ${x(n - 1).toFixed(1)},${padT + ih}`;
+                svg += `<polygon points="${area}" fill="${s.color}" opacity="0.08"/>`;
+                svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/>`;
+                s.vals.forEach((v, i) => {
+                    if (v > 0) svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.2" fill="${s.color}"/>`;
+                });
+            });
+
+            const every = Math.ceil(n / 6);
+            labels.forEach((lbl, i) => {
+                if ((i % every === 0 && n - 1 - i >= every) || i === n - 1) {
+                    svg += `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="rgb(var(--muted))">${esc(lbl)}</text>`;
+                }
+                const hx = Math.max(padL, x(i) - colW / 2);
+                const hw = Math.min(colW, W - padR - hx);
+                svg += `<rect data-col-idx="${i}" x="${hx.toFixed(1)}" y="${padT}" width="${Math.max(8, hw).toFixed(1)}" height="${ih}" fill="transparent" style="cursor:crosshair"/>`;
+            });
+            svg += '</svg>';
+            el.innerHTML = svg;
+
+            const cross = el.querySelector('[data-crosshair]');
+            el.querySelectorAll('[data-col-idx]').forEach(hit => {
+                hit.addEventListener('mouseenter', e => {
+                    const i = Number(hit.dataset.colIdx);
+                    const cx = x(i).toFixed(1);
+                    if (cross) { cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('opacity', '0.75'); }
+                    tip.innerHTML = `<div class="font-semibold text-ink mb-1">${esc(labels[i])}</div>` + active.map(s =>
+                        `<div class="flex items-center justify-between gap-4"><span class="flex items-center gap-1.5 text-muted"><span class="w-2 h-2 rounded-xs" style="background:${s.color}"></span>${esc(s.label)}</span><b class="tabular-nums text-ink">${s.vals[i]}</b></div>`
+                    ).join('');
+                    tip.style.opacity = '1';
+                    positionTip(e);
+                });
+                hit.addEventListener('mousemove', positionTip);
+                hit.addEventListener('mouseleave', () => {
+                    if (cross) cross.setAttribute('opacity', '0');
+                    tip.style.opacity = '0';
+                });
+            });
+        }
+
+        function positionTip(e) {
+            const left = Math.min(window.innerWidth - 190, e.clientX + 14);
+            const top = Math.max(12, e.clientY - 24);
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
+        }
+
+        syncLegend();
+        draw();
+        let t;
+        addEventListener('resize', () => { clearTimeout(t); t = setTimeout(draw, 120); });
+    };
+
+    function quickSearch() {
+        return {
+            open: false,
+            query: '',
+            loading: false,
+            items: [],
+            active: 0,
+            init() {
+                window.addEventListener('keydown', e => {
+                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+                        e.preventDefault();
+                        this.openModal();
+                    }
+                });
+                window.addEventListener('quick-search:open', () => this.openModal());
+            },
+            openModal() {
+                this.open = true;
+                this.active = 0;
+                this.$nextTick(() => this.$refs.input?.focus());
+                if (this.items.length === 0) this.fetchResults();
+            },
+            async fetchResults() {
+                this.loading = true;
+                try {
+                    const res = await fetch('/search/?q=' + encodeURIComponent(this.query.trim()), { credentials: 'same-origin' });
+                    if (res.ok) {
+                        this.items = (await res.json()).items || [];
+                        this.active = 0;
+                    }
+                } catch (_) {} finally {
+                    this.loading = false;
+                }
+            },
+            move(delta) {
+                if (!this.items.length) return;
+                this.active = (this.active + delta + this.items.length) % this.items.length;
+            },
+            goActive() {
+                const it = this.items[this.active];
+                if (it && it.url) window.location.href = safeHref(it.url, '/');
+            },
+        };
+    }
+
     function globalNotifications() {
         return {
             open: false,
@@ -387,6 +592,7 @@
             items: [],
             followups: [],
             unreadCount: 0,
+            followupsCount: 0,
             followupsDueCount: 0,
             init() {
                 this.refreshCount();
@@ -402,6 +608,7 @@
                     if (res.ok) {
                         const data = await res.json();
                         this.unreadCount = data.count || 0;
+                        this.followupsCount = data.followups_count || 0;
                         this.followupsDueCount = data.followups_due || 0;
                     }
                 } catch (_) {}
@@ -421,6 +628,7 @@
                         this.items = data.items || [];
                         this.followups = data.followups || [];
                         this.unreadCount = data.unread_count || 0;
+                        this.followupsCount = data.followups_count ?? this.followups.length;
                         this.followupsDueCount = data.followups_due_count || 0;
                         this.loaded = true;
                     } else {
@@ -434,7 +642,7 @@
             },
             async followUpAction(id, action) {
                 try {
-                    const res = await fetch(`/reminders/${id}/action/`, {
+                    const res = await fetch(`/follow-ups/${id}/action/`, {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: {

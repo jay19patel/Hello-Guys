@@ -12,6 +12,15 @@
             </div>
             <p class="text-[13px] text-muted mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span>Owner: <strong class="text-ink">{% include "pms/_user.html" with u=project.owner %}</strong></span>
+                {% if project.customer %}
+                <span>Customer: <a href="{% url 'crm:customer' project.customer_id %}" class="font-semibold text-accent hover:underline">{{ project.customer.name }}</a></span>
+                {% endif %}
+                {% if project.opportunity %}
+                <span>Deal: <a href="{% url 'crm:opportunity' project.opportunity_id %}" class="font-semibold text-accent hover:underline">{{ project.opportunity.reference }}</a></span>
+                {% endif %}
+                {% if project.budget %}
+                <span class="pill bg-ok/10 text-ok border border-ok/20 font-semibold tabular-nums">Budget: {{ project.budget|floatformat:0 }}</span>
+                {% endif %}
                 {% if project.start_date or project.due_date %}
                 <span class="tabular-nums">
                     {{ project.start_date|date:"d M Y"|default:"—" }} → {{ project.due_date|date:"d M Y"|default:"—" }}

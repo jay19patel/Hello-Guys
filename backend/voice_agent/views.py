@@ -1,11 +1,10 @@
-import json
-
 from django.contrib import messages
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404
 from django.views import View
 from django.views.generic import ListView
 
+from core.safety import int_or, json_body, redirect_next
 from crm.models import Customer, Opportunity
 from crm.views import CRMView
 from meta_connector.roles import AGENT
@@ -15,10 +14,7 @@ from voice_agent.models import VoiceBotSession
 
 def _parse_payload(request) -> dict:
     if request.content_type and "application/json" in request.content_type:
-        try:
-            return json.loads(request.body.decode("utf-8") or "{}")
-        except json.JSONDecodeError:
-            return {}
+        return json_body(request)
     return request.POST.dict()
 
 
@@ -30,8 +26,6 @@ class VoiceBotStartAPIView(CRMView, View):
     def post(self, request):
         data = _parse_payload(request)
         lead_id = data.get("lead_id") or data.get("customer_id")
-        opp_id = data.get("opportunity_id")
-        meeting_id = data.get("meeting_id")
         try:
             session = services.start_bot_session(
                 meet_code_or_url=data.get("meet_code_or_url", ""),
@@ -40,9 +34,9 @@ class VoiceBotStartAPIView(CRMView, View):
                 custom_prompt=data.get("custom_prompt", ""),
                 mode=data.get("mode") or VoiceBotSession.Mode.GOOGLE_MEET,
                 provider=data.get("provider") or VoiceBotSession.Provider.MEETINGBAAS,
-                customer_id=int(lead_id) if str(lead_id or "").isdigit() else None,
-                opportunity_id=int(opp_id) if str(opp_id or "").isdigit() else None,
-                meeting_id=int(meeting_id) if str(meeting_id or "").isdigit() else None,
+                customer_id=int_or(lead_id) or None,
+                opportunity_id=int_or(data.get("opportunity_id")) or None,
+                meeting_id=int_or(data.get("meeting_id")) or None,
                 user=request.user,
             )
         except services.VoiceBotError as exc:
@@ -75,7 +69,7 @@ class VoiceBotStopAPIView(CRMView, View):
         is_json = "application/json" in (request.content_type or "") or "application/json" in request.headers.get("Accept", "")
         if not is_json:
             messages.success(request, f"Stopped '{session.bot_name}' and saved summary to CRM.")
-            return redirect(request.POST.get("next") or "crm:meetings")
+            return redirect_next(request, "crm:meetings")
         return JsonResponse(
             {
                 "ok": True,

@@ -7,7 +7,9 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from crm.models import Activity, Customer, FollowUp, Meeting, Opportunity, Service, Source
+from core import follow_ups as global_followups
+from core.models import FollowUp
+from crm.models import Activity, Customer, Meeting, Opportunity, Service, Source
 from meta_connector.models import Contact, Message, PendingAIReply, PlatformAccount
 
 S = Opportunity.Status
@@ -162,39 +164,42 @@ class Command(BaseCommand):
             )
 
         # Follow-up Scheduler items
-        if not FollowUp.objects.exists():
+        if not FollowUp.objects.filter(customer__isnull=False).exists():
             if ravi_cust:
-                FollowUp.objects.create(
+                global_followups.schedule_follow_up(
+                    title="Follow up on ERPNext 3-factory proposal",
                     customer=ravi_cust,
                     opportunity=ravi_cust.opportunities.first(),
                     due_at=now - timedelta(hours=3),
-                    channel=FollowUp.Channel.WHATSAPP,
+                    channel="WhatsApp",
                     note="Follow up on ERPNext 3-factory proposal",
-                    status=FollowUp.Status.PENDING,
+                    notify_now=False,
                 )
             if asha_cust:
-                FollowUp.objects.create(
+                global_followups.schedule_follow_up(
+                    title="Send 2-branch clinic chatbot quote",
                     customer=asha_cust,
                     opportunity=asha_cust.opportunities.first(),
                     due_at=now + timedelta(days=1),
-                    channel=FollowUp.Channel.INSTAGRAM,
+                    channel="Instagram",
                     note="Send 2-branch clinic chatbot quote",
-                    status=FollowUp.Status.PENDING,
+                    notify_now=False,
                 )
             if vikram_cust:
-                FollowUp.objects.create(
+                fu = global_followups.schedule_follow_up(
+                    title="Initial discovery call",
                     customer=vikram_cust,
                     opportunity=vikram_cust.opportunities.first(),
                     due_at=now - timedelta(days=1),
-                    channel=FollowUp.Channel.CALL,
+                    channel="Phone Call",
                     note="Initial discovery call",
-                    status=FollowUp.Status.DONE,
-                    completed_at=now - timedelta(hours=20),
+                    notify_now=False,
                 )
+                global_followups.complete_follow_up(fu)
 
         self.stdout.write(self.style.SUCCESS(
             f"Demo ready: {Customer.objects.count()} customers, {Opportunity.objects.count()} opportunities, "
             f"{Contact.objects.count()} contacts, {Message.objects.count()} messages, "
             f"{PendingAIReply.objects.filter(status='pending').count()} pending AI approvals, "
-            f"{FollowUp.objects.count()} follow-ups."
+            f"{FollowUp.objects.filter(customer__isnull=False).count()} follow-ups."
         ))

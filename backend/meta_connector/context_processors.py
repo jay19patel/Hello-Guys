@@ -3,9 +3,10 @@ from meta_connector.roles import ADMIN, AGENT, get_role, has_role
 from meta_connector.services.maintenance import webhook_health
 
 def dashboard_nav(request):
-    # Runs on every template render; the account list is evaluated eagerly below.
     user = getattr(request, 'user', None)
-    admin = bool(user) and has_role(user, ADMIN)
+    if not user or not user.is_authenticated:
+        return {}
+    admin = has_role(user, ADMIN)
 
     # Active accounts grouped dynamically by platform for any current or future channel
     active_accounts = list(
@@ -39,7 +40,7 @@ def dashboard_nav(request):
         for p, accs in sorted(grouped.items(), key=lambda item: sort_key(item[0]))
     ]
 
-    approvals_pending = PendingAIReply.objects.filter(status=PendingAIReply.STATUS_PENDING).count() if user and user.is_authenticated else 0
+    approvals_pending = PendingAIReply.objects.filter(status=PendingAIReply.STATUS_PENDING).count()
 
     return {
         # Failed-webhook / bad-signature banner: admins only, since only they can fix or retry.

@@ -7,7 +7,6 @@ from .testimonial import Testimonial
 from .faq import FAQ
 from .video import YouTubeVideo
 from .blog import BlogPost, BlogComment, BlogLike
-from .inquiry import InquirySubmission
 from .workflow import WorkflowStep
 from .about import AboutProfile, AboutStat, AboutBlock
 
@@ -24,7 +23,6 @@ __all__ = [
     'BlogPost',
     'BlogComment',
     'BlogLike',
-    'InquirySubmission',
     'WorkflowStep',
     'AboutProfile',
     'AboutStat',

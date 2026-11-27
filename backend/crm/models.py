@@ -6,6 +6,7 @@ Links to the channels without them knowing:
   Opportunity.thread -> hello_guy_ai.Thread (the AI or live chat it came from)
 """
 
+from decimal import Decimal
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -88,6 +89,16 @@ class Opportunity(TimeStamped):
         WON = "won", "Won"
         LOST = "lost", "Lost"
 
+    CURRENCY_CHOICES = [("INR", "INR (₹)"), ("USD", "USD ($)"), ("EUR", "EUR (€)"), ("GBP", "GBP (£)")]
+    CURRENCY_SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}
+    STAGE_PROBABILITY = {
+        Status.NEW: 10,
+        Status.CONTACTED: 25,
+        Status.QUALIFIED: 50,
+        Status.PROPOSAL: 75,
+        Status.WON: 100,
+        Status.LOST: 0,
+    }
     OPEN = (Status.NEW, Status.CONTACTED, Status.QUALIFIED, Status.PROPOSAL)
 
     reference = models.CharField(max_length=40, default=new_reference, unique=True, help_text="Shown to the visitor")
@@ -96,6 +107,11 @@ class Opportunity(TimeStamped):
     services = models.ManyToManyField(Service, blank=True, related_name="multi_opportunities")
     title = models.CharField(max_length=255)
     details = models.TextField(blank=True, max_length=5000, help_text="What they asked for, budget, timeline…")
+    estimated_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    won_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=5, choices=CURRENCY_CHOICES, default="INR")
+    expected_close_date = models.DateField(null=True, blank=True)
+    lost_reason = models.CharField(max_length=120, blank=True)
     source = models.CharField(max_length=20, choices=Source.choices, default=Source.MANUAL, db_index=True)
     form_type = models.CharField(max_length=60, blank=True, help_text="Which website form, e.g. Contact Form")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW, db_index=True)
@@ -118,6 +134,21 @@ class Opportunity(TimeStamped):
     @property
     def is_open(self) -> bool:
         return self.status in self.OPEN
+
+    @property
+    def currency_symbol(self) -> str:
+        return self.CURRENCY_SYMBOLS.get(self.currency, f"{self.currency} ")
+
+    @property
+    def effective_value(self) -> Decimal:
+        if self.status == self.Status.WON and self.won_value is not None:
+            return self.won_value
+        return self.estimated_value or Decimal("0.00")
+
+    @property
+    def weighted_value(self) -> Decimal:
+        pct = self.STAGE_PROBABILITY.get(self.status, 0)
+        return (self.effective_value * Decimal(pct) / Decimal("100")).quantize(Decimal("0.01"))
 
     @property
     def service_list(self) -> list[Service]:
@@ -409,44 +440,99 @@ class GoogleAccount(models.Model):
         return bool(self.refresh_token_encrypted)
 
 
-class FollowUp(TimeStamped):
-    """Scheduled follow-up task for a customer/opportunity (created by team or AI scheduler)."""
+class Proposal(TimeStamped):
+    """Commercial quotation / proposal tied to a CRM opportunity."""
 
-    class Channel(models.TextChoices):
-        WHATSAPP = "whatsapp", "WhatsApp"
-        INSTAGRAM = "instagram", "Instagram"
-        CALL = "call", "Phone call"
-        EMAIL = "email", "Email"
-        MEETING = "meeting", "Meeting"
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SENT = "sent", "Sent"
+        ACCEPTED = "accepted", "Accepted"
+        REJECTED = "rejected", "Rejected"
+
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="proposals")
+    title = models.CharField(max_length=200)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=5, choices=Opportunity.CURRENCY_CHOICES, default="INR")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    valid_until = models.DateField(null=True, blank=True)
+    document_url = models.URLField(max_length=500, blank=True)
+    notes = models.TextField(blank=True, max_length=2000)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.get_status_display()})"
+
+    @property
+    def currency_symbol(self) -> str:
+        return Opportunity.CURRENCY_SYMBOLS.get(self.currency, f"{self.currency} ")
+
+
+class PaymentMilestone(TimeStamped):
+    """Invoice or billing milestone linked to a deal."""
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
-        DONE = "done", "Done"
+        INVOICED = "invoiced", "Invoiced"
+        PAID = "paid", "Paid"
         CANCELLED = "cancelled", "Cancelled"
 
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="follow_ups")
-    opportunity = models.ForeignKey(
-        Opportunity, on_delete=models.CASCADE, null=True, blank=True, related_name="follow_ups"
-    )
-    assigned_to = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="crm_follow_ups"
-    )
-    due_at = models.DateTimeField(db_index=True)
-    channel = models.CharField(max_length=20, choices=Channel.choices, default=Channel.WHATSAPP)
-    note = models.CharField(max_length=500, blank=True, default="")
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_follow_ups"
-    )
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="payment_milestones")
+    title = models.CharField(max_length=150)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=5, choices=Opportunity.CURRENCY_CHOICES, default="INR")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True)
+    due_date = models.DateField(null=True, blank=True, db_index=True)
+    invoice_number = models.CharField(max_length=60, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
-        ordering = ("due_at",)
-        indexes = [models.Index(fields=["status", "due_at"], name="crm_followup_status_due")]
+        ordering = ("due_date", "created_at")
 
     def __str__(self) -> str:
-        return f"Follow-up {self.customer.name} ({self.due_at:%d %b %I:%M %p})"
+        return f"{self.title} ({self.get_status_display()})"
+
+    @property
+    def currency_symbol(self) -> str:
+        return Opportunity.CURRENCY_SYMBOLS.get(self.currency, f"{self.currency} ")
 
     @property
     def is_overdue(self) -> bool:
-        return self.status == self.Status.PENDING and self.due_at < timezone.now()
+        return (
+            self.status in (self.Status.PENDING, self.Status.INVOICED)
+            and self.due_date is not None
+            and self.due_date < timezone.localdate()
+        )
+
+
+class EmailMessage(TimeStamped):
+    """Two-way CRM email log sent or synced via Gmail API / SMTP."""
+
+    class Direction(models.TextChoices):
+        OUTGOING = "outgoing", "Sent"
+        INCOMING = "incoming", "Received"
+
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="emails")
+    opportunity = models.ForeignKey(
+        Opportunity, on_delete=models.SET_NULL, null=True, blank=True, related_name="emails"
+    )
+    direction = models.CharField(max_length=12, choices=Direction.choices, default=Direction.OUTGOING)
+    sender = models.EmailField()
+    recipient = models.EmailField()
+    subject = models.CharField(max_length=255)
+    body = models.TextField(max_length=20000)
+    gmail_message_id = models.CharField(max_length=128, blank=True, db_index=True)
+    gmail_thread_id = models.CharField(max_length=128, blank=True)
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    sent_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-sent_at",)
+
+    def __str__(self) -> str:
+        return f"{self.get_direction_display()}: {self.subject}"

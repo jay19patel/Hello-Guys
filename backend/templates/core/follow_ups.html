@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Follow-ups · Hello Guys{% endblock %}
+
+{% block sidebar_nav %}
+<div class="caps px-3 pt-1 pb-1">Workspace</div>
+<a href="{% url 'core:portal' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-shapes w-4 text-center shrink-0"></i> Hub Portal
+</a>
+<a href="{% url 'core:follow-ups' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg bg-accent/10 text-accent font-semibold">
+    <i class="fa-regular fa-clock w-4 text-center shrink-0"></i> Follow-ups
+    {% if stats.overdue %}<span class="ml-auto pill bg-bad/10 text-bad">{{ stats.overdue }}</span>{% endif %}
+</a>
+<a href="{% url 'crm:overview' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-address-book w-4 text-center shrink-0"></i> CRM
+</a>
+<a href="{% url 'crm:meetings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-calendar-days w-4 text-center shrink-0"></i> Meetings
+</a>
+<a href="{% url 'pms:projects' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-diagram-project w-4 text-center shrink-0"></i> Projects
+</a>
+<a href="{% url 'dashboard' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-inbox w-4 text-center shrink-0"></i> Meta Inbox
+</a>
+<a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-wand-magic-sparkles w-4 text-center shrink-0"></i> AI Chat
+</a>
+<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+    <i class="fa-solid fa-chart-line w-4 text-center shrink-0"></i> AI Analytics
+</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="{ showNewModal: false, showNewChannel: false }" class="flex flex-col gap-6" @keydown.escape.window="showNewModal = false">
+    <!-- Header -->
+    <header class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight text-ink">Follow-ups</h1>
+                {% if stats.overdue %}
+                <span class="pill bg-bad/10 text-bad border border-bad/25">{{ stats.overdue }} overdue</span>
+                {% endif %}
+            </div>
+            <p class="text-[13.5px] text-muted mt-1">
+                Track follow-ups across CRM &amp; workspace — filter by status, channel, or priority and get alerted in the Notification Bell.
+            </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+            <a href="?status={{ status_filter }}{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}{% if not mine_filter %}&mine=1{% endif %}"
+               class="h-9 px-3 rounded-xl border text-[13px] font-medium flex items-center gap-1.5 transition-colors {% if mine_filter %}bg-accent/10 border-accent/35 text-accent font-semibold{% else %}bg-surface border-line text-muted hover:text-ink{% endif %}">
+                <i class="fa-regular fa-user text-[11.5px]"></i> My Follow-ups
+            </a>
+
+            <nav class="flex flex-wrap gap-1 bg-subtle border border-line rounded-xl p-1 text-[13px] font-medium" aria-label="Status">
+                <a href="?status=pending{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'pending' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Pending</a>
+                <a href="?status=today{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if status_filter == 'today' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
+                    Today {% if stats.today %}<span class="pill bg-warn/15 text-warn text-[11px] px-1.5 py-0">{{ stats.today }}</span>{% endif %}
+                </a>
+                <a href="?status=overdue{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center gap-1.5 transition-colors {% if status_filter == 'overdue' %}bg-surface text-bad shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">
+                    Overdue {% if stats.overdue %}<span class="pill bg-bad/15 text-bad text-[11px] px-1.5 py-0">{{ stats.overdue }}</span>{% endif %}
+                </a>
+                <a href="?status=done{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'done' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Done</a>
+                <a href="?status=cancelled{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'cancelled' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Cancelled</a>
+                <a href="?status=all{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}" class="h-8 px-3 rounded-lg flex items-center transition-colors {% if status_filter == 'all' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">All</a>
+            </nav>
+
+            <button type="button" @click="showNewModal = true" class="btn btn-primary btn-sm h-10 px-4">
+                <i class="fa-solid fa-plus"></i> New Follow-up
+            </button>
+        </div>
+    </header>
+
+    <!-- Clickable KPI Strip -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <a href="?status=pending{% if mine_filter %}&mine=1{% endif %}" class="card p-4 flex flex-col gap-1 lift hover:border-accent/40 transition-colors {% if status_filter == 'pending' %}ring-1 ring-accent/40{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-accent"></span> Pending</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.pending }}</span>
+            <span class="text-[11.5px] text-muted">Active follow-ups →</span>
+        </a>
+        <a href="?status=overdue{% if mine_filter %}&mine=1{% endif %}" class="card p-4 flex flex-col gap-1 lift hover:border-bad/50 transition-colors {% if stats.overdue %}border-bad/35 bg-bad/5{% endif %} {% if status_filter == 'overdue' %}ring-1 ring-bad/40{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-bad"></span> Overdue</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums {% if stats.overdue %}text-bad{% else %}text-ink{% endif %}">{{ stats.overdue }}</span>
+            <span class="text-[11.5px] text-muted">Filter overdue →</span>
+        </a>
+        <a href="?status=today{% if mine_filter %}&mine=1{% endif %}" class="card p-4 flex flex-col gap-1 lift hover:border-warn/50 transition-colors {% if status_filter == 'today' %}ring-1 ring-warn/40{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-warn"></span> Due Today</span>
+            <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.today }}</span>
+            <span class="text-[11.5px] text-muted">Filter due today →</span>
+        </a>
+        <a href="?status=done{% if mine_filter %}&mine=1{% endif %}" class="card p-4 flex flex-col gap-1 lift hover:border-ok/50 transition-colors {% if status_filter == 'done' %}ring-1 ring-ok/40{% endif %}">
+            <span class="flex items-center gap-2 text-[12px] font-semibold text-muted"><span class="w-2 h-2 rounded-full bg-ok"></span> Completed</span>
+            <div class="flex items-baseline gap-2">
+                <span class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">{{ stats.done }}</span>
+                {% if stats.completion_rate is not None %}
+                <span class="text-[12px] font-semibold text-ok">{{ stats.completion_rate }}% rate</span>
+                {% endif %}
+            </div>
+            <span class="text-[11.5px] text-muted">Out of {{ stats.total }} total →</span>
+        </a>
+    </section>
+
+    <!-- Analytics & Charts -->
+    <section class="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-5 items-start" aria-label="Follow-up analytics">
+        <!-- 14-Day Trend Chart -->
+        <div class="card p-5 flex flex-col gap-3 min-w-0">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <h2 class="font-display font-semibold text-[15.5px] text-ink">14-Day Follow-up Activity</h2>
+                    <p class="text-[12px] text-muted">Hover chart to inspect daily counts; click legend to toggle lines.</p>
+                </div>
+                <div id="followupTrendLegend" class="flex items-center gap-1.5 text-[12px] text-muted"></div>
+            </div>
+            <div id="followupTrendChart" class="w-full h-48"></div>
+            {{ daily_trend|json_script:"followup-trend-data" }}
+        </div>
+
+        <!-- Interactive Channel & Priority Breakdown -->
+        <div class="card p-5 flex flex-col gap-4">
+            <div>
+                <h2 class="font-display font-semibold text-[15.5px] text-ink">Channel &amp; Priority Breakdown</h2>
+                <p class="text-[12px] text-muted">Click any channel or priority below to filter the list.</p>
+            </div>
+
+            {% if stats.total %}
+            <div>
+                <div class="flex items-center justify-between text-[11.5px] text-muted mb-1.5">
+                    <span>Overall Health</span>
+                    <span>{{ stats.done }} done · {{ stats.ontime }} on track · {{ stats.overdue }} overdue</span>
+                </div>
+                <div class="h-2.5 w-full rounded-full bg-subtle overflow-hidden flex">
+                    {% if stats.done %}<div class="bg-ok h-full" style="width: {% widthratio stats.done stats.total 100 %}%"></div>{% endif %}
+                    {% if stats.ontime %}<div class="bg-accent h-full" style="width: {% widthratio stats.ontime stats.total 100 %}%"></div>{% endif %}
+                    {% if stats.overdue %}<div class="bg-bad h-full" style="width: {% widthratio stats.overdue stats.total 100 %}%"></div>{% endif %}
+                    {% if stats.cancelled %}<div class="bg-muted h-full" style="width: {% widthratio stats.cancelled stats.total 100 %}%"></div>{% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if channel_stats %}
+            <div class="flex flex-col gap-2">
+                {% for ch in channel_stats|slice:":5" %}
+                <a href="?status={{ status_filter }}{% if channel_filter != ch.slug %}&channel={{ ch.slug|urlencode }}{% endif %}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}"
+                   class="group block p-1.5 -mx-1.5 rounded-lg transition-colors {% if channel_filter == ch.slug %}bg-accent/10{% else %}hover:bg-subtle/60{% endif %}">
+                    <div class="flex items-center justify-between text-[12.5px] mb-1">
+                        <span class="font-medium text-ink group-hover:text-accent flex items-center gap-1.5"><i class="{{ ch.icon }} text-accent text-[11px]"></i> {{ ch.name }}</span>
+                        <span class="text-muted tabular-nums">{{ ch.total }} <span class="text-[11px]">({{ ch.done }} done)</span></span>
+                    </div>
+                    <div class="h-1.5 w-full rounded-full bg-subtle overflow-hidden">
+                        <div class="h-full rounded-full bg-accent transition-all" style="width: {{ ch.pct }}%"></div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-[12.5px] text-muted">Add follow-ups to see channel analytics.</p>
+            {% endif %}
+
+            <div class="pt-2 border-t border-line flex flex-wrap gap-1.5">
+                {% for p in priority_stats %}
+                <a href="?status={{ status_filter }}{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if priority_filter != p.value %}&priority={{ p.value|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}"
+                   class="pill border text-[11.5px] transition-colors {% if priority_filter == p.value %}bg-accent text-on-accent border-accent{% else %}bg-subtle border-line text-muted hover:text-ink{% endif %}">
+                    <span class="font-semibold">{{ p.count }}</span> {{ p.label }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- New Follow-up Modal -->
+    <div x-show="showNewModal" x-transition.opacity x-cloak
+         class="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="new-fu-modal-title">
+        <div @click.outside="showNewModal = false" class="card w-full max-w-2xl p-6 shadow-2xl">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-line">
+                <div>
+                    <h2 id="new-fu-modal-title" class="font-display font-semibold text-[17px]">Schedule Follow-up</h2>
+                    <p class="text-[12.5px] text-muted">Link an optional CRM customer, pick any channel, or create a custom one.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="showNewChannel = !showNewChannel" class="btn btn-ghost btn-sm">
+                        <i class="fa-solid fa-plus"></i> <span x-text="showNewChannel ? 'Existing channel' : 'Custom channel'"></span>
+                    </button>
+                    <button type="button" @click="showNewModal = false" class="btn btn-ghost btn-sm px-2.5 text-muted hover:text-ink" aria-label="Close">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <form method="post" action="{% url 'core:follow-up-create' %}" class="grid sm:grid-cols-2 gap-3.5 items-end">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+
+                <div class="field flex flex-col gap-1 sm:col-span-2">
+                    <label for="fu-title" class="caps">What to follow up on</label>
+                    <input type="text" id="fu-title" name="title" required placeholder="e.g. Confirm invoice #104 payment, Send design deck, Call client…">
+                </div>
+
+                {% if customers %}
+                <div class="field flex flex-col gap-1">
+                    <label for="fu-customer" class="caps">Customer (optional CRM link)</label>
+                    <select id="fu-customer" name="customer_id">
+                        <option value="">General / No customer</option>
+                        {% for c in customers %}
+                        <option value="{{ c.pk }}">{{ c.name }}{% if c.company %} · {{ c.company }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+
+                <div class="field flex flex-col gap-1" x-show="!showNewChannel">
+                    <label for="fu-channel" class="caps">Channel</label>
+                    <select id="fu-channel" name="channel">
+                        {% for ch in channels %}
+                        <option value="{{ ch.pk }}">{{ ch.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field flex flex-col gap-1" x-show="showNewChannel" x-cloak>
+                    <label for="fu-new-channel" class="caps">New channel name</label>
+                    <input type="text" id="fu-new-channel" name="new_channel_name" placeholder="e.g. LinkedIn, Slack, Billing…">
+                </div>
+
+                <div class="field flex flex-col gap-1">
+                    <label for="fu-due" class="caps">Due date &amp; time</label>
+                    <input type="datetime-local" id="fu-due" name="due_at" value="{{ default_due }}" required>
+                </div>
+
+                <div class="field flex flex-col gap-1">
+                    <label for="fu-priority" class="caps">Priority</label>
+                    <select id="fu-priority" name="priority">
+                        {% for val, label in priorities %}
+                        <option value="{{ val }}" {% if val == 'normal' %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field flex flex-col gap-1">
+                    <label for="fu-assignee" class="caps">Assign to</label>
+                    <select id="fu-assignee" name="assigned_to">
+                        {% for u in team_users %}
+                        <option value="{{ u.pk }}" {% if u.pk == request.user.pk %}selected{% endif %}>{{ u.get_full_name|default:u.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="field flex flex-col gap-1">
+                    <label for="fu-rel-url" class="caps">Link URL (optional)</label>
+                    <input type="text" id="fu-rel-url" name="related_url" placeholder="/crm/customers/1/ or https://…">
+                </div>
+
+                <div class="field flex flex-col gap-1 sm:col-span-2">
+                    <label for="fu-note" class="caps">Notes</label>
+                    <input type="text" id="fu-note" name="note" placeholder="Extra context or next steps…">
+                </div>
+
+                <div class="sm:col-span-2 flex justify-end gap-2 pt-2">
+                    <button type="button" @click="showNewModal = false" class="btn btn-ghost">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add Follow-up</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Channel Filter Pills & Search -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-1.5">
+            <a href="?status={{ status_filter }}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}"
+               class="pill border transition-colors {% if not channel_filter %}bg-accent text-on-accent border-accent{% else %}bg-surface border-line text-muted hover:text-ink{% endif %}">
+                All channels
+            </a>
+            {% for ch in channels %}
+            <a href="?status={{ status_filter }}&channel={{ ch.slug|urlencode }}{% if priority_filter %}&priority={{ priority_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}"
+               class="pill border transition-colors {% if channel_filter == ch.slug %}bg-accent text-on-accent border-accent{% else %}bg-surface border-line text-muted hover:text-ink{% endif %}">
+                <i class="{{ ch.icon }} text-[11px]"></i> {{ ch.name }}
+            </a>
+            {% endfor %}
+            {% if priority_filter %}
+            <a href="?status={{ status_filter }}{% if channel_filter %}&channel={{ channel_filter|urlencode }}{% endif %}{% if mine_filter %}&mine=1{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}"
+               class="pill bg-warn/15 text-warn border border-warn/30">
+                Priority: {{ priority_filter|title }} <i class="fa-solid fa-xmark ml-1 text-[10px]"></i>
+            </a>
+            {% endif %}
+        </div>
+
+        <form method="get" class="flex items-center gap-2">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            {% if channel_filter %}<input type="hidden" name="channel" value="{{ channel_filter }}">{% endif %}
+            {% if priority_filter %}<input type="hidden" name="priority" value="{{ priority_filter }}">{% endif %}
+            {% if mine_filter %}<input type="hidden" name="mine" value="1">{% endif %}
+            <div class="field w-60">
+                <label for="fu-search" class="sr-only">Search follow-ups</label>
+                <input type="search" id="fu-search" name="q" value="{{ q }}" placeholder="Search follow-ups…" class="!py-1.5 !text-[13px]">
+            </div>
+            {% if q or channel_filter or priority_filter or mine_filter %}
+            <a href="?status={{ status_filter }}" class="btn btn-ghost btn-sm">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Follow-ups List -->
+    <section class="card overflow-hidden">
+        {% if follow_ups %}
+        <ul class="divide-y divide-line">
+            {% for fu in follow_ups %}
+            <li class="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-subtle/40 transition-colors {% if fu.is_overdue %}border-l-4 border-l-bad bg-bad/5{% elif fu.priority == 'urgent' %}border-l-4 border-l-warn{% endif %}">
+                <div class="flex items-start gap-3.5 min-w-0 flex-1">
+                    <!-- Due Date Tile -->
+                    <div class="w-14 h-14 rounded-2xl border flex flex-col items-center justify-center shrink-0 text-center {% if fu.is_overdue %}border-bad/30 bg-bad/10{% else %}border-line bg-subtle/60{% endif %}">
+                        <span class="text-[10px] font-bold uppercase tracking-wider {% if fu.is_overdue %}text-bad{% else %}text-accent{% endif %}">{{ fu.due_at|date:"M" }}</span>
+                        <span class="font-display text-[19px] leading-tight font-bold tabular-nums text-ink">{{ fu.due_at|date:"d" }}</span>
+                        <span class="text-[10px] text-muted tabular-nums">{{ fu.due_at|date:"g:i A" }}</span>
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+                        <!-- Title + Badges -->
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-display font-semibold text-[15px] text-ink {% if fu.status == 'done' %}line-through text-muted{% endif %}">{{ fu.title }}</span>
+                            {% if fu.channel %}
+                            <span class="pill bg-subtle border border-line text-[11.5px]">
+                                <i class="{{ fu.channel.icon }} text-[10.5px] text-accent"></i> {{ fu.channel.name }}
+                            </span>
+                            {% endif %}
+                            {% if fu.entity_type %}
+                            <span class="pill bg-accent/10 text-accent text-[11px] uppercase tracking-wider">{{ fu.entity_type }}</span>
+                            {% endif %}
+                            {% if fu.priority == 'urgent' %}
+                            <span class="pill bg-bad/10 text-bad border border-bad/25">Urgent</span>
+                            {% elif fu.priority == 'high' %}
+                            <span class="pill bg-warn/10 text-warn border border-warn/25">High</span>
+                            {% endif %}
+                            {% if fu.is_overdue %}
+                            <span class="pill bg-bad/15 text-bad border border-bad/30 font-semibold"><i class="fa-solid fa-triangle-exclamation text-[10px] mr-1"></i>Overdue · {{ fu.due_at|naturaltime }}</span>
+                            {% elif fu.status == 'pending' %}
+                            <span class="pill bg-ok/10 text-ok border border-ok/20 text-[11.5px] tabular-nums">
+                                <i class="fa-regular fa-clock text-[10px] mr-1"></i>Due {{ fu.due_at|date:"D d M, g:i A" }} ({{ fu.due_at|naturaltime }})
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Notes -->
+                        {% if fu.note %}
+                        <p class="text-[13px] text-ink/80 mt-1.5 bg-subtle/50 border border-line/60 rounded-lg px-3 py-1.5 whitespace-pre-line">{{ fu.note }}</p>
+                        {% endif %}
+
+                        <!-- Provenance & Audit Info -->
+                        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted">
+                            <span title="When this follow-up was scheduled">
+                                <i class="fa-regular fa-calendar-plus mr-1"></i>Set {{ fu.created_at|date:"d M Y, g:i A" }} ({{ fu.created_at|naturaltime }})
+                            </span>
+                            <span>
+                                <i class="fa-solid fa-user-pen mr-1"></i>By: <strong class="text-ink/80">{% if fu.created_by %}{{ fu.created_by.get_full_name|default:fu.created_by.username }}{% else %}System / AI{% endif %}</strong>
+                            </span>
+                            {% if fu.assigned_to %}
+                            <span>
+                                <i class="fa-regular fa-user mr-1"></i>For: <strong class="text-ink/80">{{ fu.assigned_to.get_full_name|default:fu.assigned_to.username }}</strong>
+                            </span>
+                            {% endif %}
+                            {% if fu.related_label %}
+                                {% if fu.safe_related_url %}
+                                <a href="{{ fu.safe_related_url }}" class="text-accent hover:underline font-medium"><i class="fa-solid fa-arrow-up-right-from-square mr-1 text-[10.5px]"></i>{{ fu.related_label }}</a>
+                                {% else %}
+                                <span><i class="fa-solid fa-tag mr-1"></i>{{ fu.related_label }}</span>
+                                {% endif %}
+                            {% endif %}
+                            {% if fu.completed_at %}
+                            <span class="text-ok"><i class="fa-solid fa-circle-check mr-1"></i>Done {{ fu.completed_at|date:"d M, g:i A" }}</span>
+                            {% elif fu.notified_at %}
+                            <span><i class="fa-regular fa-bell mr-1 text-accent"></i>Alerted {{ fu.notified_at|naturaltime }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                {% if fu.status == 'pending' %}
+                <div class="flex items-center gap-1.5 shrink-0 flex-wrap" x-data="{ resched: false }" @click.outside="resched = false">
+                    <div class="relative">
+                        <button type="button" @click="resched = !resched" class="btn btn-ghost btn-sm" title="Reschedule">
+                            <i class="fa-regular fa-clock text-[11px]"></i> Reschedule <i class="fa-solid fa-chevron-down text-[9px] opacity-70"></i>
+                        </button>
+                        <form method="post" action="{% url 'core:follow-up-action' fu.pk %}" x-show="resched" x-transition x-cloak
+                              class="absolute right-0 mt-1.5 w-44 bg-surface border border-line rounded-xl shadow-card py-1 z-30 text-[12.5px]">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <input type="hidden" name="action" value="snooze">
+                            <button type="submit" name="hours" value="2" class="w-full text-left px-3 py-1.5 hover:bg-subtle text-ink">+2 hours</button>
+                            <button type="submit" name="hours" value="24" class="w-full text-left px-3 py-1.5 hover:bg-subtle text-ink">+24 hours</button>
+                            <button type="submit" name="preset" value="tomorrow" class="w-full text-left px-3 py-1.5 hover:bg-subtle text-ink">Tomorrow 10:00 AM</button>
+                            <button type="submit" name="preset" value="next_monday" class="w-full text-left px-3 py-1.5 hover:bg-subtle text-ink">Next Monday 10:00 AM</button>
+                        </form>
+                    </div>
+                    <form method="post" action="{% url 'core:follow-up-action' fu.pk %}" class="flex items-center gap-1.5">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <button type="submit" name="action" value="done" class="btn btn-primary btn-sm"><i class="fa-solid fa-check"></i> Done</button>
+                        <button type="submit" name="action" value="cancel" class="btn btn-ghost btn-sm text-bad px-2" title="Cancel" aria-label="Cancel follow-up"><i class="fa-solid fa-xmark"></i></button>
+                    </form>
+                </div>
+                {% else %}
+                <span class="pill bg-subtle border border-line shrink-0">{{ fu.get_status_display }}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        {% include "components/_empty_state.html" with icon="fa-clock" title="No follow-ups here" subtitle="Click '+ New Follow-up' above to schedule one — due items also alert you in the Notification Bell." %}
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const el = document.getElementById('followupTrendChart');
+    const dataEl = document.getElementById('followup-trend-data');
+    if (!el || !dataEl || !window.renderTrendChart) return;
+    const data = JSON.parse(dataEl.textContent);
+    const sum = a => a.reduce((t, v) => t + v, 0);
+    window.renderTrendChart(el, {
+        labels: data.labels,
+        legendEl: document.getElementById('followupTrendLegend'),
+        height: 192,
+        summary: `Follow-ups over the last ${data.labels.length} days: ${sum(data.scheduled)} scheduled, ${sum(data.completed)} completed.`,
+        series: [
+            { label: 'Scheduled', vals: data.scheduled, color: 'rgb(var(--accent))' },
+            { label: 'Completed', vals: data.completed, color: 'rgb(var(--ok))' },
+        ],
+    });
+})();
+</script>
+{% endblock %}

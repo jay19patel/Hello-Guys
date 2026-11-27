@@ -26,19 +26,58 @@
     </div>
 </header>
 
-{% if waiting_chats %}
-<section class="card p-4 border-bad/35 bg-bad/5 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-2.5 text-[13.5px]">
-        <span class="w-8 h-8 rounded-lg bg-bad/15 text-bad flex items-center justify-center shrink-0"><i class="fa-solid fa-bell"></i></span>
-        <span><b>{{ waiting_chats|length }} chat{{ waiting_chats|pluralize }}</b> waiting for a team member to take over.</span>
+{% if waiting_chats or pending_approvals %}
+<div class="flex flex-col gap-3">
+    {% if waiting_chats %}
+    <section class="card p-4 border-bad/35 bg-bad/5 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 text-[13.5px]">
+            <span class="w-8 h-8 rounded-lg bg-bad/15 text-bad flex items-center justify-center shrink-0"><i class="fa-solid fa-bell"></i></span>
+            <span><b>{{ waiting_chats|length }} chat{{ waiting_chats|pluralize }}</b> waiting for a team member to take over.</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            {% for t in waiting_chats|slice:":3" %}
+            <a href="{% url 'crm:inbox-thread' t.pk %}" class="btn btn-ghost btn-sm">{{ t.name|default:"Visitor" }} →</a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+    {% if pending_approvals %}
+    <section class="card p-4 border-warn/35 bg-warn/5 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 text-[13.5px]">
+            <span class="w-8 h-8 rounded-lg bg-warn/15 text-warn flex items-center justify-center shrink-0"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+            <span><b>{{ pending_approvals }} AI reply draft{{ pending_approvals|pluralize }}</b> awaiting review before sending on WhatsApp/Instagram.</span>
+        </div>
+        <a href="{% url 'dashboard-approvals' %}" class="btn btn-ghost btn-sm">Review Drafts →</a>
+    </section>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Row 0: REVENUE & BILLING -->
+<section aria-label="Revenue and forecasting" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="card p-4 flex flex-col gap-1">
+        <span class="caps">Open Pipeline Value</span>
+        <div class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">₹{{ revenue.pipeline_value|floatformat:0|intcomma }}</div>
+        <span class="text-[12px] text-muted">{{ stats.open }} open deal{{ stats.open|pluralize }}</span>
     </div>
-    <div class="flex flex-wrap gap-2">
-        {% for t in waiting_chats|slice:":3" %}
-        <a href="{% url 'crm:inbox-thread' t.pk %}" class="btn btn-ghost btn-sm">{{ t.name|default:"Visitor" }} →</a>
-        {% endfor %}
+    <div class="card p-4 flex flex-col gap-1">
+        <span class="caps">Weighted Forecast</span>
+        <div class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-accent">₹{{ revenue.weighted_value|floatformat:0|intcomma }}</div>
+        <span class="text-[12px] text-muted">Stage-probability weighted</span>
+    </div>
+    <div class="card p-4 flex flex-col gap-1">
+        <span class="caps">Won Revenue ({{ days }}d)</span>
+        <div class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ok">₹{{ revenue.won_period|floatformat:0|intcomma }}</div>
+        <span class="text-[12px] text-muted">All-time: ₹{{ revenue.won_total|floatformat:0|intcomma }}</span>
+    </div>
+    <div class="card p-4 flex flex-col gap-1 {% if revenue.overdue_pay %}border-bad/35 bg-bad/5{% endif %}">
+        <span class="caps">Payments Collected</span>
+        <div class="font-display text-[26px] leading-[32px] font-bold tabular-nums text-ink">₹{{ revenue.collected|floatformat:0|intcomma }}</div>
+        <span class="text-[12px] {% if revenue.overdue_pay %}text-bad font-semibold{% else %}text-muted{% endif %}">
+            ₹{{ revenue.pending_pay|floatformat:0|intcomma }} pending{% if revenue.overdue_pay %} · ₹{{ revenue.overdue_pay|floatformat:0|intcomma }} overdue{% endif %}
+        </span>
     </div>
 </section>
-{% endif %}
 
 <!-- Row 1: ACTIVITY KPIs -->
 <section aria-labelledby="act-kpi-title" class="flex flex-col gap-2.5">
@@ -95,11 +134,7 @@
                 <h2 class="font-display text-[16px] font-semibold text-ink">Daily Trend</h2>
                 <p class="text-[12.5px] text-muted">New customers, opportunities &amp; activities over the last 14 days.</p>
             </div>
-            <div class="flex items-center gap-3 text-[12px] text-muted">
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-indigo-500"></span> Customers</span>
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-violet-500"></span> Opportunities</span>
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Activities</span>
-            </div>
+            <div id="crmTrendLegend" class="flex flex-wrap items-center gap-1.5 text-[12px] text-muted"></div>
         </div>
         <div id="crmTrendChart" class="relative h-[220px] w-full"></div>
         {{ daily_trend|json_script:"crm-trend-data" }}
@@ -134,15 +169,20 @@
                 <h2 class="font-display text-[16px] font-semibold text-ink">Pipeline Stages</h2>
                 <p class="text-[12.5px] text-muted">Current breakdown across all opportunity stages.</p>
             </div>
-            <a href="{% url 'crm:opportunities' %}" class="text-[13px] font-medium text-accent hover:underline">Open Board →</a>
+            <div class="flex items-center gap-2">
+                {% if stale_opps %}
+                <span class="pill bg-warn/10 text-warn border border-warn/25 text-[11px]" title="Open deals with no activity in 7+ days">{{ stale_opps }} stale (7d+)</span>
+                {% endif %}
+                <a href="{% url 'crm:opportunities' %}" class="text-[13px] font-medium text-accent hover:underline">Open Board →</a>
+            </div>
         </div>
         <ul class="flex flex-col gap-3">
-            {% for label, count, value in pipeline %}
+            {% for label, count, value, stage_val in pipeline %}
             <li>
                 <a href="{% url 'crm:opportunities' %}?status={{ value }}" class="block group">
                     <div class="flex justify-between text-[13.5px]">
                         <span class="group-hover:text-accent transition-colors font-medium">{{ label }}</span>
-                        <span class="font-semibold tabular-nums">{{ count }}</span>
+                        <span class="font-semibold tabular-nums">{{ count }}{% if stage_val %} <span class="text-muted font-normal text-[12px]">· ₹{{ stage_val|floatformat:0|intcomma }}</span>{% endif %}</span>
                     </div>
                     <div class="h-2 mt-1.5 rounded-full bg-subtle overflow-hidden">
                         <div class="h-full bg-accent rounded-full max-w-full" style="width: {% widthratio count pipeline_total 100 %}%"></div>
@@ -159,13 +199,13 @@
                 <h2 class="font-display text-[16px] font-semibold text-ink">Do Next</h2>
                 <p class="text-[12.5px] text-muted">Scheduled follow-ups &amp; callbacks needing action.</p>
             </div>
-            <a href="{% url 'core:reminders' %}" class="text-[13px] font-medium text-accent hover:underline">Reminders →</a>
+            <a href="{% url 'core:follow-ups' %}" class="text-[13px] font-medium text-accent hover:underline">Follow-ups →</a>
         </div>
         <ul class="divide-y divide-line">
             {% for fu in do_next_followups %}
             <li class="py-2.5 flex items-center justify-between gap-3">
                 <div class="min-w-0">
-                    <a href="{% url 'crm:customer' fu.customer.pk %}" class="font-medium text-[13.5px] text-ink hover:text-accent truncate block">{{ fu.customer.name }} · {{ fu.note|default:fu.get_channel_display }}</a>
+                    <a href="{% url 'crm:customer' fu.customer.pk %}" class="font-medium text-[13.5px] text-ink hover:text-accent truncate block">{{ fu.customer.name }} · {{ fu.note|default:fu.title|default:fu.get_channel_display }}</a>
                     <p class="text-[12px] {% if fu.is_overdue %}text-bad font-semibold{% else %}text-muted{% endif %}">
                         {{ fu.get_channel_display }} · {% if fu.is_overdue %}Overdue ({{ fu.due_at|naturaltime }}){% else %}{{ fu.due_at|date:"d M, g:i A" }}{% endif %}
                     </p>
@@ -196,7 +236,7 @@
         {% if source_rows %}
         <div class="overflow-x-auto">
             <table class="w-full text-left text-[13.5px]">
-                <thead><tr class="table-head border-y border-line"><th>Source</th><th class="text-right">Customers</th><th class="text-right">Opps</th><th class="text-right">Won</th></tr></thead>
+                <thead><tr class="table-head border-y border-line"><th>Source</th><th class="text-right">Customers</th><th class="text-right">Opps</th><th class="text-right">Won</th><th class="text-right">Win %</th></tr></thead>
                 <tbody class="divide-y divide-line tabular-nums">
                     {% for row in source_rows %}
                     <tr class="hover:bg-subtle/50">
@@ -204,6 +244,9 @@
                         <td class="px-5 py-2.5 text-right">{{ row.customers }}</td>
                         <td class="px-5 py-2.5 text-right">{{ row.opportunities }}</td>
                         <td class="px-5 py-2.5 text-right font-semibold text-ok">{{ row.won }}</td>
+                        <td class="px-5 py-2.5 text-right">
+                            <span class="text-[12px] font-semibold {% if row.win_pct >= 25 %}text-ok{% elif row.win_pct > 0 %}text-ink{% else %}text-muted{% endif %}">{{ row.win_pct }}%</span>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -248,54 +291,20 @@
 (function () {
     const el = document.getElementById('crmTrendChart');
     const dataEl = document.getElementById('crm-trend-data');
-    if (!el || !dataEl) return;
+    if (!el || !dataEl || !window.renderTrendChart) return;
     const data = JSON.parse(dataEl.textContent);
-
-    function draw() {
-        const W = el.clientWidth || 560, H = el.clientHeight || 220;
-        const padL = 28, padR = 12, padT = 14, padB = 26;
-        const iw = W - padL - padR, ih = H - padT - padB;
-        const n = data.labels.length;
-        const allVals = [...data.customers, ...data.opportunities, ...data.activities, 1];
-        const maxV = Math.max(...allVals);
-        const step = Math.max(1, Math.ceil(maxV / 4));
-        const yMax = Math.ceil(maxV / step) * step;
-        const x = i => padL + (n > 1 ? (i / (n - 1)) * iw : iw / 2);
-        const y = v => padT + ih - (v / yMax) * ih;
-
-        let svg = `<svg width="${W}" height="${H}" class="block overflow-visible" aria-hidden="true">`;
-        for (let v = 0; v <= yMax; v += step) {
-            const yy = Math.round(y(v)) + 0.5;
-            svg += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" stroke="rgb(var(--line))" stroke-width="1"/>`;
-            svg += `<text x="${padL - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="rgb(var(--muted))">${v}</text>`;
-        }
-
-        const series = [
-            { vals: data.customers, color: '#6366f1' },
-            { vals: data.opportunities, color: '#8b5cf6' },
-            { vals: data.activities, color: '#10b981' },
-        ];
-        series.forEach(s => {
-            const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-            svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/>`;
-            s.vals.forEach((v, i) => {
-                if (v > 0) svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.2" fill="${s.color}"/>`;
-            });
-        });
-
-        const labelEvery = Math.ceil(n / 6);
-        data.labels.forEach((lbl, i) => {
-            if (i % labelEvery === 0 || i === n - 1) {
-                svg += `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="rgb(var(--muted))">${lbl}</text>`;
-            }
-        });
-        svg += '</svg>';
-        el.innerHTML = svg;
-    }
-
-    draw();
-    let t;
-    addEventListener('resize', () => { clearTimeout(t); t = setTimeout(draw, 120); });
+    const sum = a => a.reduce((t, v) => t + v, 0);
+    window.renderTrendChart(el, {
+        labels: data.labels,
+        legendEl: document.getElementById('crmTrendLegend'),
+        height: 220,
+        summary: `CRM activity over ${data.labels.length} days: ${sum(data.customers)} customers, ${sum(data.opportunities)} opportunities, ${sum(data.activities)} activities.`,
+        series: [
+            { label: 'Customers', vals: data.customers, color: 'rgb(var(--accent))' },
+            { label: 'Opportunities', vals: data.opportunities, color: 'rgb(var(--warn))' },
+            { label: 'Activities', vals: data.activities, color: 'rgb(var(--ok))' },
+        ],
+    });
 })();
 </script>
 {% endblock %}

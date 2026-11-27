@@ -61,16 +61,30 @@ async def run_stream(request: HttpRequest, run_id: UUID) -> HttpResponse:
 
     last_id = _valid_id(request.headers.get("Last-Event-ID")) or _valid_id(request.GET.get("after")) or "0-0"
     stream = _sse(run, last_id) if isinstance(request, ASGIRequest) else _sse_sync(run, last_id)
+    return _sse_response(stream)
+
+
+def _sse_response(stream) -> StreamingHttpResponse:
     response = StreamingHttpResponse(stream, content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
     return response
 
 
-async def _sse(run: Run, last_id: str) -> AsyncIterator[str]:
-    client = aioredis.Redis.from_url(
+def _async_redis() -> aioredis.Redis:
+    return aioredis.Redis.from_url(
         ai_settings.REDIS_URL, decode_responses=True, socket_timeout=events.XREAD_SOCKET_TIMEOUT
     )
+
+
+def _sync_redis() -> redis.Redis:
+    return redis.Redis.from_url(
+        ai_settings.REDIS_URL, decode_responses=True, socket_timeout=events.XREAD_SOCKET_TIMEOUT
+    )
+
+
+async def _sse(run: Run, last_id: str) -> AsyncIterator[str]:
+    client = _async_redis()
     try:
         settled = run.is_finished or run.status == Run.Status.PAUSED
         if settled and not await client.exists(events.stream_key(run.pk)):
@@ -86,7 +100,7 @@ async def _sse(run: Run, last_id: str) -> AsyncIterator[str]:
 
 
 def _sse_sync(run: Run, last_id: str) -> Iterator[str]:
-    client = redis.Redis.from_url(ai_settings.REDIS_URL, decode_responses=True, socket_timeout=events.XREAD_SOCKET_TIMEOUT)
+    client = _sync_redis()
     try:
         settled = run.is_finished or run.status == Run.Status.PAUSED
         if settled and not client.exists(events.stream_key(run.pk)):
@@ -111,20 +125,14 @@ async def thread_stream(request: HttpRequest, thread_id: UUID) -> HttpResponse:
         raise Http404
     key = events.thread_stream_key(thread_id)
     last_id = _valid_id(request.headers.get("Last-Event-ID")) or _valid_id(request.GET.get("after")) or "$"
-    if isinstance(request, ASGIRequest):
-        stream = _thread_sse(key, last_id)
-    else:
-        stream = _thread_sse_sync(key, last_id)
-    response = StreamingHttpResponse(stream, content_type="text/event-stream")
-    response["Cache-Control"] = "no-cache"
-    response["X-Accel-Buffering"] = "no"
-    return response
+    stream = _thread_sse(key, last_id) if isinstance(request, ASGIRequest) else _thread_sse_sync(key, last_id)
+    return _sse_response(stream)
 
 
 async def _thread_sse(key: str, last_id: str) -> AsyncIterator[str]:
-    client = aioredis.Redis.from_url(ai_settings.REDIS_URL, decode_responses=True, socket_timeout=events.XREAD_SOCKET_TIMEOUT)
+    client = _async_redis()
     try:
-        async for entry_id, event, data in events.iter_run_events(None, last_id, client=client, key=key, terminal=set()):
+        async for entry_id, event, data in events.iter_run_events(None, last_id, client=client, key=key, terminal=frozenset()):
             yield _frame(entry_id, event, data)
     except RedisError:
         logger.exception("Thread SSE failed for %s", key)
@@ -134,9 +142,9 @@ async def _thread_sse(key: str, last_id: str) -> AsyncIterator[str]:
 
 
 def _thread_sse_sync(key: str, last_id: str) -> Iterator[str]:
-    client = redis.Redis.from_url(ai_settings.REDIS_URL, decode_responses=True, socket_timeout=events.XREAD_SOCKET_TIMEOUT)
+    client = _sync_redis()
     try:
-        for entry_id, event, data in events.iter_run_events_sync(None, last_id, client, key=key, terminal=set()):
+        for entry_id, event, data in events.iter_run_events_sync(None, last_id, client, key=key, terminal=frozenset()):
             yield _frame(entry_id, event, data)
     except RedisError:
         logger.exception("Thread SSE failed for %s", key)

@@ -8,12 +8,12 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, F, Q, RestrictedError, Sum
 from django.db.models.functions import Coalesce
-from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView
 
+from core.safety import ActionsMixin
 from meta_connector.roles import ADMIN, AGENT, RoleRequiredMixin, get_role, has_role
 from pms import services
 from pms.forms import ProjectForm, TaskForm
@@ -34,21 +34,6 @@ class PMSView(RoleRequiredMixin):
             today=timezone.localdate(),
             **kwargs,
         )
-
-
-class ActionsMixin:
-    """POST action=<name> runs post_<name>() (dashes become underscores)."""
-
-    def post(self, request, *args, **kwargs):
-        if hasattr(self, "get_object"):
-            self.object = self.get_object()
-        handler = getattr(self, f"post_{request.POST.get('action', '').replace('-', '_')}", None)
-        if handler is None:
-            return HttpResponseBadRequest("Unknown action")
-        return handler()
-
-    def rerender(self, **forms):
-        return self.render_to_response(self.get_context_data(**forms))
 
 
 def compute_builder_slots(rows: list[dict]) -> dict[str, dict[str, int]]:

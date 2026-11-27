@@ -69,7 +69,8 @@ class ContactSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'first_seen', 'last_message_at']
 
     def get_message_count(self, obj) -> int:
-        return obj.messages.count()
+        # ContactListAPIView annotates msg_count to avoid N+1 queries.
+        return obj.msg_count if hasattr(obj, 'msg_count') else obj.messages.count()
 
 
 class MessageSerializer(serializers.ModelSerializer):

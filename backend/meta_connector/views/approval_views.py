@@ -3,10 +3,10 @@ import logging
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import ListView
 
+from core.safety import safe_next
 from meta_connector.models import PendingAIReply, PlatformAccount
 from meta_connector.roles import AGENT, RoleRequiredMixin
 from meta_connector.services import SendError, send_message
@@ -46,9 +46,7 @@ class ApprovalActionView(RoleRequiredMixin, View):
 
     def post(self, request, pk: int):
         item = get_object_or_404(PendingAIReply.objects.select_related('contact', 'platform_account'), pk=pk)
-        next_url = request.POST.get('next') or ''
-        if not url_has_allowed_host_and_scheme(next_url, {request.get_host()}, require_https=request.is_secure()):
-            next_url = 'dashboard-approvals'
+        next_url = safe_next(request, 'dashboard-approvals')
         action = request.POST.get('action')
 
         if item.status not in (PendingAIReply.STATUS_PENDING, PendingAIReply.STATUS_FAILED):

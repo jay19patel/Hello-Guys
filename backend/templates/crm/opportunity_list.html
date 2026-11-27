@@ -1,4 +1,5 @@
 {% extends "crm/base.html" %}
+{% load humanize %}
 {% block title %}Pipeline · CRM{% endblock %}
 {% block content %}
 <header class="flex flex-wrap items-end justify-between gap-3">
@@ -35,9 +36,12 @@
     <div class="grid grid-flow-col auto-cols-[minmax(260px,1fr)] gap-4" id="kanbanBoard" data-csrf="{{ csrf_token }}">
         {% for col in kanban_columns %}
         <section class="bg-subtle/60 border border-line rounded-2xl p-3 flex flex-col gap-3 min-h-[360px] transition-colors" data-drop-col="{{ col.value }}">
-            <div class="flex items-center justify-between px-1">
-                <h2 class="font-display font-semibold text-[13.5px] text-ink">{{ col.label }}</h2>
-                <span class="pill bg-surface border border-line text-muted tabular-nums" data-col-count>{{ col.items|length }}</span>
+            <div class="flex items-center justify-between px-1 gap-2">
+                <h2 class="font-display font-semibold text-[13.5px] text-ink truncate">{{ col.label }}</h2>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    {% if col.total_value %}<span class="text-[11px] font-semibold text-muted tabular-nums">₹{{ col.total_value|floatformat:0|intcomma }}</span>{% endif %}
+                    <span class="pill bg-surface border border-line text-muted tabular-nums" data-col-count>{{ col.items|length }}</span>
+                </div>
             </div>
             <div class="flex flex-col gap-2.5 flex-1" data-col-list>
                 {% for opp in col.items %}
@@ -55,6 +59,23 @@
                         {% if opp.service_list %}
                         <div class="flex flex-wrap gap-1 mt-1">
                             {% for svc in opp.service_list %}<span class="pill bg-accent/10 text-accent">{{ svc }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                        {% if opp.effective_value or opp.next_follow_up or opp.updated_at < stale_cutoff %}
+                        <div class="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px]">
+                            {% if opp.effective_value %}
+                            <span class="pill bg-ok/10 text-ok border border-ok/20 font-semibold tabular-nums">{{ opp.currency_symbol }}{{ opp.effective_value|floatformat:0|intcomma }}</span>
+                            {% endif %}
+                            {% if opp.next_follow_up %}
+                            <span class="pill {% if opp.next_follow_up < now %}bg-bad/10 text-bad border border-bad/25 font-semibold{% else %}bg-subtle border border-line text-muted{% endif %}">
+                                <i class="fa-regular fa-clock text-[9.5px] mr-1"></i>{% if opp.next_follow_up < now %}Overdue{% else %}{{ opp.next_follow_up|date:"d M, g:i A" }}{% endif %}
+                            </span>
+                            {% endif %}
+                            {% if opp.updated_at < stale_cutoff and opp.status != 'won' and opp.status != 'lost' %}
+                            <span class="pill bg-warn/10 text-warn border border-warn/25" title="No update in 7+ days">
+                                <i class="fa-solid fa-hourglass-half text-[9.5px] mr-1"></i>Idle {{ opp.updated_at|timesince }}
+                            </span>
+                            {% endif %}
                         </div>
                         {% endif %}
                     </div>

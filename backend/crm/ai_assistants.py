@@ -1,41 +1,29 @@
-"""CRM agents (autodiscovered by hello_guy_ai). Staff only: they work on customers' personal data."""
+"""CRM Sales & Lead Management AI assistant (autodiscovered by hello_guy_ai)."""
 
+from cms.ai_assistants import STYLE, StaffOnly
 from hello_guy_ai import AIAssistant
-
-STYLE = (
-    "Always reply in clear, professional English, even if the user writes in Hindi or Hinglish. "
-    "Format in Markdown: short paragraphs, lists for several items, tables for record lists, **bold** for key facts. "
-    "Never invent data: if a tool returns nothing, say so. Answer only the latest message."
-)
-
-
-class StaffOnly:
-    """Mixin: only staff users see and run this agent."""
-
-    @classmethod
-    def can_run(cls, user):
-        return super().can_run(user) and user.is_staff
 
 
 class SalesAssistant(StaffOnly, AIAssistant):
     id = "sales_assistant"
     name = "Sales Assistant"
-    description = "Triages what customers asked for (opportunities), drafts replies and updates their status."
+    description = "Triages customer inquiries and opportunities, schedules follow-ups, drafts replies and updates statuses."
     instructions = (
-        "You are the Sales Assistant. You help the team follow up on customers' opportunities quickly and well.\n"
-        "- list_opportunities shows them (status='open' for the pipeline); get_opportunity shows one with its "
-        "customer and timeline.\n"
+        "You are the Sales Assistant. You help the team triage leads and follow up on customer opportunities quickly.\n"
+        "- list_opportunities shows leads and opportunities (use status='open' for active pipeline or unreplied_only=true "
+        "for new inquiries); get_opportunity shows one in full with its services and timeline.\n"
         "- When summarising, give a table: reference, customer, service, title, date, status.\n"
-        "- Rate each opportunity's priority (High/Medium/Low) from budget, urgency and fit, and say why in one line.\n"
-        "- Draft reply emails as text for the user to send; you cannot send email yourself.\n"
-        "- Only call update_opportunity_status when the user says so (e.g. the reply was sent); it needs approval.\n"
-        "- list_customers answers questions about customers.\n"
+        "- Rate each lead's priority (High/Medium/Low) from budget, urgency and fit, and say why in one line.\n"
+        "- Draft reply emails as text for the user to send, OR call send_customer_email (approval required) when asked to send.\n"
+        "- Only call update_opportunity_status when the user confirms (e.g. reply was sent); it needs approval.\n"
+        "- Use create_follow_up (pass opportunity_reference when known) and list_follow_ups to manage callbacks; "
+        "list_customers and list_meetings answer questions about clients and upcoming meetings.\n"
         "- Customers' details are personal data: never repeat them outside this conversation.\n" + STYLE
     )
     suggestions = [
         "Show open opportunities",
         "Prioritise this month's opportunities",
-        "Draft a reply to the latest enquiry",
+        "Draft a reply to the latest inquiry",
         "Which customers have open opportunities?",
     ]
     temperature = 0.3
@@ -44,8 +32,9 @@ class SalesAssistant(StaffOnly, AIAssistant):
         "get_opportunity",
         "update_opportunity_status",
         "list_customers",
-        "schedule_follow_up",
-        "create_global_reminder",
-        "list_global_reminders",
+        "list_meetings",
+        "send_customer_email",
+        "create_follow_up",
+        "list_follow_ups",
         "send_global_notification",
     ]

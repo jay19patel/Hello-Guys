@@ -3,9 +3,9 @@ from django.contrib.auth.models import User
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 
+from core.safety import redirect_next
 from meta_connector.forms import MetaConfigForm, PlatformAccountForm, TeamMemberForm
 from meta_connector.models import MetaConfig, PlatformAccount
 from meta_connector.roles import ADMIN, ROLES, RoleRequiredMixin, get_role, set_role
@@ -26,8 +26,7 @@ class WebhookActionsView(RoleRequiredMixin, View):
         elif request.POST.get('action') == 'dismiss_signature':
             MetaConfig.objects.filter(pk=MetaConfig.get_solo().pk).update(signature_failures=0, last_signature_failure_at=None)
             messages.success(request, "Signature warning cleared.")
-        back = request.POST.get('next', '')
-        return redirect(back if url_has_allowed_host_and_scheme(back, {request.get_host()}) else 'dashboard')
+        return redirect_next(request, 'dashboard')
 
 
 class SettingsView(RoleRequiredMixin, View):

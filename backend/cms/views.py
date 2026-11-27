@@ -114,34 +114,54 @@ def check_maintenance(endpoint_name: str | None = None) -> Response | None:
     return None
 
 
-class SiteConfigAPIView(generics.RetrieveAPIView):
-    """
-    Returns global website branding, profile, contact, audio, and SEO configuration.
-    Endpoint: GET /api/cms/site-config/
-    """
-    serializer_class = SiteSettingsSerializer
+def _grouped_skills(skills_qs) -> dict[str, list[dict[str, str]]]:
+    """Group active TechSkill rows by category for API responses."""
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for s in skills_qs:
+        grouped.setdefault(s.category, []).append({'name': s.name, 'icon': s.icon_url})
+    return grouped
+
+
+class CachedCMSListView(generics.ListAPIView):
+    """Public unpaginated CMS list endpoint with maintenance gating and ETag caching."""
     permission_classes = [permissions.AllowAny]
+    pagination_class = None
+    maintenance_key: str | None = None
+
+    def list(self, request, *args, **kwargs):
+        if blocked := check_maintenance(self.maintenance_key):
+            return blocked
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return make_cached_response(serializer.data, request)
+
+
+class CachedCMSRetrieveView(generics.RetrieveAPIView):
+    """Public CMS detail endpoint with maintenance gating and ETag caching."""
+    permission_classes = [permissions.AllowAny]
+    maintenance_key: str | None = None
+
+    def retrieve(self, request, *args, **kwargs):
+        if blocked := check_maintenance(self.maintenance_key):
+            return blocked
+        serializer = self.get_serializer(self.get_object())
+        return make_cached_response(serializer.data, request)
+
+
+class SiteConfigAPIView(CachedCMSRetrieveView):
+    """GET /api/cms/site-config/ - global website branding, profile, contact, and SEO config."""
+    serializer_class = SiteSettingsSerializer
 
     def get_object(self):
         return SiteSettings.get_solo()
 
-    def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance)
-        return make_cached_response(serializer.data, request)
-
 
 class HomeOverviewAPIView(APIView):
-    """
-    Aggregated single-call endpoint for the Next.js Homepage.
-    Reduces latency by bundling hero solutions, featured projects, tools, testimonials & FAQs.
-    Endpoint: GET /api/cms/home-overview/
-    """
+    """GET /api/cms/home-overview/ - bundled homepage data."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        blocked = check_maintenance()
-        if blocked:
+        if blocked := check_maintenance():
             return blocked
 
         site_settings = SiteSettings.get_solo()
@@ -153,61 +173,29 @@ class HomeOverviewAPIView(APIView):
         videos = YouTubeVideo.objects.filter(is_active=True).order_by('order', '-created_at')[:3]
         workflow_steps = WorkflowStep.objects.filter(is_active=True).order_by('order', 'step_num')
 
-        # Group tools by category
-        grouped_tools = {}
-        for s in skills:
-            grouped_tools.setdefault(s.category, []).append({
-                'name': s.name,
-                'icon': s.icon_url,
-            })
-
         return make_cached_response({
             'site': SiteSettingsSerializer(site_settings).data,
             'solutions': SolutionSerializer(solutions, many=True).data,
             'featured_projects': ProjectListSerializer(projects, many=True).data,
             'workflow_steps': WorkflowStepSerializer(workflow_steps, many=True).data,
-            'tools': grouped_tools,
+            'tools': _grouped_skills(skills),
             'testimonials': TestimonialSerializer(testimonials, many=True).data,
             'faqs': FAQSerializer(faqs, many=True).data,
             'videos': YouTubeVideoSerializer(videos, many=True).data,
         }, request)
 
 
-class SolutionListAPIView(generics.ListAPIView):
-    """
-    List all active services / architecture solutions.
-    Endpoint: GET /api/cms/solutions/
-    """
+class SolutionListAPIView(CachedCMSListView):
+    """GET /api/cms/solutions/ - active services / architecture solutions."""
     serializer_class = SolutionSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
+    maintenance_key = 'projects'
     queryset = Solution.objects.filter(is_active=True).order_by('order', 'created_at')
 
-    def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('projects')
-        if blocked:
-            return blocked
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        return make_cached_response(serializer.data, request)
 
-
-class ProjectListAPIView(generics.ListAPIView):
-    """
-    List portfolio projects with optional ?category= and ?search= filtering.
-    Endpoint: GET /api/cms/projects/
-    """
+class ProjectListAPIView(CachedCMSListView):
+    """GET /api/cms/projects/ - portfolio projects with ?category=, ?search=, ?featured=."""
     serializer_class = ProjectListSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
-
-    def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('projects')
-        if blocked:
-            return blocked
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        return make_cached_response(serializer.data, request)
+    maintenance_key = 'projects'
 
     def get_queryset(self):
         qs = Project.objects.filter(is_active=True).order_by('order', '-created_at')
@@ -228,90 +216,45 @@ class ProjectListAPIView(generics.ListAPIView):
         return qs
 
 
-class ProjectDetailAPIView(generics.RetrieveAPIView):
-    """
-    Detailed project case study by slug with full overview, challenge, solution & structured sections.
-    Endpoint: GET /api/cms/projects/<slug>/
-    """
+class ProjectDetailAPIView(CachedCMSRetrieveView):
+    """GET /api/cms/projects/<slug>/ - project case study with structured sections."""
     serializer_class = ProjectDetailSerializer
-    permission_classes = [permissions.AllowAny]
+    maintenance_key = 'projects'
     queryset = Project.objects.filter(is_active=True).prefetch_related('sections')
     lookup_field = 'slug'
 
-    def retrieve(self, request, *args, **kwargs):
-        blocked = check_maintenance('projects')
-        if blocked:
-            return blocked
-        instance = self.get_object()
-        serializer = self.get_serializer(instance)
-        return make_cached_response(serializer.data, request)
 
-
-class TechSkillListAPIView(generics.ListAPIView):
-    """
-    List developer tech stack skills & tools. If ?grouped=1, returns dictionary grouped by category.
-    Endpoint: GET /api/cms/skills/
-    """
+class TechSkillListAPIView(CachedCMSListView):
+    """GET /api/cms/skills/ - tech stack skills (?grouped=1 returns dict by category)."""
     serializer_class = TechSkillSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
+    maintenance_key = 'skills'
 
     def get_queryset(self):
         qs = TechSkill.objects.filter(is_active=True).order_by('category', 'proficiency_order')
         category = self.request.query_params.get('category', '').strip()
-        if category:
-            qs = qs.filter(category=category)
-        return qs
+        return qs.filter(category=category) if category else qs
 
     def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('skills')
-        if blocked:
+        if request.query_params.get('grouped', '').strip().lower() not in ('1', 'true', 'yes'):
+            return super().list(request, *args, **kwargs)
+        if blocked := check_maintenance(self.maintenance_key):
             return blocked
-        grouped = request.query_params.get('grouped', '').strip().lower() in ('1', 'true', 'yes')
-        if not grouped:
-            queryset = self.filter_queryset(self.get_queryset())
-            serializer = self.get_serializer(queryset, many=True)
-            return make_cached_response(serializer.data, request)
-
-        skills = self.get_queryset()
-        data = {}
-        for skill in skills:
-            data.setdefault(skill.category, []).append({
-                'name': skill.name,
-                'icon': skill.icon_url,
-            })
-        return make_cached_response(data, request)
+        return make_cached_response(_grouped_skills(self.get_queryset()), request)
 
 
-class WorkflowStepListAPIView(generics.ListAPIView):
-    """
-    List Startup & AI Execution Flow steps shown on Homepage.
-    Endpoint: GET /api/cms/workflow-steps/
-    """
+class WorkflowStepListAPIView(CachedCMSListView):
+    """GET /api/cms/workflow-steps/ - Startup & AI Execution Flow steps."""
     serializer_class = WorkflowStepSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
+    maintenance_key = 'workflow'
     queryset = WorkflowStep.objects.filter(is_active=True).order_by('order', 'step_num')
-
-    def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('workflow')
-        if blocked:
-            return blocked
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        return make_cached_response(serializer.data, request)
 
 
 class AboutContentAPIView(APIView):
-    """
-    Aggregated dynamic content for the About Page (Hero, Studio Profile, Stats, Blocks, Mission, Vision).
-    Endpoint: GET /api/cms/about/
-    """
+    """GET /api/cms/about/ - aggregated dynamic content for the About Page."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        blocked = check_maintenance('about')
-        if blocked:
+        if blocked := check_maintenance('about'):
             return blocked
 
         profile = AboutProfile.get_solo()
@@ -319,100 +262,43 @@ class AboutContentAPIView(APIView):
         blocks = AboutBlock.objects.filter(is_active=True).order_by('order', 'created_at')
         skills = TechSkill.objects.filter(is_active=True).order_by('category', 'proficiency_order')
 
-        grouped_tools = {}
-        for s in skills:
-            grouped_tools.setdefault(s.category, []).append({
-                'name': s.name,
-                'icon': s.icon_url,
-            })
-
         return make_cached_response({
             'profile': AboutProfileSerializer(profile).data,
             'stats': AboutStatSerializer(stats, many=True).data,
             'blocks': AboutBlockSerializer(blocks, many=True).data,
-            'skills': grouped_tools,
+            'skills': _grouped_skills(skills),
         }, request)
 
 
-class TestimonialListAPIView(generics.ListAPIView):
-    """
-    List testimonials and client reviews.
-    Endpoint: GET /api/cms/testimonials/
-    """
+class TestimonialListAPIView(CachedCMSListView):
+    """GET /api/cms/testimonials/ - client reviews."""
     serializer_class = TestimonialSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
+    maintenance_key = 'testimonials'
     queryset = Testimonial.objects.filter(is_active=True).order_by('order', '-created_at')
 
-    def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('testimonials')
-        if blocked:
-            return blocked
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        return make_cached_response(serializer.data, request)
 
-
-class FAQListAPIView(generics.ListAPIView):
-    """
-    List FAQs with optional category filter (?category=...).
-    Endpoint: GET /api/cms/faqs/
-    """
+class FAQListAPIView(CachedCMSListView):
+    """GET /api/cms/faqs/ - FAQs with optional ?category=."""
     serializer_class = FAQSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
-
-    def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('faqs')
-        if blocked:
-            return blocked
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        return make_cached_response(serializer.data, request)
+    maintenance_key = 'faqs'
 
     def get_queryset(self):
         qs = FAQ.objects.filter(is_active=True).order_by('order', 'id')
         category = self.request.query_params.get('category', '').strip()
-        if category and category.lower() != 'all':
-            qs = qs.filter(category__iexact=category)
-        return qs
+        return qs.filter(category__iexact=category) if category and category.lower() != 'all' else qs
 
 
-class YouTubeVideoListAPIView(generics.ListAPIView):
-    """
-    List YouTube video tutorials.
-    Endpoint: GET /api/cms/videos/
-    """
+class YouTubeVideoListAPIView(CachedCMSListView):
+    """GET /api/cms/videos/ - YouTube video tutorials."""
     serializer_class = YouTubeVideoSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
+    maintenance_key = 'videos'
     queryset = YouTubeVideo.objects.filter(is_active=True).order_by('order', '-created_at')
 
-    def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('videos')
-        if blocked:
-            return blocked
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        return make_cached_response(serializer.data, request)
 
-
-class BlogPostListAPIView(generics.ListAPIView):
-    """
-    List published blog posts with search and category filtering.
-    Endpoint: GET /api/cms/blog/
-    """
+class BlogPostListAPIView(CachedCMSListView):
+    """GET /api/cms/blog/ - published blog posts with ?category= and ?search=."""
     serializer_class = BlogPostListSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
-
-    def list(self, request, *args, **kwargs):
-        blocked = check_maintenance('blog')
-        if blocked:
-            return blocked
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        return make_cached_response(serializer.data, request)
+    maintenance_key = 'blog'
 
     def get_queryset(self):
         qs = BlogPost.objects.filter(is_published=True).order_by('-published_at', '-created_at')
@@ -503,20 +389,11 @@ class BlogPostEngagementAPIView(APIView):
         return BlogPost.objects.filter(slug=slug, is_published=True).first() or \
                BlogPost.objects.filter(pk=int(slug) if slug.isdigit() else -1, is_published=True).first()
 
-    def get(self, request, slug, *args, **kwargs):
-        blocked = check_maintenance('blog')
-        if blocked:
-            return blocked
-
-        post = self.get_post(slug)
-        if not post:
-            return Response({'error': 'Article not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        visitor_hash, visitor_name = get_visitor_info(request)
+    def _engagement_response(self, post: BlogPost, visitor_hash: str, visitor_name: str, *, liked: bool | None = None) -> Response:
         likes_count = BlogLike.objects.filter(post=post).count()
-        liked = BlogLike.objects.filter(post=post, author_hash=visitor_hash).exists()
+        if liked is None:
+            liked = BlogLike.objects.filter(post=post, author_hash=visitor_hash).exists()
         comments = BlogComment.objects.filter(post=post, is_approved=True).order_by('created_at')
-
         return Response({
             'likes': likes_count,
             'liked': liked,
@@ -524,11 +401,18 @@ class BlogPostEngagementAPIView(APIView):
             'me': visitor_name,
         })
 
-    def post(self, request, slug, *args, **kwargs):
-        blocked = check_maintenance('blog')
-        if blocked:
+    def get(self, request, slug, *args, **kwargs):
+        if blocked := check_maintenance('blog'):
             return blocked
+        post = self.get_post(slug)
+        if not post:
+            return Response({'error': 'Article not found.'}, status=status.HTTP_404_NOT_FOUND)
+        visitor_hash, visitor_name = get_visitor_info(request)
+        return self._engagement_response(post, visitor_hash, visitor_name)
 
+    def post(self, request, slug, *args, **kwargs):
+        if blocked := check_maintenance('blog'):
+            return blocked
         post = self.get_post(slug)
         if not post:
             return Response({'error': 'Article not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -540,63 +424,32 @@ class BlogPostEngagementAPIView(APIView):
             like, created = BlogLike.objects.get_or_create(post=post, author_hash=visitor_hash)  # race-safe
             if not created:
                 like.delete()
-            liked = created
-
             total_likes = BlogLike.objects.filter(post=post).count()
             BlogPost.objects.filter(pk=post.pk).update(likes_count=total_likes)
-            comments = BlogComment.objects.filter(post=post, is_approved=True).order_by('created_at')
-
-            return Response({
-                'likes': total_likes,
-                'liked': liked,
-                'comments': BlogCommentSerializer(comments, many=True).data,
-                'me': visitor_name,
-            })
+            return self._engagement_response(post, visitor_hash, visitor_name, liked=created)
 
         if action == 'comment':
             text = request.data.get('text')
             text = text.strip() if isinstance(text, str) else ''
             if not text or len(text) > 1000:
-                return Response(
-                    {'error': 'Comment must be between 1 and 1000 characters.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({'error': 'Comment must be between 1 and 1000 characters.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 15s cooldown check per visitor hash
-            cooldown_time = timezone.now() - timedelta(seconds=15)
-            recent_comment = BlogComment.objects.filter(
-                post=post,
-                author_hash=visitor_hash,
-                created_at__gte=cooldown_time
-            ).exists()
-            if recent_comment:
-                return Response(
-                    {'error': 'Please wait a few seconds before commenting again.'},
-                    status=status.HTTP_429_TOO_MANY_REQUESTS
-                )
+            if BlogComment.objects.filter(
+                post=post, author_hash=visitor_hash, created_at__gte=timezone.now() - timedelta(seconds=15)
+            ).exists():
+                return Response({'error': 'Please wait a few seconds before commenting again.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
             author = request.data.get('author')
             author = author.strip() if isinstance(author, str) else ''
             if len(author) > 100:
                 return Response({'error': 'Name must be at most 100 characters.'}, status=status.HTTP_400_BAD_REQUEST)
-            author = author or visitor_name
             BlogComment.objects.create(
                 post=post,
-                author_name=author,
+                author_name=author or visitor_name,
                 author_hash=visitor_hash,
                 text=text,
                 is_approved=True,
             )
-
-            total_likes = BlogLike.objects.filter(post=post).count()
-            liked = BlogLike.objects.filter(post=post, author_hash=visitor_hash).exists()
-            comments = BlogComment.objects.filter(post=post, is_approved=True).order_by('created_at')
-
-            return Response({
-                'likes': total_likes,
-                'liked': liked,
-                'comments': BlogCommentSerializer(comments, many=True).data,
-                'me': visitor_name,
-            })
+            return self._engagement_response(post, visitor_hash, visitor_name)
 
         return Response({'error': 'Invalid action.'}, status=status.HTTP_400_BAD_REQUEST)

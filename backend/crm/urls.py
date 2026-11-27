@@ -1,6 +1,7 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
+from core import views as core_views
 from crm import views
 
 app_name = "crm"
@@ -14,9 +15,9 @@ urlpatterns = [
     path("customers/", views.CustomerListView.as_view(), name="customers"),
     path("customers/new/", views.CustomerCreateView.as_view(), name="customer-create"),
     path("customers/<int:pk>/", views.CustomerDetailView.as_view(), name="customer"),
-    path("follow-ups/", views.FollowUpListView.as_view(), name="follow-ups"),
-    path("follow-ups/new/", views.FollowUpCreateView.as_view(), name="follow-up-create"),
-    path("follow-ups/<int:pk>/action/", views.FollowUpActionView.as_view(), name="follow-up-action"),
+    path("follow-ups/", RedirectView.as_view(pattern_name="core:follow-ups", query_string=True), name="follow-ups"),
+    path("follow-ups/new/", core_views.FollowUpCreateView.as_view(), name="follow-up-create"),
+    path("follow-ups/<int:pk>/action/", core_views.FollowUpActionView.as_view(), name="follow-up-action"),
     path("meetings/", views.MeetingListView.as_view(), name="meetings"),
     path("meetings/new/", views.MeetingCreateView.as_view(), name="meeting-create"),
     path("meetings/sync/", views.MeetingSyncView.as_view(), name="meetings-sync"),

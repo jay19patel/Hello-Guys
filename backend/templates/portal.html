@@ -58,7 +58,7 @@
     <!-- Main Module Selector -->
     <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-10 sm:py-16 flex flex-col justify-center">
         <!-- Hero Title -->
-        <div class="text-center max-w-2xl mx-auto mb-12">
+        <div class="text-center max-w-2xl mx-auto mb-8">
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-accent/10 text-accent border border-accent/20 mb-3">
                 <i class="fa-solid fa-cubes text-[10px]"></i> Workspace Launcher
             </span>
@@ -69,6 +69,43 @@
                 Open the Meta inbox, the CRM or the NJTechStudio content studio.
             </p>
         </div>
+
+        <!-- Needs Attention Today Strip -->
+        {% if attention.overdue_followups or attention.today_followups or attention.waiting_chats or attention.pending_approvals or attention.meetings_today %}
+        <div class="max-w-7xl mx-auto w-full mb-8 card px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-surface/90">
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                <span class="w-2 h-2 rounded-full bg-warn animate-pulse"></span>
+                <span>Needs Attention Today</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-[12.5px]">
+                {% if attention.overdue_followups %}
+                <a href="{% url 'core:follow-ups' %}?status=overdue" class="pill bg-bad/10 text-bad border border-bad/25 hover:bg-bad/15 transition-colors font-semibold">
+                    <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> {{ attention.overdue_followups }} overdue follow-up{{ attention.overdue_followups|pluralize }}
+                </a>
+                {% endif %}
+                {% if attention.today_followups %}
+                <a href="{% url 'core:follow-ups' %}?status=today" class="pill bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 transition-colors font-semibold">
+                    <i class="fa-regular fa-clock text-[10px]"></i> {{ attention.today_followups }} due today
+                </a>
+                {% endif %}
+                {% if attention.waiting_chats %}
+                <a href="{% url 'crm:inbox' %}" class="pill bg-warn/10 text-warn border border-warn/25 hover:bg-warn/15 transition-colors font-semibold">
+                    <i class="fa-solid fa-comments text-[10px]"></i> {{ attention.waiting_chats }} waiting live chat{{ attention.waiting_chats|pluralize }}
+                </a>
+                {% endif %}
+                {% if attention.pending_approvals %}
+                <a href="{% url 'dashboard-approvals' %}" class="pill bg-warn/10 text-warn border border-warn/25 hover:bg-warn/15 transition-colors font-semibold">
+                    <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i> {{ attention.pending_approvals }} AI approval{{ attention.pending_approvals|pluralize }}
+                </a>
+                {% endif %}
+                {% if attention.meetings_today %}
+                <a href="{% url 'crm:meetings' %}" class="pill bg-ok/10 text-ok border border-ok/25 hover:bg-ok/15 transition-colors font-semibold">
+                    <i class="fa-solid fa-calendar-days text-[10px]"></i> {{ attention.meetings_today }} meeting{{ attention.meetings_today|pluralize }} today
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Modules Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-7xl mx-auto w-full">
@@ -233,15 +270,27 @@
         <div class="mt-12 max-w-7xl mx-auto w-full pt-8 border-t border-line flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted">
             <div class="flex items-center gap-4 flex-wrap">
                 <span class="font-semibold text-ink">Quick Tools:</span>
+                <a href="{% url 'core:follow-ups' %}" class="hover:text-ink transition-colors flex items-center gap-1.5">
+                    <i class="fa-regular fa-clock"></i> Follow-ups
+                </a>
+                <span class="text-line">|</span>
+                <a href="{% url 'pms:projects' %}" class="hover:text-ink transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-diagram-project"></i> Projects
+                </a>
+                <span class="text-line">|</span>
+                <a href="{% url 'hello_guy_ai_analytics' %}" class="hover:text-ink transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-chart-line"></i> AI Analytics
+                </a>
+                <span class="text-line">|</span>
                 <a href="/admin/" class="hover:text-ink transition-colors flex items-center gap-1.5">
                     <i class="fa-solid fa-database"></i> Django Admin
                 </a>
                 <span class="text-line">|</span>
-                <a href="/api/meta/" target="_blank" class="hover:text-ink transition-colors flex items-center gap-1.5">
+                <a href="/api/meta/" target="_blank" rel="noopener noreferrer" class="hover:text-ink transition-colors flex items-center gap-1.5">
                     <i class="fa-solid fa-code"></i> Meta API
                 </a>
                 <span class="text-line">|</span>
-                <a href="/api/cms/home-overview/" target="_blank" class="hover:text-ink transition-colors flex items-center gap-1.5">
+                <a href="/api/cms/home-overview/" target="_blank" rel="noopener noreferrer" class="hover:text-ink transition-colors flex items-center gap-1.5">
                     <i class="fa-solid fa-code"></i> CMS API
                 </a>
             </div>

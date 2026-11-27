@@ -25,7 +25,7 @@ def test_website_bot_is_locked_down(bot):
     tools = registered_tools()
     with tool_context(ToolContext(user=bot, agent_key="website_assistant")):
         assert "draft" not in tools["search_blog_posts"].call({})  # visitors never see drafts
-        assert tools["list_inquiries"].call({}).startswith("Error: You don't have permission")
+        assert tools["list_opportunities"].call({}).startswith("Error: You don't have permission")
         assert tools["create_blog_draft"].call({"title": "t", "content": "c"}).startswith("Error: You don't have permission")
 
 
@@ -55,7 +55,7 @@ def test_bot_can_create_inquiries_in_crm_but_nothing_else_there(bot):
         tools = registered_tools()
         out = tools["create_inquiry"].call({"name": "Ravi", "email": "ravi@example.com", "message": "I need a chatbot"})
         assert '"status": "received"' in out
-        assert tools["get_inquiry"].call({"inquiry_id": "opp_x"}).startswith("Error: You don't have permission")
+        assert tools["get_opportunity"].call({"reference": "opp_x"}).startswith("Error: You don't have permission")
     assert Opportunity.objects.get().customer.email == "ravi@example.com"
 
 

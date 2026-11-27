@@ -8,7 +8,7 @@ Channels: in-app always. Other channels connect to `notification_created` (email
 """
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -68,6 +68,52 @@ def plan(*, due_at: str | None, recurrence: str | None, tz: ZoneInfo, now: datet
     if recurrence:
         return next_occurrence(recurrence, tz, now)
     raise ValueError("Give a date-time (due_at) or a recurrence")
+
+
+def resolve_requested_slot(
+    *, date_str: str, time_str: str = "", tz: ZoneInfo, now: datetime | None = None
+) -> tuple[datetime, bool]:
+    """Resolve a requested date (+ optional time) into (reminder_datetime, is_day_before).
+
+    When a visitor gives a date AND time (e.g. 2026-12-24 + 17:00), returns that exact slot (`is_day_before=False`).
+    When only a date is given (no time), schedules a preparation/confirmation reminder the day before at 10:00 AM
+    (or `now + 1h` if 10:00 AM the day before has already passed), returning `is_day_before=True`.
+    """
+    now = now or timezone.now()
+    now_local = now.astimezone(tz)
+    raw_date = (date_str or "").strip()
+    raw_time = (time_str or "").strip()
+
+    # Handle full ISO datetime passed in date_str (e.g. "2026-12-24T17:00")
+    if "T" in raw_date or " " in raw_date:
+        due = parse_local(raw_date, tz)
+        if due <= now:
+            raise ValueError(f"That time has already passed (it is now {now_local:%Y-%m-%d %H:%M} {tz.key}).")
+        return due, False
+
+    try:
+        target_date = date.fromisoformat(raw_date)
+    except ValueError:
+        raise ValueError(f"'{raw_date}' is not a valid date like 2026-12-24") from None
+
+    if raw_time:
+        try:
+            parsed_time = time.fromisoformat(raw_time)
+        except ValueError:
+            raise ValueError(f"'{raw_time}' is not a valid 24h time like 17:00") from None
+        due = datetime.combine(target_date, parsed_time, tzinfo=tz)
+        if due <= now:
+            raise ValueError(f"That time has already passed (it is now {now_local:%Y-%m-%d %H:%M} {tz.key}).")
+        return due, False
+
+    if target_date < now_local.date():
+        raise ValueError(f"'{raw_date}' is already in the past (today is {now_local:%Y-%m-%d}).")
+
+    day_before = datetime.combine(target_date - timedelta(days=1), time(10, 0), tzinfo=tz)
+    if day_before <= now:
+        # Day-before 10:00 AM already passed (e.g. visitor asked today for tomorrow): alert today +1h.
+        day_before = (now_local + timedelta(hours=1)).replace(second=0, microsecond=0)
+    return day_before, True
 
 
 def describe(due: datetime, tz: ZoneInfo, recurrence: str = "", now: datetime | None = None) -> str:

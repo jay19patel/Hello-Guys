@@ -1,4 +1,4 @@
-"""Tests for the platform-wide GlobalNotification and GlobalFollowUp systems in core."""
+"""Tests for the platform-wide GlobalNotification and FollowUp systems in core."""
 
 from datetime import timedelta
 
@@ -6,8 +6,8 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from core import reminders as followups, notifications
-from core.models import FollowUpChannel, GlobalFollowUp, GlobalNotification
+from core import follow_ups as followups, notifications
+from core.models import FollowUpChannel, FollowUp, GlobalNotification
 
 pytestmark = pytest.mark.django_db
 
@@ -95,7 +95,7 @@ def test_global_followups_custom_channel_and_notification_bell(client, django_us
     assert bell["followups_due_count"] == 1
     assert len(bell["followups"]) == 1
     assert bell["followups"][0]["channel"] == "Slack DM"
-    assert any(i["category"] == "followup" and "Reminder due" in i["title"] for i in bell["items"])
+    assert any(i["category"] == "followup" and "Follow-up due" in i["title"] for i in bell["items"])
 
     # 1-click mark done from the Notification Bell
     done_res = client.post(
@@ -103,7 +103,7 @@ def test_global_followups_custom_channel_and_notification_bell(client, django_us
         data={"action": "done"},
         content_type="application/json",
     )
-    assert done_res.status_code == 200 and done_res.json()["status"] == GlobalFollowUp.Status.DONE
+    assert done_res.status_code == 200 and done_res.json()["status"] == FollowUp.Status.DONE
 
 
 # ---- security / logic fixes ----
@@ -121,7 +121,7 @@ def test_unsafe_urls_are_dropped(django_user_model, bad):
     user = _agent(django_user_model)
     fu = followups.schedule_follow_up(title="x", due_at=timezone.now(), assigned_to=user, related_url=bad)
     assert fu.related_url == ""
-    assert GlobalNotification.objects.get(user=user).url == "/reminders/"
+    assert GlobalNotification.objects.get(user=user).url == "/follow-ups/"
     assert notifications.notify(user, "t", url=bad).url == ""
 
 
@@ -134,7 +134,7 @@ def test_safe_urls_are_kept(django_user_model):
 def test_open_redirect_is_blocked(client, django_user_model):
     client.force_login(_agent(django_user_model))
     res = client.post(reverse("core:reminder-create"), {"title": "", "next": "https://evil.example"})
-    assert res.url == reverse("core:reminders")
+    assert res.url == reverse("core:follow-ups")
     res = client.post(reverse("core:reminder-create"), {"title": "", "next": "/crm/"})
     assert res.url == "/crm/"
 
@@ -142,14 +142,14 @@ def test_open_redirect_is_blocked(client, django_user_model):
 def test_invalid_due_at_is_an_error_not_plus_24h(client, django_user_model):
     client.force_login(_agent(django_user_model))
     client.post(reverse("core:reminder-create"), {"title": "x", "due_at": "garbage"})
-    assert not GlobalFollowUp.objects.exists()
+    assert not FollowUp.objects.exists()
 
 
 def test_reminders_need_a_role_and_are_scoped(client, django_user_model):
     from meta_connector.roles import ADMIN, set_role
 
     owner, other = _agent(django_user_model, "owner"), _agent(django_user_model, "other")
-    mine = followups.schedule_follow_up(title="mine", due_at=timezone.now(), assigned_to=owner, created_by=owner)
+    mine = followups.schedule_follow_up(title="Owner secret follow-up", due_at=timezone.now(), assigned_to=owner, created_by=owner)
     # roleless user: 403
     client.force_login(django_user_model.objects.create_user("nobody", "n@example.com", "pass12345"))
     assert client.get(reverse("core:reminders")).status_code == 403
@@ -177,14 +177,14 @@ def test_bad_integers_do_not_500(client, django_user_model):
 def test_due_notification_is_claimed_once(django_user_model):
     user = _agent(django_user_model)
     followups.schedule_follow_up(title="due", due_at=timezone.now() - timedelta(minutes=1), assigned_to=user, notify_now=False)
-    orphan = GlobalFollowUp.objects.create(title="orphan", due_at=timezone.now() - timedelta(minutes=1))
+    orphan = FollowUp.objects.create(title="orphan", due_at=timezone.now() - timedelta(minutes=1))
     assert followups.notify_due_follow_ups() == 1
     assert followups.notify_due_follow_ups() == 0
     orphan.refresh_from_db()
     assert orphan.notified_at is not None
 
 
-def test_public_reminder_tool_is_restricted(django_user_model, monkeypatch):
+def test_public_follow_up_tool_is_restricted(django_user_model, monkeypatch):
     from types import SimpleNamespace
 
     from core import ai_tools
@@ -194,9 +194,9 @@ def test_public_reminder_tool_is_restricted(django_user_model, monkeypatch):
     visitor = django_user_model.objects.create_user("website-bot", "w@example.com", "pass12345")
     ctx = SimpleNamespace(user=visitor, run_id=None, timezone="Asia/Kolkata")
     monkeypatch.setattr(ai_tools, "current_context", lambda: ctx)
-    fn = ai_tools.create_global_reminder.__wrapped__ if hasattr(ai_tools.create_global_reminder, "__wrapped__") else ai_tools.create_global_reminder
+    fn = ai_tools.create_follow_up.__wrapped__ if hasattr(ai_tools.create_follow_up, "__wrapped__") else ai_tools.create_follow_up
     out = fn(title="Call me", channel="Brand New Channel", priority="urgent")
-    fu = GlobalFollowUp.objects.get(pk=out["reminder_id"])
+    fu = FollowUp.objects.get(pk=out["follow_up_id"])
     assert fu.priority == "normal" and out["channel"] == "General"
     assert not FollowUpChannel.objects.filter(name="Brand New Channel").exists()
     with pytest.raises(ToolError):
@@ -205,3 +205,57 @@ def test_public_reminder_tool_is_restricted(django_user_model, monkeypatch):
         fn(title="x", due_at="not a date")
     with pytest.raises(ToolError):
         fn(title="x", hours_from_now=0)
+
+
+def test_ai_notification_bridges_to_global_notification_bell(django_user_model, django_capture_on_commit_callbacks):
+    from hello_guy_ai.services import reminders as ai_reminders
+
+    user = _agent(django_user_model, "bellbridge")
+    with django_capture_on_commit_callbacks(execute=True):
+        ai_reminders.notify(user, "Weekly report ready", body="All metrics updated")
+    gn = GlobalNotification.objects.filter(user=user, category="ai").get()
+    assert gn.title == "Weekly report ready"
+    assert gn.body == "All metrics updated"
+
+
+def test_followup_today_priority_filters_tomorrow_snooze_and_quick_search(client, django_user_model):
+    from crm.models import Customer, Opportunity
+
+    agent = _agent(django_user_model, "searcher")
+    cust = Customer.objects.create(name="Kiran Patel", email="kiran@example.com")
+    opp = Opportunity.objects.create(customer=cust, title="ERP rollout")
+    today_fu = followups.schedule_follow_up(
+        title="Call Kiran today",
+        due_at=timezone.now() + timedelta(minutes=20),
+        priority=FollowUp.Priority.URGENT,
+        assigned_to=agent,
+        created_by=agent,
+        customer=cust,
+        opportunity=opp,
+        notify_now=False,
+    )
+    later_fu = followups.schedule_follow_up(
+        title="Next week check",
+        due_at=timezone.now() + timedelta(days=5),
+        priority=FollowUp.Priority.LOW,
+        assigned_to=agent,
+        created_by=agent,
+        notify_now=False,
+    )
+
+    client.force_login(agent)
+    today_html = client.get(reverse("core:follow-ups"), {"status": "today", "priority": "urgent", "mine": "1"}).content.decode()
+    assert today_fu.title in today_html
+    assert later_fu.title not in today_html
+
+    res = client.post(
+        reverse("core:follow-up-action", args=[today_fu.pk]),
+        {"action": "snooze", "preset": "tomorrow"},
+    )
+    assert res.status_code == 302
+    today_fu.refresh_from_db()
+    assert timezone.localtime(today_fu.due_at).hour == 10
+
+    search_data = client.get(reverse("core:search"), {"q": "Kiran"}).json()
+    groups = {item["group"] for item in search_data["items"]}
+    assert {"Customers", "Opportunities", "Follow-ups"} <= groups
