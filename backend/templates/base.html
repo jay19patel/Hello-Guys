@@ -91,8 +91,7 @@
                     <a href="{% url 'crm:overview' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/crm' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">CRM</a>
                     <a href="{% url 'pms:projects' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/pms' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Projects</a>
                     <a href="{% url 'core:follow-ups' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':10' == '/reminders' or request.path|slice:':11' == '/follow-ups' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">Follow-ups</a>
-                    <a href="{% url 'hello_guy_ai_analytics' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':13' == '/ai/analytics' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Analytics</a>
-                    <a href="{% url 'hello_guy_ai_chat' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':5' == '/chat' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Chat</a>
+                    <a href="{% url 'hello_guy_ai_analytics' %}" class="px-2.5 py-1 rounded-lg transition-colors {% if request.path|slice:':4' == '/ai/' %}bg-surface text-ink shadow-soft font-semibold{% else %}text-muted hover:text-ink{% endif %}">AI Analytics</a>
                 </div>
             </div>
 

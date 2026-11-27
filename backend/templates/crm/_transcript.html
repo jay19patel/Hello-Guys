@@ -1,11 +1,26 @@
 {# Chat bubbles: needs `transcript` (who: visitor/ai/staff, name, text, at) #}
 {% for m in transcript %}
-<div class="flex {% if m.who == 'visitor' %}justify-start{% else %}justify-end{% endif %}" data-id="{{ m.id }}">
-    <div class="bubble shadow-soft {% if m.who == 'visitor' %}bg-surface border border-line text-ink{% elif m.who == 'staff' %}bg-accent text-on-accent{% else %}bg-accent/10 text-ink border border-accent/20{% endif %}">
-        <p class="text-[11px] font-semibold opacity-80 mb-0.5">{% if m.who == 'visitor' %}Visitor{% elif m.who == 'staff' %}{{ m.name|default:"Team" }}{% else %}AI assistant{% endif %} · {{ m.at|date:"d M g:i A" }}</p>
-        <p class="text-[13.5px]">{{ m.text }}</p>
+<div class="flex items-end gap-2 {% if m.who == 'visitor' %}justify-start{% else %}justify-end{% endif %}" data-id="{{ m.id }}">
+    {% if m.who == 'visitor' %}
+    <span class="w-7 h-7 rounded-full bg-subtle border border-line text-muted flex items-center justify-center shrink-0 text-[11px]" title="Visitor"><i class="fa-solid fa-user"></i></span>
+    {% endif %}
+    <div class="bubble shadow-soft {% if m.who == 'visitor' %}bg-surface border border-line text-ink rounded-tl-sm{% elif m.who == 'staff' %}bg-accent text-on-accent rounded-tr-sm{% else %}bg-accent/10 text-ink border border-accent/20 rounded-tr-sm{% endif %}">
+        <div class="flex items-center gap-1.5 text-[11px] font-semibold {% if m.who == 'staff' %}text-on-accent/80{% else %}text-muted{% endif %} mb-1">
+            <span>{% if m.who == 'visitor' %}Visitor{% elif m.who == 'staff' %}{{ m.name|default:"Team" }}{% else %}AI assistant{% endif %}</span>
+            <span aria-hidden="true">·</span>
+            <span class="font-normal">{{ m.at|date:"d M, g:i A" }}</span>
+        </div>
+        <p class="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</p>
     </div>
+    {% if m.who != 'visitor' %}
+    <span class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] {% if m.who == 'staff' %}bg-accent text-on-accent{% else %}bg-accent/15 text-accent border border-accent/25{% endif %}" title="{% if m.who == 'staff' %}{{ m.name|default:'Team' }}{% else %}AI assistant{% endif %}">
+        <i class="fa-solid {% if m.who == 'staff' %}fa-headset{% else %}fa-robot{% endif %}"></i>
+    </span>
+    {% endif %}
 </div>
 {% empty %}
-<p class="text-muted text-[13.5px]" data-empty>No messages yet.</p>
+<div class="flex flex-col items-center justify-center py-10 text-center text-muted gap-2" data-empty>
+    <i class="fa-regular fa-comments text-2xl opacity-50"></i>
+    <p class="text-[13.5px]">No messages yet.</p>
+</div>
 {% endfor %}

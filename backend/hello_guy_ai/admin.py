@@ -8,8 +8,6 @@ from hello_guy_ai.models import (
     KnowledgeBase,
     LLMModel,
     Message,
-    Notification,
-    Reminder,
     Run,
     Thread,
     Trigger,
@@ -207,17 +205,3 @@ class RunAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
-
-
-@admin.register(Reminder)
-class ReminderAdmin(admin.ModelAdmin):
-    list_display = ("message", "user", "due_at", "recurrence", "timezone", "status", "last_fired_at")
-    list_filter = ("status",)
-    search_fields = ("message", "user__username")
-
-
-@admin.register(Notification)
-class NotificationAdmin(admin.ModelAdmin):
-    list_display = ("title", "user", "is_read", "read_at", "created_at")
-    list_filter = ("is_read",)
-    search_fields = ("title", "body", "user__username")

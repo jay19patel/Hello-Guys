@@ -31,7 +31,7 @@
       threads: (assistantId) => request(`/threads?limit=50&assistant_id=${encodeURIComponent(assistantId)}`),
       createThread: (assistantId) =>
         request("/threads", { method: "POST", body: JSON.stringify({ assistant_id: assistantId }) }),
-      messages: (threadId) => request(`/threads/${threadId}/messages?limit=200`),
+      messages: (threadId) => request(`/threads/${threadId}/messages?limit=100`),
       // The browser's timezone lets the assistant read "5 baje" as 5 PM *here* (reminders, date ranges).
       send: (threadId, content) =>
         request(`/threads/${threadId}/messages`, {

@@ -8,18 +8,14 @@ from ninja.responses import Status
 from ninja.throttling import AuthRateThrottle
 
 from hello_guy_ai.access import chat_auth
-from hello_guy_ai.services import chat, reminders
+from hello_guy_ai.services import chat
 from hello_guy_ai.api.schemas import (
     AssistantOut,
-    CountOut,
     ErrorOut,
     FeedbackIn,
     FeedbackOut,
-    MarkReadIn,
     MessageIn,
     MessageOut,
-    NotificationOut,
-    ReminderOut,
     ResumeIn,
     RunAccepted,
     StopOut,
@@ -114,56 +110,3 @@ def stop_run(request, run_id: UUID):
 def feedback(request, run_id: UUID, payload: FeedbackIn):
     run = chat.get_run(request.user, run_id)
     return chat.submit_feedback(request.user, run, payload.rating, payload.comment)
-
-
-# ---- notifications & reminders -------------------------------------------------------
-
-
-@router.get("/notifications", response=list[NotificationOut])
-@paginate
-def list_notifications(request, unread_only: bool = False):
-    return reminders.notifications_for(request.user, unread_only)
-
-
-@router.get("/notifications/unread-count", response=CountOut)
-def unread_count(request):
-    return {"count": reminders.notifications_for(request.user, unread_only=True).count()}
-
-
-@router.post("/notifications/read", response=CountOut)
-def mark_read(request, payload: MarkReadIn):
-    return {"count": reminders.mark_read(request.user, payload.ids)}
-
-
-@router.get("/reminders", response=list[ReminderOut])
-@paginate
-def list_reminders(request):
-    """Scheduled and paused reminders / recurring tasks, next due first."""
-    return reminders.active_reminders(request.user)
-
-
-@router.post("/reminders/{reminder_id}/pause", response={200: CountOut, **E404})
-def pause_reminder(request, reminder_id: int):
-    return _done(reminders.pause_reminder(request.user, reminder_id))
-
-
-@router.post("/reminders/{reminder_id}/resume", response={200: ReminderOut, **E404})
-def resume_reminder(request, reminder_id: int):
-    reminder = reminders.resume_reminder(request.user, reminder_id)
-    return reminder if reminder else Status(404, {"message": "Not found"})
-
-
-@router.post("/reminders/{reminder_id}/cancel", response={200: CountOut, **E404})
-def cancel_reminder(request, reminder_id: int):
-    return _done(reminders.cancel_reminder(request.user, reminder_id))
-
-
-@router.delete("/reminders/{reminder_id}", response={204: None, **E404})
-def delete_reminder(request, reminder_id: int):
-    if not reminders.delete_reminder(request.user, reminder_id):
-        return Status(404, {"message": "Not found"})
-    return Status(204, None)
-
-
-def _done(changed: bool):
-    return {"count": 1} if changed else Status(404, {"message": "Not found"})

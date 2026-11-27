@@ -301,11 +301,11 @@
     </div>
 
     <!-- Follow-ups List -->
-    <section class="card overflow-hidden">
+    <section class="card">
         {% if follow_ups %}
         <ul class="divide-y divide-line">
             {% for fu in follow_ups %}
-            <li class="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-subtle/40 transition-colors {% if fu.is_overdue %}border-l-4 border-l-bad bg-bad/5{% elif fu.priority == 'urgent' %}border-l-4 border-l-warn{% endif %}">
+            <li class="px-5 py-4 first:rounded-t-2xl last:rounded-b-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-subtle/40 transition-colors {% if fu.is_overdue %}border-l-4 border-l-bad bg-bad/5{% elif fu.priority == 'urgent' %}border-l-4 border-l-warn{% endif %}">
                 <div class="flex items-start gap-3.5 min-w-0 flex-1">
                     <!-- Due Date Tile -->
                     <div class="w-14 h-14 rounded-2xl border flex flex-col items-center justify-center shrink-0 text-center {% if fu.is_overdue %}border-bad/30 bg-bad/10{% else %}border-line bg-subtle/60{% endif %}">

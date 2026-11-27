@@ -1,0 +1,107 @@
+{% extends "hello_guy_ai/base.html" %}
+{% block title %}LLM Models · Hello Guy AI{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">LLM Models</h1>
+        <p class="text-muted">Configure Chat and Embedding providers (Ollama, Mistral, OpenAI, Groq) and switch active defaults.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+        <span class="pill {% if active_chat %}bg-ok/15 text-ok{% else %}bg-warn/15 text-warn{% endif %}">
+            Chat Default: {% if active_chat %}{{ active_chat.name }}{% else %}None{% endif %}
+        </span>
+        <span class="pill {% if active_embed %}bg-ok/15 text-ok{% else %}bg-subtle border border-line text-muted{% endif %}">
+            Embed Default: {% if active_embed %}{{ active_embed.name }}{% else %}None{% endif %}
+        </span>
+    </div>
+</header>
+
+<div class="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
+    <section class="card overflow-hidden">
+        <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+            <h2 class="font-display text-[16px] font-semibold">Configured Models</h2>
+            <span class="pill bg-subtle border border-line text-[12px]">{{ models|length }} total</span>
+        </div>
+        {% if models %}
+        <div class="divide-y divide-line">
+            {% for m in models %}
+            <div class="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-subtle/30 transition-colors">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-display font-semibold text-[15px] text-ink">{{ m.name }}</span>
+                        <span class="pill bg-subtle border border-line text-[11px] uppercase">{{ m.kind }}</span>
+                        {% if m.is_default %}
+                        <span class="pill bg-accent/15 text-accent font-semibold text-[11px]"><i class="fa-solid fa-star text-[9px] mr-1"></i>Default</span>
+                        {% endif %}
+                        {% if not m.enabled %}
+                        <span class="pill bg-bad/10 text-bad text-[11px]">Disabled</span>
+                        {% endif %}
+                    </div>
+                    <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
+                        <code class="bg-subtle px-1.5 py-0.5 rounded text-ink">{{ m.model_id }}</code>
+                        {% if m.api_base %}<span>Base: {{ m.api_base }}</span>{% endif %}
+                        <span>Key: {% if m.api_key %}<span class="text-ok font-medium">Encrypted</span>{% else %}None{% endif %}</span>
+                        {% if m.min_score != None %}<span>Min score: {{ m.min_score }}</span>{% endif %}
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    {% if not m.is_default %}
+                    <form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ m.pk }}"><button name="action" value="set-default" class="btn btn-primary btn-sm">Set Default</button></form>
+                    {% endif %}
+                    <form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ m.pk }}"><button name="action" value="toggle-enabled" class="btn btn-ghost btn-sm">{% if m.enabled %}Disable{% else %}Enable{% endif %}</button></form>
+                    <form method="post" onsubmit="return confirm('Delete {{ m.name|escapejs }}?')">{% csrf_token %}<input type="hidden" name="id" value="{{ m.pk }}"><button name="action" value="delete" class="btn btn-ghost btn-sm text-bad px-2" aria-label="Delete model"><i class="fa-solid fa-trash"></i></button></form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="px-5 py-8 text-center text-[13.5px] text-muted">No LLM models configured yet. Add one on the right.</p>
+        {% endif %}
+    </section>
+
+    <section class="card p-5">
+        <h2 class="font-display text-[16px] font-semibold mb-1">Add LLM Model</h2>
+        <p class="text-[12.5px] text-muted mb-4">API keys are Fernet-encrypted at rest and never shown back.</p>
+        <form method="post" class="flex flex-col gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create">
+            <div class="field flex flex-col gap-1">
+                <label for="m-name" class="caps">Display Name</label>
+                <input id="m-name" type="text" name="name" required placeholder="e.g. Qwen 2.5 7B (Local)">
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="m-kind" class="caps">Kind</label>
+                <select id="m-kind" name="kind">
+                    <option value="chat">Chat</option>
+                    <option value="embedding">Embedding (Knowledge Base)</option>
+                </select>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="m-id" class="caps">LiteLLM Model ID</label>
+                <input id="m-id" type="text" name="model_id" required placeholder="ollama_chat/qwen2.5:7b">
+                <span class="text-[11px] text-muted">Examples: <code>ollama_chat/qwen2.5:7b</code>, <code>ollama/nomic-embed-text</code>, <code>mistral/ministral-8b-latest</code></span>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="m-base" class="caps">API Base URL (optional)</label>
+                <input id="m-base" type="url" name="api_base" placeholder="http://localhost:11434">
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="m-key" class="caps">API Key (optional)</label>
+                <input id="m-key" type="password" name="api_key" placeholder="Leave blank for local Ollama">
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="m-min" class="caps">Min Similarity (Embedding only)</label>
+                <input id="m-min" type="number" step="0.01" min="0" max="1" name="min_score" placeholder="0.70">
+            </div>
+            <label class="flex items-center gap-2 text-[13px] pt-1">
+                <input type="checkbox" name="enabled" value="1" checked> Enabled
+            </label>
+            <label class="flex items-center gap-2 text-[13px]">
+                <input type="checkbox" name="is_default" value="1" checked> Set as Default for this kind
+            </label>
+            <button type="submit" class="btn btn-primary mt-2"><i class="fa-solid fa-plus"></i> Save Model</button>
+        </form>
+    </section>
+</div>
+{% endblock %}

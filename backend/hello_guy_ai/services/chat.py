@@ -1,6 +1,7 @@
 """Use cases shared by the API, admin, triggers and code. All permission checks live here."""
 
 import logging
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -166,6 +167,26 @@ def take_over(thread: Thread, user: Any) -> Thread:
 def hand_back(thread: Thread) -> Thread:
     """The AI answers again."""
     return _set_mode(thread, human_mode=False, needs_human=False, handled_by=None)
+
+
+_HUMAN_HANDOFF_RE = re.compile(
+    r"\b(?:talk|speak|chat|connect(?:\s+me)?|transfer|hand\s*off)\s+(?:to|with)\s+(?:a\s+|an\s+)?(?:human|person|real\s+person|agent|live\s+agent|representative|someone)\b"
+    r"|\b(?:human\s+(?:agent|support|representative)|live\s+agent)\b",
+    re.IGNORECASE,
+)
+
+
+def wants_human_handoff(text: str) -> bool:
+    """Return True when a visitor explicitly asks to speak with a human agent."""
+    return bool(_HUMAN_HANDOFF_RE.search(text or ""))
+
+
+def maybe_request_human(thread: Thread, text: str) -> bool:
+    """Flag `thread` for human handoff if `text` explicitly asks for a person."""
+    if not thread.needs_human and wants_human_handoff(text):
+        request_human(thread, text)
+        return True
+    return False
 
 
 def request_human(thread: Thread, reason: str = "") -> Thread:

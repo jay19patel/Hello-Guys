@@ -14,7 +14,6 @@ from django.core.management.base import BaseCommand
 
 from hello_guy_ai.core.events import get_redis
 from hello_guy_ai.services.chat import fail_stale_runs
-from hello_guy_ai.services.reminders import fire_due_reminders
 from hello_guy_ai.services.triggers import due_scheduled_triggers
 
 logger = logging.getLogger(__name__)
@@ -50,8 +49,6 @@ class Command(BaseCommand):
             time.sleep(TICK_SECONDS)
 
     def tick(self, redis, fire_trigger, reconcile_knowledge) -> None:
-        if fired := fire_due_reminders():
-            logger.info("Fired %s reminder(s)", fired)
         for trigger_id in due_scheduled_triggers():
             fire_trigger.send(trigger_id)
             logger.info("Scheduled trigger %s fired", trigger_id)

@@ -14,7 +14,7 @@ from django.utils import timezone as dj_tz
 from crm import services
 from crm.models import Customer, Meeting, Opportunity, Service, Source
 from hello_guy_ai import ToolError, current_context, tool
-from hello_guy_ai.services.reminders import resolve_requested_slot, zone
+from hello_guy_ai.services.scheduling import resolve_requested_slot, zone
 
 MAX_LIMIT = 50
 OPPORTUNITY_FIELDS = (

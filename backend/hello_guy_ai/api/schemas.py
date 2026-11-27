@@ -113,34 +113,6 @@ class ErrorOut(Schema):
     message: str
 
 
-class NotificationOut(Schema):
-    id: int
-    title: str
-    body: str
-    url: str
-    is_read: bool
-    read_at: datetime | None
-    created_at: datetime
-
-
-class MarkReadIn(Schema):
-    ids: list[int] | None = Field(default=None, description="Omit to mark all unread as read")
-
-
-class CountOut(Schema):
-    count: int
-
-
-class ReminderOut(Schema):
-    id: int
-    message: str
-    due_at: datetime
-    recurrence: str
-    timezone: str
-    agent_id: str
-    status: str
-
-
 class HealthOut(Schema):
     database: bool
     redis: bool

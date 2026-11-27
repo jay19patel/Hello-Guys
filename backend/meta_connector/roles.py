@@ -74,11 +74,7 @@ def team():
 
 
 def notify_team(title: str, body: str = "", url: str = "") -> None:
-    """In-app notification (email too when hello_guy_ai NOTIFY_EMAIL is on) for every team member."""
-    from hello_guy_ai.services.reminders import notify
+    """In-app global notification for every team member."""
+    from core import notifications
 
-    for user in team():
-        try:
-            notify(user, title, body, url=url)
-        except Exception:  # an alert must never break the save that triggered it
-            logger.exception("Could not notify %s", user)
+    notifications.notify_users(team(), title=title, body=body, url=url, category="meta")

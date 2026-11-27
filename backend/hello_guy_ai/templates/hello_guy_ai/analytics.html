@@ -1,36 +1,6 @@
-{% extends "base.html" %}
+{% extends "hello_guy_ai/base.html" %}
 {% load humanize %}
 {% block title %}AI Analytics · Hello Guy AI{% endblock %}
-
-{% block sidebar_brand %}
-<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-2.5">
-    <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
-    <span class="font-display font-bold text-[15px] text-ink">Hello Guy AI</span>
-</a>
-{% endblock %}
-
-{% block nav_aria_label %}Hello Guy AI{% endblock %}
-
-{% block sidebar_nav %}
-<div class="caps px-3 pt-1 pb-1">Monitoring</div>
-<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg bg-accent/10 text-accent font-semibold">
-    <i class="fa-solid fa-chart-line w-4 text-center shrink-0"></i> AI Analytics
-</a>
-<a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-    <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> AI Chat
-</a>
-{% endblock %}
-
-{% block sidebar_system %}
-<div class="border-t border-line/70 px-3 py-2.5 flex flex-col gap-0.5 text-[13.5px]">
-    <div class="caps px-3 pb-1">Admin</div>
-    <a href="/admin/hello_guy_ai/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
-        <i class="fa-solid fa-database w-4 text-center shrink-0"></i> AI Models &amp; Data
-    </a>
-</div>
-{% endblock %}
-
-{% block user_role_label %}{% if request.user.is_superuser %}Superuser{% else %}Staff{% endif %}{% endblock %}
 
 {% block content %}
 <header class="flex flex-wrap items-end justify-between gap-4">
@@ -362,96 +332,21 @@
     </div>
 
     <div class="card p-5 flex flex-col gap-3">
-        <h2 class="font-display text-[15px] font-semibold text-ink">Triggers &amp; Reminders</h2>
+        <div class="flex items-center justify-between">
+            <h2 class="font-display text-[15px] font-semibold text-ink">Automation &amp; Memory</h2>
+            <a href="{% url 'hello_guy_ai_triggers' %}" class="text-[12px] text-accent hover:underline">Manage →</a>
+        </div>
         <div class="grid grid-cols-2 gap-2.5 text-[13px]">
             <div class="p-3 rounded-xl bg-subtle/50 border border-line">
                 <p class="caps">Triggers On</p>
                 <p class="font-display text-lg font-bold">{{ automation.triggers_enabled }} / {{ automation.triggers_total }}</p>
             </div>
             <div class="p-3 rounded-xl bg-subtle/50 border border-line">
-                <p class="caps">Scheduled</p>
-                <p class="font-display text-lg font-bold">{{ automation.reminders_scheduled }}</p>
-            </div>
-            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
-                <p class="caps">Completed</p>
-                <p class="font-display text-lg font-bold">{{ automation.reminders_done }}</p>
-            </div>
-            <div class="p-3 rounded-xl bg-subtle/50 border border-line">
-                <p class="caps">Unread Alerts</p>
-                <p class="font-display text-lg font-bold">{{ automation.unread_notifications }}</p>
+                <p class="caps">Active Memories</p>
+                <p class="font-display text-lg font-bold">{{ automation.memories_active }} / {{ automation.memories_total }}</p>
             </div>
         </div>
     </div>
-</section>
-
-<!-- Scheduled AI Tasks & Reminders -->
-<section class="card overflow-hidden">
-    <div class="px-5 pt-5 pb-3 border-b border-line flex flex-wrap items-center justify-between gap-2">
-        <div>
-            <h2 class="font-display text-[16px] font-semibold text-ink">Scheduled AI Tasks &amp; Reminders</h2>
-            <p class="text-[12.5px] text-muted">Internal AI/ML scheduled prompts and recurring reminders.</p>
-        </div>
-        <span class="pill bg-subtle border border-line text-[12px]">{{ scheduled_reminders|length }} active</span>
-    </div>
-    {% if scheduled_reminders %}
-    <div class="overflow-x-auto">
-        <table class="w-full text-left text-[13px]">
-            <thead>
-                <tr class="table-head border-b border-line">
-                    <th>Task / Prompt</th>
-                    <th>Status</th>
-                    <th>Next Run</th>
-                    <th>Schedule</th>
-                    <th>User</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-line">
-                {% for r in scheduled_reminders %}
-                <tr class="hover:bg-subtle/40 transition-colors" id="sched-row-{{ r.pk }}">
-                    <td class="cell px-5 max-w-md">
-                        <div class="font-medium text-ink">{{ r.message }}</div>
-                        {% if r.agent_id %}
-                        <span class="pill bg-accent/10 text-accent text-[11px] mt-1">Assistant: {{ r.agent_id }}</span>
-                        {% endif %}
-                    </td>
-                    <td class="cell px-5">
-                        <span class="pill {% if r.status == 'scheduled' %}bg-ok/10 text-ok border border-ok/20{% else %}bg-warn/10 text-warn border border-warn/20{% endif %}">
-                            {{ r.get_status_display }}
-                        </span>
-                    </td>
-                    <td class="cell px-5 tabular-nums text-muted whitespace-nowrap">
-                        {{ r.due_at|date:"d M Y, g:i A" }}
-                        <div class="text-[11px]">{{ r.timezone }}</div>
-                    </td>
-                    <td class="cell px-5 text-muted">
-                        {% if r.recurrence %}<code class="text-[12px] bg-subtle px-1.5 py-0.5 rounded">{{ r.recurrence }}</code>{% else %}One-time{% endif %}
-                    </td>
-                    <td class="cell px-5 text-muted">{{ r.user.get_full_name|default:r.user.username }}</td>
-                    <td class="cell px-5 text-right whitespace-nowrap">
-                        {% if r.user_id == request.user.pk %}{# the API only lets owners manage their reminders #}
-                        <div class="flex items-center justify-end gap-1.5">
-                            <button type="button"
-                                    onclick="aiReminderAction({{ r.pk }}, '{% if r.status == 'paused' %}resume{% else %}pause{% endif %}')"
-                                    class="btn btn-ghost btn-sm">
-                                {% if r.status == 'paused' %}Resume{% else %}Pause{% endif %}
-                            </button>
-                            <button type="button"
-                                    onclick="if(confirm('Delete this scheduled task?')) aiReminderAction({{ r.pk }}, 'delete')"
-                                    class="btn btn-ghost btn-sm text-bad px-2" aria-label="Delete scheduled task">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
-                        {% else %}<span class="text-[12px] text-muted">Owner only</span>{% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <p class="px-5 py-6 text-[13.5px] text-muted">No scheduled AI tasks or reminders right now.</p>
-    {% endif %}
 </section>
 
 <!-- Recent Runs & Errors -->
@@ -542,19 +437,6 @@ function liveAgentsMonitor() {
             this.schedule();
         },
     };
-}
-
-async function aiReminderAction(id, action) {
-    const csrf = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
-    const url = action === 'delete' ? `/api/ai/reminders/${id}` : `/api/ai/reminders/${id}/${action}`;
-    const method = action === 'delete' ? 'DELETE' : 'POST';
-    const res = await fetch(url, {
-        method,
-        credentials: 'same-origin',
-        headers: { 'X-CSRFToken': decodeURIComponent(csrf) },
-    });
-    if (res.ok) return location.reload();
-    alert(res.status === 404 ? 'Only the owner of this task can change it.' : 'Could not update the task. Please try again.');
 }
 </script>
 {% endblock %}

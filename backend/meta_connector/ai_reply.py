@@ -106,6 +106,14 @@ def reply_with_ai(message_id: int) -> None:
         return
     label = contact.name or contact.username or contact.phone or contact.platform_user_id
     url = reverse('dashboard-contact', args=[contact.pk])
+    from hello_guy_ai.conf import ai_settings
+    from hello_guy_ai.services import chat as ai_chat
+
+    if ai_chat.wants_human_handoff(msg.message_text):
+        thread = ai_chat.external_thread(bot, ai_settings.PUBLIC_AGENT, thread_key(account, contact), f"{account.platform}: {label}")
+        ai_chat.post_live_message(thread, msg.message_text)
+        ai_chat.maybe_request_human(thread, msg.message_text)
+        return
     answer = reply(thread_key(account, contact), msg.message_text, f"{account.platform}: {label}")
     if not answer:
         notify_team(f"AI could not answer {label}", f"Their message: {msg.message_text[:300]}", url)

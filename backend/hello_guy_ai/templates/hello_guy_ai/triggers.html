@@ -1,0 +1,112 @@
+{% extends "hello_guy_ai/base.html" %}
+{% load humanize %}
+{% block title %}Triggers · Hello Guy AI{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Automation Triggers</h1>
+        <p class="text-muted">Run AI assistants automatically on database events (<code>created</code>, <code>updated</code>, <code>deleted</code>) or cron schedules.</p>
+    </div>
+</header>
+
+<div class="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
+    <section class="card overflow-hidden">
+        <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+            <h2 class="font-display text-[16px] font-semibold">Configured Triggers</h2>
+            <span class="pill bg-subtle border border-line text-[12px]">{{ triggers|length }} total</span>
+        </div>
+        {% if triggers %}
+        <div class="divide-y divide-line">
+            {% for t in triggers %}
+            <div class="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-subtle/30 transition-colors">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-display font-semibold text-[15px] text-ink">{{ t.name }}</span>
+                        <span class="pill bg-accent/10 text-accent text-[11px]">{{ t.agent_id }}</span>
+                        <span class="pill bg-subtle border border-line text-[11px] uppercase">{{ t.event }}</span>
+                        {% if t.enabled %}
+                        <span class="pill bg-ok/15 text-ok text-[11px]">Enabled</span>
+                        {% else %}
+                        <span class="pill bg-warn/15 text-warn text-[11px]">Paused</span>
+                        {% endif %}
+                        {% if t.auto_approve %}<span class="pill bg-subtle border border-line text-[11px]">Auto-approve</span>{% endif %}
+                    </div>
+                    <p class="text-[12.5px] text-muted mt-1 line-clamp-2">{{ t.prompt_template }}</p>
+                    <p class="text-[11.5px] text-muted mt-1">
+                        {% if t.cron %}Cron: <code>{{ t.cron }}</code> · {% endif %}
+                        {% if t.content_type %}Model: {{ t.content_type.app_label }}.{{ t.content_type.model }} · {% endif %}
+                        Run as: {{ t.run_as.username }}
+                        {% if t.last_fired_at %} · Last fired {{ t.last_fired_at|naturaltime }}{% endif %}
+                    </p>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    {% if t.event == 'scheduled' %}
+                    <form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ t.pk }}"><button name="action" value="fire" class="btn btn-primary btn-sm" title="Run now"><i class="fa-solid fa-play text-[10px]"></i> Run</button></form>
+                    {% endif %}
+                    <form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ t.pk }}"><button name="action" value="toggle" class="btn btn-ghost btn-sm">{% if t.enabled %}Pause{% else %}Enable{% endif %}</button></form>
+                    <form method="post" onsubmit="return confirm('Delete trigger {{ t.name|escapejs }}?')">{% csrf_token %}<input type="hidden" name="id" value="{{ t.pk }}"><button name="action" value="delete" class="btn btn-ghost btn-sm text-bad px-2" aria-label="Delete trigger"><i class="fa-solid fa-trash"></i></button></form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="px-5 py-8 text-center text-[13.5px] text-muted">No triggers configured yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card p-5">
+        <h2 class="font-display text-[16px] font-semibold mb-3">Create Trigger</h2>
+        <form method="post" class="flex flex-col gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create">
+            <div class="field flex flex-col gap-1">
+                <label for="tr-name" class="caps">Name</label>
+                <input id="tr-name" type="text" name="name" required placeholder="Daily Pipeline Check">
+            </div>
+            <div class="grid grid-cols-2 gap-2.5">
+                <div class="field flex flex-col gap-1">
+                    <label for="tr-agent" class="caps">Assistant</label>
+                    <select id="tr-agent" name="agent_id" required>
+                        {% for a in agents %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="field flex flex-col gap-1">
+                    <label for="tr-event" class="caps">Event</label>
+                    <select id="tr-event" name="event">
+                        {% for val, lbl in events %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="tr-ct" class="caps">Target Model (for created/updated/deleted)</label>
+                <select id="tr-ct" name="content_type">
+                    <option value="">— None (scheduled) —</option>
+                    {% for ct in content_types %}<option value="{{ ct.pk }}">{{ ct.app_label }}.{{ ct.model }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="tr-cron" class="caps">Cron (for scheduled)</label>
+                <input id="tr-cron" type="text" name="cron" placeholder="0 9 * * 1-5">
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="tr-cond" class="caps">Condition (optional)</label>
+                <input id="tr-cond" type="text" name="condition" placeholder='obj.status == "new"'>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="tr-prompt" class="caps">Prompt Template</label>
+                <textarea id="tr-prompt" name="prompt_template" rows="3" required placeholder="Review new lead {{ obj.name }} and suggest next steps."></textarea>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="tr-user" class="caps">Run As</label>
+                <select id="tr-user" name="run_as">
+                    {% for u in staff_users %}<option value="{{ u.pk }}" {% if u.pk == request.user.pk %}selected{% endif %}>{{ u.username }}</option>{% endfor %}
+                </select>
+            </div>
+            <label class="flex items-center gap-2 text-[13px] pt-1"><input type="checkbox" name="auto_approve" value="1"> Auto-approve write tools</label>
+            <label class="flex items-center gap-2 text-[13px]"><input type="checkbox" name="enabled" value="1" checked> Enabled</label>
+            <button type="submit" class="btn btn-primary mt-1"><i class="fa-solid fa-plus"></i> Create Trigger</button>
+        </form>
+    </section>
+</div>
+{% endblock %}

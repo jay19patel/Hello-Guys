@@ -10,7 +10,7 @@ from core import follow_ups, notifications
 from core.models import FollowUp, FollowUpChannel
 from crm.services import default_staff_assignee
 from hello_guy_ai import ToolError, current_context, tool
-from hello_guy_ai.services.reminders import plan, resolve_requested_slot, zone
+from hello_guy_ai.services.scheduling import plan, resolve_requested_slot, zone
 
 
 def _resolve_crm_target(ctx: Any, opportunity_reference: str) -> tuple[Any, Any]:

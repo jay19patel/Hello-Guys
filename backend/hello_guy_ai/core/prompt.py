@@ -14,7 +14,7 @@ from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.core.runtime import AgentSpec
 from hello_guy_ai.models import Document, Message, Thread
 from hello_guy_ai.services.memory import build_memory_block
-from hello_guy_ai.services.reminders import zone
+from hello_guy_ai.services.scheduling import zone
 from hello_guy_ai.services.rag import Chunk, RagService
 
 logger = logging.getLogger(__name__)

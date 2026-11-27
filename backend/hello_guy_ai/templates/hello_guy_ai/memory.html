@@ -1,0 +1,90 @@
+{% extends "hello_guy_ai/base.html" %}
+{% load humanize %}
+{% block title %}Agent Memory · Hello Guy AI{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Agent Memory</h1>
+        <p class="text-muted">Durable facts learned by assistants or saved from negative (👎) feedback.</p>
+    </div>
+    <form method="get" class="flex flex-wrap items-center gap-2">
+        <select name="agent" onchange="this.form.submit()" class="rounded-xl border border-line bg-surface px-3 py-1.5 text-[13px]">
+            <option value="">All assistants</option>
+            {% for a in agents %}<option value="{{ a.id }}" {% if agent_filter == a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}
+        </select>
+        <select name="origin" onchange="this.form.submit()" class="rounded-xl border border-line bg-surface px-3 py-1.5 text-[13px]">
+            <option value="">All origins</option>
+            <option value="agent" {% if origin_filter == 'agent' %}selected{% endif %}>Agent</option>
+            <option value="feedback" {% if origin_filter == 'feedback' %}selected{% endif %}>Feedback</option>
+        </select>
+    </form>
+</header>
+
+<div class="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+    <section class="card overflow-hidden">
+        <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+            <h2 class="font-display text-[16px] font-semibold">Saved Memories</h2>
+            <span class="pill bg-subtle border border-line text-[12px]">{{ memories|length }} shown</span>
+        </div>
+        {% if memories %}
+        <div class="divide-y divide-line">
+            {% for m in memories %}
+            <div class="px-5 py-4 flex items-start justify-between gap-3 hover:bg-subtle/30 transition-colors">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="pill bg-accent/10 text-accent text-[11px]">{{ m.agent_key }}</span>
+                        <span class="pill bg-subtle border border-line text-[11px]">{{ m.get_scope_display }}</span>
+                        <span class="pill {% if m.origin == 'feedback' %}bg-warn/15 text-warn{% else %}bg-subtle border border-line text-muted{% endif %} text-[11px]">{{ m.origin }}</span>
+                        {% if not m.is_active %}<span class="pill bg-bad/10 text-bad text-[11px]">Paused</span>{% endif %}
+                    </div>
+                    <p class="text-[13.5px] text-ink mt-1.5 whitespace-pre-line">{{ m.content }}</p>
+                    <p class="text-[11.5px] text-muted mt-1">
+                        {% if m.keywords %}Keywords: {{ m.keywords }} · {% endif %}
+                        {% if m.user %}User: {{ m.user.username }} · {% endif %}
+                        {{ m.created_at|naturaltime }}
+                    </p>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ m.pk }}"><button name="action" value="toggle" class="btn btn-ghost btn-sm">{% if m.is_active %}Pause{% else %}Activate{% endif %}</button></form>
+                    <form method="post" onsubmit="return confirm('Delete this memory?')">{% csrf_token %}<input type="hidden" name="id" value="{{ m.pk }}"><button name="action" value="delete" class="btn btn-ghost btn-sm text-bad px-2" aria-label="Delete memory"><i class="fa-solid fa-trash"></i></button></form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="px-5 py-8 text-center text-[13.5px] text-muted">No memories found.</p>
+        {% endif %}
+    </section>
+
+    <section class="card p-5">
+        <h2 class="font-display text-[16px] font-semibold mb-3">Add Memory</h2>
+        <form method="post" class="flex flex-col gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create">
+            <div class="field flex flex-col gap-1">
+                <label for="mem-agent" class="caps">Assistant</label>
+                <select id="mem-agent" name="agent_key" required>
+                    {% for a in agents %}<option value="{{ a.id }}">{{ a.name }} ({{ a.id }})</option>{% endfor %}
+                </select>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="mem-scope" class="caps">Scope</label>
+                <select id="mem-scope" name="scope">
+                    <option value="agent">Shared (all users)</option>
+                    <option value="user">Personal (only me)</option>
+                </select>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="mem-content" class="caps">Fact / Rule</label>
+                <textarea id="mem-content" name="content" rows="3" required placeholder="Always quote prices in INR (₹)."></textarea>
+            </div>
+            <div class="field flex flex-col gap-1">
+                <label for="mem-kw" class="caps">Keywords (optional)</label>
+                <input id="mem-kw" type="text" name="keywords" placeholder="pricing, currency, INR">
+            </div>
+            <button type="submit" class="btn btn-primary mt-1"><i class="fa-solid fa-plus"></i> Save Memory</button>
+        </form>
+    </section>
+</div>
+{% endblock %}

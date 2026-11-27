@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block sidebar_brand %}
+<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-2.5">
+    <span class="w-8 h-8 rounded-xl bg-accent text-on-accent flex items-center justify-center shadow-soft"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+    <span class="font-display font-bold text-[15px] text-ink">Hello Guy AI</span>
+</a>
+{% endblock %}
+
+{% block nav_aria_label %}Hello Guy AI{% endblock %}
+
+{% block sidebar_nav %}
+<div class="caps px-3 pt-1 pb-1">Monitoring</div>
+<a href="{% url 'hello_guy_ai_analytics' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg {% if request.resolver_match.url_name == 'hello_guy_ai_analytics' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink transition-colors{% endif %}">
+    <i class="fa-solid fa-chart-line w-4 text-center shrink-0"></i> AI Analytics
+</a>
+<a href="{% url 'hello_guy_ai_chat' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg {% if request.resolver_match.url_name == 'hello_guy_ai_chat' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink transition-colors{% endif %}">
+    <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> AI Chat
+</a>
+
+<div class="caps px-3 pt-4 pb-1">Models &amp; Data</div>
+<a href="{% url 'hello_guy_ai_models' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg {% if request.resolver_match.url_name == 'hello_guy_ai_models' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink transition-colors{% endif %}">
+    <i class="fa-solid fa-microchip w-4 text-center shrink-0"></i> LLM Models
+</a>
+<a href="{% url 'hello_guy_ai_knowledge' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg {% if request.resolver_match.url_name == 'hello_guy_ai_knowledge' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink transition-colors{% endif %}">
+    <i class="fa-solid fa-book-open w-4 text-center shrink-0"></i> Knowledge Base
+</a>
+<a href="{% url 'hello_guy_ai_memory' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg {% if request.resolver_match.url_name == 'hello_guy_ai_memory' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink transition-colors{% endif %}">
+    <i class="fa-solid fa-brain w-4 text-center shrink-0"></i> Agent Memory
+</a>
+<a href="{% url 'hello_guy_ai_triggers' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg {% if request.resolver_match.url_name == 'hello_guy_ai_triggers' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink transition-colors{% endif %}">
+    <i class="fa-solid fa-bolt w-4 text-center shrink-0"></i> Triggers
+</a>
+<a href="{% url 'hello_guy_ai_threads' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg {% if request.resolver_match.url_name == 'hello_guy_ai_threads' or request.resolver_match.url_name == 'hello_guy_ai_thread_detail' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink transition-colors{% endif %}">
+    <i class="fa-solid fa-layer-group w-4 text-center shrink-0"></i> Threads
+</a>
+{% endblock %}
+
+{% block sidebar_system %}
+<div class="border-t border-line/70 px-3 py-2.5 flex flex-col gap-0.5 text-[13.5px]">
+    <div class="caps px-3 pb-1">Admin</div>
+    <a href="/admin/hello_guy_ai/" class="flex items-center gap-3 h-9 px-3 rounded-lg text-muted hover:bg-subtle hover:text-ink transition-colors">
+        <i class="fa-solid fa-database w-4 text-center shrink-0"></i> Django Admin
+    </a>
+</div>
+{% endblock %}
+
+{% block user_role_label %}{% if request.user.is_superuser %}Superuser{% else %}Staff{% endif %}{% endblock %}

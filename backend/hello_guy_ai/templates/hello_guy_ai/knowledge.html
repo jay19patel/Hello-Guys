@@ -1,0 +1,142 @@
+{% extends "hello_guy_ai/base.html" %}
+{% load humanize %}
+{% block title %}Knowledge Base · Hello Guy AI{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+        <h1 class="font-display text-[26px] leading-[32px] font-bold tracking-tight">Knowledge Base &amp; Documents</h1>
+        <p class="text-muted">Manage RAG collections, upload <code>.txt</code> / <code>.md</code> / <code>.pdf</code> files, and monitor vector indexing.</p>
+    </div>
+    <span class="pill {% if embed_model %}bg-ok/15 text-ok{% else %}bg-warn/15 text-warn{% endif %}">
+        Embedding: {% if embed_model %}{{ embed_model.name }} ({{ embed_model.model_id }}){% else %}Not configured{% endif %}
+    </span>
+</header>
+
+<div class="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
+    <div class="flex flex-col gap-6">
+        <!-- Knowledge Bases -->
+        <section class="card overflow-hidden">
+            <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+                <h2 class="font-display text-[16px] font-semibold">Knowledge Bases</h2>
+                <span class="pill bg-subtle border border-line text-[12px]">{{ knowledge_bases|length }} collections</span>
+            </div>
+            {% if knowledge_bases %}
+            <div class="divide-y divide-line">
+                {% for kb in knowledge_bases %}
+                <div class="px-5 py-3.5 flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-display font-semibold text-[15px]">{{ kb.name }}</span>
+                            <code class="text-[11.5px] bg-subtle px-1.5 py-0.5 rounded">{{ kb.slug }}</code>
+                            {% if not kb.enabled %}<span class="pill bg-warn/15 text-warn text-[11px]">Paused</span>{% endif %}
+                        </div>
+                        {% if kb.description %}<p class="text-[12.5px] text-muted mt-0.5">{{ kb.description }}</p>{% endif %}
+                        <p class="text-[12px] text-muted mt-1">{{ kb.doc_count }} docs · {{ kb.ready_count }} ready{% if kb.failed_count %} · <span class="text-bad">{{ kb.failed_count }} failed</span>{% endif %} · {{ kb.total_chunks|default:0|intcomma }} chunks</p>
+                    </div>
+                    <form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ kb.pk }}"><button name="action" value="toggle-kb" class="btn btn-ghost btn-sm">{% if kb.enabled %}Pause{% else %}Enable{% endif %}</button></form>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="px-5 py-6 text-[13.5px] text-muted">No knowledge bases yet. Create one on the right.</p>
+            {% endif %}
+        </section>
+
+        <!-- Documents -->
+        <section class="card overflow-hidden">
+            <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+                <h2 class="font-display text-[16px] font-semibold">Documents &amp; Synced Records</h2>
+                <span class="pill bg-subtle border border-line text-[12px]">{{ documents|length }} shown</span>
+            </div>
+            {% if documents %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-[13px]">
+                    <thead>
+                        <tr class="table-head border-b border-line">
+                            <th>Title</th>
+                            <th>KB</th>
+                            <th>Status</th>
+                            <th class="text-right">Chunks</th>
+                            <th>Updated</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-line">
+                        {% for d in documents %}
+                        <tr class="hover:bg-subtle/40 transition-colors">
+                            <td class="cell px-5 max-w-xs">
+                                <div class="font-medium text-ink truncate">{{ d.title }}</div>
+                                {% if d.error %}<div class="text-[11.5px] text-bad mt-0.5 truncate" title="{{ d.error }}">{{ d.error }}</div>{% endif %}
+                            </td>
+                            <td class="cell px-5 text-muted">{{ d.knowledge_base.slug }}</td>
+                            <td class="cell px-5">
+                                <span class="pill {% if d.status == 'ready' %}bg-ok/15 text-ok{% elif d.status == 'failed' %}bg-bad/15 text-bad{% else %}bg-warn/15 text-warn{% endif %}">{{ d.status }}</span>
+                            </td>
+                            <td class="cell px-5 text-right tabular-nums">{{ d.chunk_count }}</td>
+                            <td class="cell px-5 text-muted whitespace-nowrap">{{ d.updated_at|naturaltime }}</td>
+                            <td class="cell px-5 text-right whitespace-nowrap">
+                                <div class="flex items-center justify-end gap-1">
+                                    <form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ d.pk }}"><button name="action" value="reindex-doc" class="btn btn-ghost btn-sm" title="Re-index"><i class="fa-solid fa-rotate"></i></button></form>
+                                    <form method="post" onsubmit="return confirm('Delete {{ d.title|escapejs }}?')">{% csrf_token %}<input type="hidden" name="id" value="{{ d.pk }}"><button name="action" value="delete-doc" class="btn btn-ghost btn-sm text-bad" title="Delete"><i class="fa-solid fa-trash"></i></button></form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="px-5 py-6 text-[13.5px] text-muted">No documents uploaded yet.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <div class="flex flex-col gap-6">
+        <section class="card p-5">
+            <h2 class="font-display text-[16px] font-semibold mb-3">Upload Document</h2>
+            <form method="post" enctype="multipart/form-data" class="flex flex-col gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="upload-doc">
+                <div class="field flex flex-col gap-1">
+                    <label for="doc-kb" class="caps">Knowledge Base</label>
+                    <select id="doc-kb" name="knowledge_base" required>
+                        {% for kb in knowledge_bases %}<option value="{{ kb.pk }}">{{ kb.name }} ({{ kb.slug }})</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="field flex flex-col gap-1">
+                    <label for="doc-title" class="caps">Title (optional)</label>
+                    <input id="doc-title" type="text" name="title" placeholder="Uses filename if blank">
+                </div>
+                <div class="field flex flex-col gap-1">
+                    <label for="doc-file" class="caps">File (.txt, .md, .pdf)</label>
+                    <input id="doc-file" type="file" name="file" accept=".txt,.md,.pdf" required>
+                </div>
+                <button type="submit" class="btn btn-primary mt-1" {% if not knowledge_bases %}disabled{% endif %}><i class="fa-solid fa-upload"></i> Upload &amp; Index</button>
+            </form>
+        </section>
+
+        <section class="card p-5">
+            <h2 class="font-display text-[16px] font-semibold mb-3">New Knowledge Base</h2>
+            <form method="post" class="flex flex-col gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create-kb">
+                <div class="field flex flex-col gap-1">
+                    <label for="kb-name" class="caps">Name</label>
+                    <input id="kb-name" type="text" name="name" required placeholder="Company Playbook">
+                </div>
+                <div class="field flex flex-col gap-1">
+                    <label for="kb-slug" class="caps">Slug</label>
+                    <input id="kb-slug" type="text" name="slug" required placeholder="company-playbook">
+                </div>
+                <div class="field flex flex-col gap-1">
+                    <label for="kb-desc" class="caps">Description (shown to LLM)</label>
+                    <textarea id="kb-desc" name="description" rows="2" placeholder="Internal SOPs and pricing rules"></textarea>
+                </div>
+                <label class="flex items-center gap-2 text-[13px]"><input type="checkbox" name="enabled" value="1" checked> Enabled</label>
+                <button type="submit" class="btn btn-ghost mt-1"><i class="fa-solid fa-plus"></i> Create Knowledge Base</button>
+            </form>
+        </section>
+    </div>
+</div>
+{% endblock %}

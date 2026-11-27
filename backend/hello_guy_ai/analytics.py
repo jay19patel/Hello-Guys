@@ -13,12 +13,11 @@ from redis.exceptions import RedisError
 
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.models import (
+    AgentMemory,
     Document,
     KnowledgeBase,
     LLMModel,
     Message,
-    Notification,
-    Reminder,
     Run,
     Thread,
     Trigger,
@@ -328,14 +327,8 @@ def build_ai_analytics(period: str = "30d") -> dict[str, Any]:
         "automation": {
             "triggers_enabled": Trigger.objects.filter(enabled=True).count(),
             "triggers_total": Trigger.objects.count(),
-            "reminders_scheduled": Reminder.objects.filter(status=Reminder.Status.SCHEDULED).count(),
-            "reminders_done": Reminder.objects.filter(status=Reminder.Status.DONE).count(),
-            "unread_notifications": Notification.objects.filter(is_read=False).count(),
+            "memories_active": AgentMemory.objects.filter(is_active=True).count(),
+            "memories_total": AgentMemory.objects.count(),
         },
-        "scheduled_reminders": list(
-            Reminder.objects.filter(status__in=[Reminder.Status.SCHEDULED, Reminder.Status.PAUSED])
-            .select_related("user")
-            .order_by("due_at")[:50]
-        ),
         "recent_runs": recent_runs,
     }

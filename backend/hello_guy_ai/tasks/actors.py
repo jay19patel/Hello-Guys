@@ -10,7 +10,7 @@ from hello_guy_ai import knowledge
 from hello_guy_ai.conf import ai_settings
 from hello_guy_ai.core.engine import AgentRunner
 from hello_guy_ai.models import Document, Run
-from hello_guy_ai.services import reminders, triggers
+from hello_guy_ai.services import triggers
 from hello_guy_ai.services.rag import RagService
 
 logger = logging.getLogger(__name__)
@@ -50,17 +50,6 @@ def resume_assistant(run_id: str) -> None:
 @dramatiq.actor(queue_name=TRIGGER_QUEUE, max_retries=0, time_limit=RUN_LIMIT_MS)
 def fire_trigger(trigger_id: int, object_pk: str | None = None, snapshot: dict | None = None) -> None:
     triggers.fire(trigger_id, object_pk, snapshot)
-
-
-# No retries: the agent run has side effects and the reminder was already claimed exactly once.
-@dramatiq.actor(queue_name=TRIGGER_QUEUE, max_retries=0, time_limit=RUN_LIMIT_MS)
-def run_reminder_agent(reminder_id: int) -> None:
-    reminders.run_reminder_agent(reminder_id)
-
-
-@dramatiq.actor(queue_name=TRIGGER_QUEUE, max_retries=5, min_backoff=10000)
-def send_notification_email(notification_id: int) -> None:
-    reminders.send_notification_email(notification_id)
 
 
 @dramatiq.actor(queue_name=INGEST_QUEUE, max_retries=3, min_backoff=5000, time_limit=10 * 60 * 1000)

@@ -1,0 +1,78 @@
+{% extends "hello_guy_ai/base.html" %}
+{% load humanize %}
+{% block title %}{{ thread.name|default:"Thread" }} · Hello Guy AI{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+        <a href="{% url 'hello_guy_ai_threads' %}" class="text-[12.5px] text-muted hover:text-ink">&larr; All Threads</a>
+        <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight mt-1">{{ thread.name|default:"Untitled chat" }}</h1>
+        <p class="text-[13px] text-muted mt-0.5">
+            Assistant: <strong class="text-ink">{{ thread.assistant_id }}</strong> ·
+            Owner: {{ thread.created_by.username }} ·
+            {% if thread.external_id %}External: <code>{{ thread.external_id }}</code>{% else %}Source: {{ thread.get_source_display }}{% endif %}
+        </p>
+    </div>
+    <div class="flex items-center gap-2">
+        {% if thread.external_id %}
+        <a href="{% url 'crm:inbox-thread' thread.pk %}" class="btn btn-primary btn-sm"><i class="fa-solid fa-headset"></i> Open in CRM Live Chat</a>
+        {% else %}
+        <a href="{% url 'hello_guy_ai_chat' %}?assistant={{ thread.assistant_id }}&thread={{ thread.pk }}" class="btn btn-primary btn-sm"><i class="fa-solid fa-comments"></i> Open in AI Chat</a>
+        {% endif %}
+    </div>
+</header>
+
+<div class="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+    <section class="card overflow-hidden">
+        <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+            <h2 class="font-display text-[16px] font-semibold">Messages</h2>
+            <span class="pill bg-subtle border border-line text-[12px]">{{ msgs|length }} messages</span>
+        </div>
+        {% if msgs %}
+        <div class="divide-y divide-line">
+            {% for m in msgs %}
+            <div class="px-5 py-3.5 text-[13.5px]">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="pill {% if m.role == 'user' %}bg-accent/10 text-accent{% elif m.role == 'assistant' %}bg-ok/10 text-ok{% else %}bg-subtle border border-line text-muted{% endif %} text-[11px] uppercase">{{ m.role }}{% if m.name %} · {{ m.name }}{% endif %}</span>
+                    <span class="text-[11.5px] text-muted">{{ m.created_at|date:"d M Y, g:i A" }}</span>
+                </div>
+                {% if m.content %}
+                <p class="mt-1.5 text-ink whitespace-pre-line break-words">{{ m.content }}</p>
+                {% endif %}
+                {% if m.tool_calls %}
+                <div class="mt-2 text-[12px] text-muted bg-subtle/60 border border-line rounded-lg px-3 py-1.5">
+                    Tool calls: {% for tc in m.tool_calls %}<code>{{ tc.function.name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="px-5 py-6 text-[13.5px] text-muted">No messages in this thread yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card overflow-hidden">
+        <div class="px-5 pt-5 pb-3 border-b border-line flex items-center justify-between">
+            <h2 class="font-display text-[16px] font-semibold">Runs</h2>
+            <span class="pill bg-subtle border border-line text-[12px]">{{ runs|length }}</span>
+        </div>
+        {% if runs %}
+        <div class="divide-y divide-line">
+            {% for r in runs %}
+            <div class="px-5 py-3 text-[12.5px]">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="pill {% if r.status == 'succeeded' %}bg-ok/15 text-ok{% elif r.status == 'failed' %}bg-bad/15 text-bad{% else %}bg-warn/15 text-warn{% endif %} text-[11px]">{{ r.status }}</span>
+                    <span class="text-muted">{{ r.created_at|naturaltime }}</span>
+                </div>
+                <p class="text-muted mt-1">{{ r.model|default:"—" }} · {{ r.total_tokens }} tok · {{ r.iterations }} iters</p>
+                {% if r.error %}<p class="text-bad mt-1 break-words">{{ r.error }}</p>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="px-5 py-6 text-[13px] text-muted">No runs recorded.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

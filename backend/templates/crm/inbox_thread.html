@@ -71,19 +71,46 @@
 
     function bubble(m) {
         const row = document.createElement('div');
-        row.className = 'flex ' + (m.who === 'visitor' ? 'justify-start' : 'justify-end');
+        const isVisitor = m.who === 'visitor';
+        const isStaff = m.who === 'staff';
+        row.className = 'flex items-end gap-2 ' + (isVisitor ? 'justify-start' : 'justify-end');
         row.dataset.id = m.id;
+
+        const avatar = document.createElement('span');
+        avatar.className = 'w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] ' + (
+            isVisitor ? 'bg-subtle border border-line text-muted'
+            : isStaff ? 'bg-accent text-on-accent'
+            : 'bg-accent/15 text-accent border border-accent/25'
+        );
+        avatar.innerHTML = '<i class="fa-solid ' + (isVisitor ? 'fa-user' : isStaff ? 'fa-headset' : 'fa-robot') + '"></i>';
+
         const b = document.createElement('div');
-        b.className = 'bubble shadow-soft ' + (m.who === 'visitor' ? 'bg-surface border border-line text-ink' : m.who === 'staff' ? 'bg-accent text-on-accent' : 'bg-accent/10 text-ink border border-accent/20');
-        const meta = document.createElement('p');
-        meta.className = 'text-[11px] font-semibold opacity-80 mb-0.5';
-        const who = m.who === 'visitor' ? 'Visitor' : m.who === 'staff' ? (m.name || 'Team') : 'AI assistant';
-        meta.textContent = who + ' · ' + new Date(m.at).toLocaleString('en-IN', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'});
+        b.className = 'bubble shadow-soft ' + (
+            isVisitor ? 'bg-surface border border-line text-ink rounded-tl-sm'
+            : isStaff ? 'bg-accent text-on-accent rounded-tr-sm'
+            : 'bg-accent/10 text-ink border border-accent/20 rounded-tr-sm'
+        );
+
+        const meta = document.createElement('div');
+        meta.className = 'flex items-center gap-1.5 text-[11px] font-semibold mb-1 ' + (isStaff ? 'text-on-accent/80' : 'text-muted');
+        const who = isVisitor ? 'Visitor' : isStaff ? (m.name || 'Team') : 'AI assistant';
+        const whoSpan = document.createElement('span');
+        whoSpan.textContent = who;
+        const dot = document.createElement('span');
+        dot.setAttribute('aria-hidden', 'true');
+        dot.textContent = '·';
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'font-normal';
+        timeSpan.textContent = new Date(m.at).toLocaleString('en-IN', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'});
+        meta.append(whoSpan, dot, timeSpan);
+
         const text = document.createElement('p');
-        text.className = 'text-[13.5px]';
+        text.className = 'text-[13.5px] leading-relaxed whitespace-pre-wrap break-words';
         text.textContent = m.text;
         b.append(meta, text);
-        row.append(b);
+
+        if (isVisitor) row.append(avatar, b);
+        else row.append(b, avatar);
         return row;
     }
 

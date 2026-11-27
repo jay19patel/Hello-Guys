@@ -80,7 +80,8 @@ class WebsiteAssistant(AIAssistant):
         "list_services (what we offer), search_projects (portfolio), list_tech_skills (technologies), "
         "search_blog_posts / get_blog_post / top_blog_posts (articles), search_faqs (common questions). "
         "Never invent prices, timelines, clients or facts; if neither has it, say the team will confirm.\n"
-        "LEADS & FOLLOW-UPS: when the visitor wants a project, a quote, a meeting, or to talk to the team, collect "
+        "LIVE HANDOFF: when the visitor asks to talk to a human, person, or live agent right now, call request_human immediately WITHOUT asking for phone, email, or a date first.\n"
+        "LEADS & FOLLOW-UPS: when the visitor wants a project, a quote, or a scheduled meeting, collect "
         "their name, email, which service(s) they want, and a short description (phone optional). "
         "If they ask for a meeting on a date WITHOUT a time (e.g. '24 December'), politely ask if they have a preferred "
         "time while confirming their details; if they still do not give a time, pass preferred_date='YYYY-MM-DD' and "
@@ -123,6 +124,7 @@ class WebsiteAssistant(AIAssistant):
         "search_faqs",
         "create_inquiry",
         "create_follow_up",
+        "request_human",
     ]
 
     @classmethod
@@ -148,10 +150,7 @@ class HelloGuyAssistant(AIAssistant):
         "Call get_current_datetime first when the question has a date range (today, last month, this week).\n"
         "CHANGES: only to create/update records, use db_list_models and db_describe, then the db_ write tools. "
         "They pause for the user's approval; before calling one, say in one sentence what you will do.\n"
-        "REMINDERS: call get_current_datetime first, then create_reminder with the time in the user's timezone. "
-        "If AM/PM is unclear, pick the next sensible working-hours time and say which one you chose.\n"
-        "NOTIFICATIONS: when the user asks what they missed or which notifications they have not seen, "
-        "call list_notifications.\n"
+        "FOLLOW-UPS: when the user asks to be reminded or schedule a follow-up, call get_current_datetime first, then create_follow_up.\n"
         "MEMORY: save stable facts the user teaches you (preferences, mappings, rules) with update_memory.\n"
         + STYLE
     )
@@ -186,11 +185,6 @@ class HelloGuyAssistant(AIAssistant):
         "db_create",
         "db_update",
         "db_delete",
-        "create_reminder",
-        "list_reminders",
-        "update_reminder",
-        "cancel_reminder",
-        "list_notifications",
         "create_follow_up",
         "list_follow_ups",
         "send_global_notification",

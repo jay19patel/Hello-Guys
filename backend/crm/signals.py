@@ -15,10 +15,16 @@ def chat_needs_a_person(sender, thread, reason="", **kwargs):
 
 @receiver(live_message_received, dispatch_uid="crm_live_message")
 def visitor_replied(sender, thread, message, **kwargs):
-    from hello_guy_ai.services.reminders import notify
+    from core import notifications
 
     url = reverse("crm:inbox-thread", args=[thread.pk])
     if thread.handled_by_id:
-        notify(thread.handled_by, f"New message from {thread.name or 'visitor'}", message.content[:300], url=url)
+        notifications.notify(
+            user=thread.handled_by,
+            title=f"New message from {thread.name or 'visitor'}",
+            body=message.content[:300],
+            url=url,
+            category="crm",
+        )
     else:
         notify_team(f"New message from {thread.name or 'visitor'}", message.content[:300], url)
