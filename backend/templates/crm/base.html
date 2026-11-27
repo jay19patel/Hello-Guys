@@ -25,6 +25,9 @@
 <a href="{% url 'crm:meetings' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'meetings' or url_name == 'meeting' or url_name == 'meeting-create' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-calendar-days w-4 text-center shrink-0"></i> Meetings
 </a>
+<a href="{% url 'crm:emails' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'emails' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
+    <i class="fa-solid fa-envelope w-4 text-center shrink-0"></i> Emails
+</a>
 <a href="{% url 'crm:inbox' %}" class="flex items-center gap-3 h-9 px-3 rounded-lg transition-colors {% if url_name == 'inbox' or url_name == 'inbox-thread' %}bg-accent/10 text-accent font-semibold{% else %}text-muted hover:bg-subtle hover:text-ink{% endif %}">
     <i class="fa-solid fa-comments w-4 text-center shrink-0"></i> Live chat
     {% if inbox_waiting %}<span class="ml-auto pill bg-bad/10 text-bad" title="Chats waiting for a person">{{ inbox_waiting }}</span>{% endif %}

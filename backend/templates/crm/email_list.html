@@ -1,0 +1,89 @@
+{% extends "crm/base.html" %}
+{% block page_title %}Emails{% endblock %}
+
+{% block content %}
+<header class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+        <h1 class="font-display text-[24px] leading-[30px] font-bold tracking-tight">Emails</h1>
+        <p class="text-muted text-[13px] mt-1">All sent &amp; received customer emails with sentiment tracking.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+        {% if can_edit and google_connected %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync-emails"><button class="btn btn-primary btn-sm"><i class="fa-solid fa-arrows-rotate"></i> Sync Gmail</button></form>
+        {% elif can_edit %}
+        <a href="{% url 'crm:settings' %}" class="btn btn-ghost btn-sm text-muted"><i class="fa-solid fa-plug"></i> Connect Gmail</a>
+        {% endif %}
+        <a href="{% url 'crm:emails' %}" class="btn btn-ghost btn-sm" title="Refresh"><i class="fa-solid fa-rotate"></i> Refresh</a>
+    </div>
+</header>
+
+<form method="get" class="card p-4 flex flex-wrap items-center gap-3">
+    <div class="field flex-1 min-w-[220px]">
+        <label for="email-search" class="sr-only">Search emails</label>
+        <input id="email-search" type="search" name="q" value="{{ q }}" placeholder="Search subject, body, sender, customer…">
+    </div>
+    <div class="field w-36">
+        <label for="email-dir" class="sr-only">Direction</label>
+        <select id="email-dir" name="direction" onchange="this.form.submit()">
+            <option value="">All directions</option>
+            {% for val, label in directions %}
+            <option value="{{ val }}" {% if direction == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field w-40">
+        <label for="email-sent" class="sr-only">Sentiment</label>
+        <select id="email-sent" name="sentiment" onchange="this.form.submit()">
+            <option value="">All sentiments</option>
+            {% for val, label in sentiments %}
+            <option value="{{ val }}" {% if sentiment == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button class="btn btn-primary btn-sm"><i class="fa-solid fa-magnifying-glass"></i> Filter</button>
+    {% if q or direction or sentiment %}
+    <a href="{% url 'crm:emails' %}" class="btn btn-ghost btn-sm">Clear</a>
+    {% endif %}
+</form>
+
+<section class="card overflow-hidden">
+    {% if object_list %}
+    <ul class="divide-y divide-line">
+        {% for em in object_list %}
+        <li class="p-4 hover:bg-subtle/30 transition-colors">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-semibold text-[14px] text-ink">{{ em.subject }}</span>
+                        <span class="pill border text-[11px] {{ em.sentiment_ui.badge }}">
+                            <i class="fa-solid {{ em.sentiment_ui.icon }}"></i> {{ em.sentiment_ui.label }}
+                        </span>
+                    </div>
+                    <p class="text-[12.5px] text-muted mt-0.5 flex flex-wrap items-center gap-1.5">
+                        <a href="{% url 'crm:customer' em.customer.pk %}" class="font-semibold text-accent hover:underline">{{ em.customer }}</a>
+                        {% if em.opportunity %}
+                        <span aria-hidden="true">·</span>
+                        <a href="{% url 'crm:opportunity' em.opportunity.pk %}" class="hover:text-accent hover:underline">{{ em.opportunity.title|truncatechars:45 }}</a>
+                        {% endif %}
+                        <span aria-hidden="true">·</span>
+                        <span>{{ em.sender }} → {{ em.recipient }}</span>
+                    </p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <span class="pill bg-subtle border border-line text-[11px]">
+                        <i class="fa-solid {% if em.direction == 'incoming' %}fa-inbox text-accent{% else %}fa-paper-plane text-muted{% endif %} text-[10px]"></i>
+                        {{ em.get_direction_display }} · {{ em.sent_at|date:"d M, g:i A" }}
+                    </span>
+                    <a href="{% url 'crm:customer' em.customer.pk %}" class="btn btn-ghost btn-sm text-[12px]">Open →</a>
+                </div>
+            </div>
+            <p class="mt-2 text-[13px] text-ink/85 whitespace-pre-line leading-relaxed">{{ em.body|truncatechars:260 }}</p>
+        </li>
+        {% endfor %}
+    </ul>
+    {% include "crm/_pagination.html" %}
+    {% else %}
+    <div class="p-10 text-center text-muted text-[13.5px]">No emails match the current filters.</div>
+    {% endif %}
+</section>
+{% endblock %}

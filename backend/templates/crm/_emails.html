@@ -1,0 +1,87 @@
+{# Threaded email list with sentiment badges and quick-reply support #}
+{% if email_threads %}
+<div class="mt-3 flex flex-col gap-3">
+    {% for thread in email_threads %}
+    <div class="rounded-xl border border-line bg-surface overflow-hidden">
+        {# Root email #}
+        {% with em=thread.root %}
+        <div class="p-3.5 {% if em.direction == 'incoming' %}bg-accent/[0.03]{% endif %}">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-semibold text-[13.5px] text-ink">{{ em.subject }}</span>
+                        {% if thread.count > 1 %}
+                        <span class="pill bg-subtle border border-line text-[11px] text-muted">{{ thread.count }} messages</span>
+                        {% endif %}
+                    </div>
+                    <p class="text-[12px] text-muted mt-0.5 flex flex-wrap items-center gap-1.5">
+                        <span class="font-medium text-ink/80">{{ em.sender }}</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        <span>{{ em.recipient }}</span>
+                        {% if em.opportunity %}
+                        <span aria-hidden="true">·</span>
+                        <a href="{% url 'crm:opportunity' em.opportunity.pk %}" class="text-accent hover:underline">{{ em.opportunity.title|truncatechars:35 }}</a>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+                    <span class="pill border text-[11px] {{ em.sentiment_ui.badge }}" title="Email sentiment: {{ em.sentiment_ui.label }}">
+                        <i class="fa-solid {{ em.sentiment_ui.icon }}"></i> {{ em.sentiment_ui.label }}
+                    </span>
+                    <span class="pill bg-subtle border border-line text-[11px]">
+                        <i class="fa-solid {% if em.direction == 'incoming' %}fa-inbox text-accent{% else %}fa-paper-plane text-muted{% endif %} text-[10px]"></i>
+                        {{ em.get_direction_display }} · {{ em.sent_at|date:"d M, g:i A" }}
+                    </span>
+                </div>
+            </div>
+            <p class="mt-2 text-[13px] text-ink/90 whitespace-pre-line leading-relaxed">{{ em.body|truncatechars:400 }}</p>
+        </div>
+        {% endwith %}
+
+        {# Nested replies in the same thread #}
+        {% if thread.replies %}
+        <div class="border-t border-line bg-subtle/20 px-3.5 py-2.5 flex flex-col gap-2.5">
+            {% for em in thread.replies %}
+            <div class="pl-3.5 border-l-2 {% if em.direction == 'incoming' %}border-accent{% else %}border-line{% endif %}">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <p class="text-[11.5px] font-semibold {% if em.direction == 'incoming' %}text-accent{% else %}text-muted{% endif %} flex items-center gap-1.5">
+                            <i class="fa-solid fa-reply fa-flip-horizontal text-[10px]"></i>
+                            {% if em.direction == 'incoming' %}
+                            Reply from {{ em.sender }}
+                            {% else %}
+                            Reply sent by {% if em.sent_by %}{{ em.sent_by.get_full_name|default:em.sent_by.username }}{% else %}{{ em.sender }}{% endif %}
+                            {% endif %}
+                        </p>
+                        <p class="text-[11.5px] text-muted">{{ em.sender }} → {{ em.recipient }}</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+                        <span class="pill border text-[11px] {{ em.sentiment_ui.badge }}" title="Email sentiment: {{ em.sentiment_ui.label }}">
+                            <i class="fa-solid {{ em.sentiment_ui.icon }}"></i> {{ em.sentiment_ui.label }}
+                        </span>
+                        <span class="pill bg-surface border border-line text-[11px]">
+                            {{ em.get_direction_display }} · {{ em.sent_at|date:"d M, g:i A" }}
+                        </span>
+                    </div>
+                </div>
+                <p class="mt-1.5 text-[13px] text-ink/90 whitespace-pre-line leading-relaxed">{{ em.body|truncatechars:400 }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if can_edit and customer.email %}
+        <div class="border-t border-line/70 px-3.5 py-2 bg-subtle/30 flex justify-end">
+            <button type="button"
+                    @click="replyTo('{{ customer.email|escapejs }}', '{{ thread.root.subject|escapejs }}')"
+                    class="btn btn-ghost btn-sm text-[12px] h-7 px-2.5">
+                <i class="fa-solid fa-reply"></i> Reply to thread
+            </button>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="mt-3 text-[13.5px] text-muted">No emails sent or synced yet.</p>
+{% endif %}

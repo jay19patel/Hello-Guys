@@ -517,11 +517,20 @@ class EmailMessage(TimeStamped):
         OUTGOING = "outgoing", "Sent"
         INCOMING = "incoming", "Received"
 
+    class Sentiment(models.TextChoices):
+        JOY = "joy", "Joy"
+        HAPPY = "happy", "Happy"
+        NEUTRAL = "neutral", "Neutral"
+        CONFUSED = "confused", "Question"
+        SAD = "sad", "Sad"
+        ANGRY = "angry", "Angry"
+
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="emails")
     opportunity = models.ForeignKey(
         Opportunity, on_delete=models.SET_NULL, null=True, blank=True, related_name="emails"
     )
     direction = models.CharField(max_length=12, choices=Direction.choices, default=Direction.OUTGOING)
+    sentiment = models.CharField(max_length=16, choices=Sentiment.choices, default=Sentiment.NEUTRAL)
     sender = models.EmailField()
     recipient = models.EmailField()
     subject = models.CharField(max_length=255)
@@ -530,6 +539,23 @@ class EmailMessage(TimeStamped):
     gmail_thread_id = models.CharField(max_length=128, blank=True)
     sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     sent_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    _SENTIMENT_UI = {
+        Sentiment.JOY: ("fa-face-laugh-beam", "Joy", "bg-ok/15 text-ok border-ok/30"),
+        Sentiment.HAPPY: ("fa-face-smile", "Happy", "bg-ok/10 text-ok border-ok/25"),
+        Sentiment.NEUTRAL: ("fa-face-meh", "Neutral", "bg-subtle text-muted border-line"),
+        Sentiment.CONFUSED: ("fa-circle-question", "Question", "bg-accent/10 text-accent border-accent/25"),
+        Sentiment.SAD: ("fa-face-frown", "Sad", "bg-warn/15 text-warn border-warn/30"),
+        Sentiment.ANGRY: ("fa-face-angry", "Angry", "bg-bad/15 text-bad border-bad/30"),
+    }
+
+    @property
+    def sentiment_ui(self) -> dict[str, str]:
+        """Return icon class, label, and badge CSS classes for this email's sentiment."""
+        icon, label, badge = self._SENTIMENT_UI.get(
+            self.sentiment, ("fa-face-meh", "Neutral", "bg-subtle text-muted border-line")
+        )
+        return {"icon": icon, "label": label, "badge": badge}
 
     class Meta:
         ordering = ("-sent_at",)

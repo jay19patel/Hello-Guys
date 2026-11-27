@@ -3,7 +3,9 @@
 import base64
 from email.message import EmailMessage as MimeEmail
 from email.utils import parseaddr
+from collections import defaultdict
 import logging
+import re
 
 from django.conf import settings
 from django.core.mail import EmailMessage as DjangoEmailMessage
@@ -14,6 +16,51 @@ from crm import google, services
 from crm.models import Activity, Customer, EmailMessage, GoogleAccount, Opportunity
 
 logger = logging.getLogger(__name__)
+
+
+_RE_PREFIX = re.compile(r"^(?:re|fwd|fw)\s*:\s*", re.IGNORECASE)
+
+_SENTIMENT_RULES: list[tuple[str, tuple[str, ...]]] = [
+    (EmailMessage.Sentiment.ANGRY, ("angry", "unacceptable", "worst", "frustrated", "complaint", "furious", "terrible", "cancel", "refund", "escalate")),
+    (EmailMessage.Sentiment.SAD, ("sad", "sorry", "disappointed", "unfortunately", "regret", "missed", "unable to", "delay")),
+    (EmailMessage.Sentiment.JOY, ("thrilled", "amazing", "awesome", "fantastic", "love it", "excited", "thank you so much", "approved", "deal closed", "congrats")),
+    (EmailMessage.Sentiment.HAPPY, ("thanks", "thank you", "appreciate", "sounds good", "happy", "glad", "great", "confirmed", "talk soon", "looking forward")),
+    (EmailMessage.Sentiment.CONFUSED, ("?", "clarify", "not sure", "confused", "can we", "could you", "how does", "what is", "please explain")),
+]
+
+
+def detect_email_sentiment(subject: str, body: str) -> str:
+    """Classify an email's tone into a Sentiment choice using keyword rules."""
+    text = f"{subject} {body}".lower()
+    for sentiment, keywords in _SENTIMENT_RULES:
+        if any(kw in text for kw in keywords):
+            return sentiment
+    return EmailMessage.Sentiment.NEUTRAL
+
+
+def group_email_threads(emails) -> list[dict]:
+    """Group EmailMessage records into conversation threads ordered newest-first."""
+    buckets: dict[str, list[EmailMessage]] = defaultdict(list)
+    for em in emails:
+        if em.gmail_thread_id:
+            key = f"tid:{em.gmail_thread_id}"
+        else:
+            norm = _RE_PREFIX.sub("", (em.subject or "").strip()).strip().lower()
+            key = f"sub:{norm or em.pk}"
+        buckets[key].append(em)
+
+    threads = []
+    for msgs in buckets.values():
+        ordered = sorted(msgs, key=lambda m: m.sent_at)
+        threads.append({
+            "root": ordered[0],
+            "replies": ordered[1:],
+            "latest_at": ordered[-1].sent_at,
+            "latest": ordered[-1],
+            "count": len(ordered),
+        })
+    threads.sort(key=lambda t: t["latest_at"], reverse=True)
+    return threads
 
 
 def _has_gmail_scope(account: GoogleAccount, scope_suffix: str) -> bool:
@@ -72,6 +119,7 @@ def send_crm_email(
         customer=customer,
         opportunity=opportunity,
         direction=EmailMessage.Direction.OUTGOING,
+        sentiment=detect_email_sentiment(subject, body),
         sender=sender_email,
         recipient=to_email,
         subject=subject,
@@ -150,6 +198,7 @@ def sync_inbound_emails(limit: int = 25) -> int:
             customer=customer,
             opportunity=opp,
             direction=EmailMessage.Direction.INCOMING,
+            sentiment=detect_email_sentiment(subject, body),
             sender=from_addr,
             recipient=account_email or from_addr,
             subject=subject,

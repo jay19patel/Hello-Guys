@@ -15,6 +15,7 @@ urlpatterns = [
     path("customers/", views.CustomerListView.as_view(), name="customers"),
     path("customers/new/", views.CustomerCreateView.as_view(), name="customer-create"),
     path("customers/<int:pk>/", views.CustomerDetailView.as_view(), name="customer"),
+    path("emails/", views.EmailListView.as_view(), name="emails"),
     path("follow-ups/", RedirectView.as_view(pattern_name="core:follow-ups", query_string=True), name="follow-ups"),
     path("follow-ups/new/", core_views.FollowUpCreateView.as_view(), name="follow-up-create"),
     path("follow-ups/<int:pk>/action/", core_views.FollowUpActionView.as_view(), name="follow-up-action"),

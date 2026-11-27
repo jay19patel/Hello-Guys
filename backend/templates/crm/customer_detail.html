@@ -170,39 +170,51 @@
             {% endif %}
         </section>
 
-        <section class="card p-5">
+        <section class="card p-5" x-data="{
+            composeOpen: {% if email_form.errors %}true{% else %}false{% endif %},
+            replyTo(to, subj) {
+                this.composeOpen = true;
+                this.$nextTick(() => {
+                    const toEl = this.$refs.emailForm?.querySelector('[name=to_email]');
+                    const subEl = this.$refs.emailForm?.querySelector('[name=subject]');
+                    const bodyEl = this.$refs.emailForm?.querySelector('[name=body]');
+                    if (toEl && to) toEl.value = to;
+                    if (subEl) subEl.value = /^re:/i.test(subj) ? subj : ('Re: ' + subj);
+                    bodyEl?.focus();
+                });
+            }
+        }">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <h2 class="font-display font-semibold text-[16px] flex items-center gap-2"><i class="fa-solid fa-envelope text-accent"></i> Emails</h2>
-                {% if can_edit and google_connected %}
-                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync-emails"><button class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrows-rotate"></i> Sync Gmail</button></form>
-                {% endif %}
+                <div class="flex flex-wrap items-center gap-2">
+                    {% if can_edit and google_connected %}
+                    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync-emails"><button class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrows-rotate"></i> Sync Gmail</button></form>
+                    {% elif can_edit %}
+                    <a href="{% url 'crm:settings' %}" class="btn btn-ghost btn-sm text-muted" title="Connect Gmail in CRM Settings to sync incoming replies"><i class="fa-solid fa-plug"></i> Connect Gmail</a>
+                    {% endif %}
+                    <button type="button" onclick="window.location.reload()" class="btn btn-ghost btn-sm" title="Refresh emails"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                    {% if can_edit and customer.email %}
+                    <button type="button" @click="composeOpen = !composeOpen" class="btn btn-primary btn-sm">
+                        <i class="fa-solid" :class="composeOpen ? 'fa-xmark' : 'fa-plus'"></i>
+                        <span x-text="composeOpen ? 'Cancel' : 'Email'">Email</span>
+                    </button>
+                    {% endif %}
+                </div>
             </div>
             {% if can_edit and customer.email %}
-            <form method="post" class="mt-3 rounded-xl border border-line bg-subtle/30 p-3.5 flex flex-col gap-2.5">{% csrf_token %}
-                <input type="hidden" name="action" value="send-email">
-                <div class="grid sm:grid-cols-2 gap-2.5">
-                    <div class="field flex flex-col gap-1"><label for="{{ email_form.to_email.id_for_label }}" class="caps">To</label>{{ email_form.to_email }}</div>
-                    <div class="field flex flex-col gap-1"><label for="{{ email_form.subject.id_for_label }}" class="caps">Subject</label>{{ email_form.subject }}</div>
-                </div>
-                <div class="field flex flex-col gap-1"><label for="{{ email_form.body.id_for_label }}" class="sr-only">Body</label>{{ email_form.body }}</div>
-                <div class="flex justify-end"><button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-paper-plane"></i> Send Email</button></div>
-            </form>
-            {% endif %}
-            {% if emails %}
-            <ul class="mt-3 divide-y divide-line">
-                {% for em in emails %}
-                <li class="py-2.5 text-[13px]">
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="font-semibold text-ink">{{ em.subject }}</span>
-                        <span class="pill bg-subtle border border-line text-[11px]">{{ em.get_direction_display }} · {{ em.sent_at|date:"d M, g:i A" }}</span>
+            <div x-show="composeOpen" x-cloak x-transition>
+                <form x-ref="emailForm" method="post" class="mt-3 rounded-xl border border-line bg-subtle/30 p-3.5 flex flex-col gap-2.5">{% csrf_token %}
+                    <input type="hidden" name="action" value="send-email">
+                    <div class="grid sm:grid-cols-2 gap-2.5">
+                        <div class="field flex flex-col gap-1"><label for="{{ email_form.to_email.id_for_label }}" class="caps">To</label>{{ email_form.to_email }}</div>
+                        <div class="field flex flex-col gap-1"><label for="{{ email_form.subject.id_for_label }}" class="caps">Subject</label>{{ email_form.subject }}</div>
                     </div>
-                    <p class="mt-1 text-muted whitespace-pre-line">{{ em.body|truncatechars:200 }}</p>
-                </li>
-                {% endfor %}
-            </ul>
-            {% else %}
-            <p class="mt-3 text-[13.5px] text-muted">No emails sent or synced yet.</p>
+                    <div class="field flex flex-col gap-1"><label for="{{ email_form.body.id_for_label }}" class="sr-only">Body</label>{{ email_form.body }}</div>
+                    <div class="flex justify-end"><button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-paper-plane"></i> Send Email</button></div>
+                </form>
+            </div>
             {% endif %}
+            {% include "crm/_emails.html" %}
         </section>
 
         {% if pms_projects %}
@@ -227,17 +239,7 @@
                 <h2 class="font-display font-semibold text-[16px]">Activity Timeline</h2>
                 <span class="text-[12px] text-muted">{{ activities|length }} event{{ activities|length|pluralize }}</span>
             </div>
-            {% if can_edit %}
-            <form method="post" class="mt-4 rounded-xl border border-line bg-subtle/40 p-3 flex flex-col gap-2.5">{% csrf_token %}
-                <input type="hidden" name="action" value="note">
-                <div class="field"><label for="{{ note_form.body.id_for_label }}" class="sr-only">Note</label>{{ note_form.body }}</div>
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="field w-40"><label for="{{ note_form.kind.id_for_label }}" class="sr-only">Type</label>{{ note_form.kind }}</div>
-                    <button class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Log Activity</button>
-                </div>
-            </form>
-            {% endif %}
-            <div class="mt-5">{% include "crm/_activities.html" %}</div>
+            <div class="mt-4">{% include "crm/_activities.html" %}</div>
         </section>
 
         {% if can_edit %}

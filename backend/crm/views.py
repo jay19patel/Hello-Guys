@@ -28,7 +28,7 @@ from crm.forms import (
     ProposalForm, ProposeTimeForm, ReplyForm, SendEmailForm, ShareForm, UploadForm,
 )
 from crm.models import (
-    Activity, Customer, GoogleAccount, GoogleFile, Meeting, MeetingTranscript,
+    Activity, Customer, EmailMessage, GoogleAccount, GoogleFile, Meeting, MeetingTranscript,
     Opportunity, PaymentMilestone, Proposal, Service, Source,
 )
 from rest_framework import serializers
@@ -202,6 +202,7 @@ class OpportunityDetailView(CRMView, CRMActionsMixin, DetailView):
             (m.amount for m in milestones if m.status in (PaymentMilestone.Status.PENDING, PaymentMilestone.Status.INVOICED)),
             Decimal("0.00"),
         )
+        emails = list(opp.emails.select_related("sent_by")[:40])
         return super().get_context_data(
             activities=opp.activities.select_related("created_by")[:50],
             meetings=opp.meetings.all(),
@@ -209,7 +210,8 @@ class OpportunityDetailView(CRMView, CRMActionsMixin, DetailView):
             milestones=milestones,
             milestone_paid_total=paid_total,
             milestone_pending_total=pending_total,
-            emails=opp.emails.select_related("sent_by")[:25],
+            emails=emails,
+            email_threads=email_service.group_email_threads(emails),
             pms_projects=opp.pms_projects.all(),
             google_connected=GoogleAccount.get_solo().is_connected,
             transcript=transcript(opp.thread) if opp.thread_id else [],
@@ -347,6 +349,48 @@ class CustomerListView(CRMView, ListView):
         return super().get_context_data(q=self.request.GET.get("q", "").strip(), **kwargs)
 
 
+class EmailListView(CRMView, ListView):
+    """All stored CRM emails across customers and opportunities, with sentiment & direction filters."""
+    template_name = "crm/email_list.html"
+    paginate_by = PAGE_SIZE
+
+    def get_queryset(self):
+        qs = EmailMessage.objects.select_related("customer", "opportunity", "sent_by").order_by("-sent_at")
+        if q := self.request.GET.get("q", "").strip():
+            qs = qs.filter(
+                Q(subject__icontains=q) | Q(body__icontains=q) | Q(sender__icontains=q)
+                | Q(recipient__icontains=q) | Q(customer__name__icontains=q)
+            )
+        if direction := self.request.GET.get("direction", "").strip():
+            qs = qs.filter(direction=direction)
+        if sentiment := self.request.GET.get("sentiment", "").strip():
+            qs = qs.filter(sentiment=sentiment)
+        return qs
+
+    def post(self, request, *args, **kwargs):
+        if not has_role(request.user, AGENT):
+            messages.error(request, "You do not have permission to sync emails.")
+            return redirect("crm:emails")
+        if request.POST.get("action") == "sync-emails":
+            try:
+                count = email_service.sync_inbound_emails()
+                messages.success(request, f"Synced Gmail: {count} new customer repl{'y' if count == 1 else 'ies'}.")
+            except Exception as exc:
+                messages.error(request, f"Gmail sync failed: {exc}")
+        return redirect("crm:emails")
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(
+            q=self.request.GET.get("q", "").strip(),
+            direction=self.request.GET.get("direction", "").strip(),
+            sentiment=self.request.GET.get("sentiment", "").strip(),
+            directions=EmailMessage.Direction.choices,
+            sentiments=EmailMessage.Sentiment.choices,
+            google_connected=GoogleAccount.get_solo().is_connected,
+            **kwargs,
+        )
+
+
 class CustomerCreateView(CRMView, CreateView):
     """New customer by hand, or from an inbox chat (?thread=<id>: prefilled and linked to its WhatsApp /
     Instagram contact, so the team can message them later)."""
@@ -399,11 +443,13 @@ class CustomerDetailView(CRMView, CRMActionsMixin, DetailView):
             .order_by("-created_at")[:30]
             if contacts else []
         )
+        emails = list(customer.emails.select_related("sent_by", "opportunity")[:40])
         return super().get_context_data(
             opportunities=customer.opportunities.select_related("service").prefetch_related("services"),  # service_list reads both
             contacts=contacts,
             channel_messages=channel_messages,
-            emails=customer.emails.select_related("sent_by", "opportunity")[:25],
+            emails=emails,
+            email_threads=email_service.group_email_threads(emails),
             pms_projects=customer.pms_projects.all(),
             follow_ups=customer.follow_ups.select_related("opportunity", "assigned_to", "channel").order_by("status", "due_at")[:15],
             activities=customer.activities.select_related("created_by")[:50],
